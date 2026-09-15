@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { GenerateArtifactUseCase } from '../../src/application/use-cases/GenerateArtifactUseCase.js';
 import { FakeGenerationGateway } from '../fakes/FakeGenerationGateway.js';
 import { FakeMermaidLinterGateway } from '../fakes/FakeMermaidLinterGateway.js';
+import { RepairRetryExhaustionError } from '../../src/application/use-cases/RepairErrors.js';
 import {
-  RepairRetryExhaustionError,
   CliExecutionTimeoutError,
   NonZeroExitError,
 } from '../../src/application/ports/generation/GenerationErrors.js';

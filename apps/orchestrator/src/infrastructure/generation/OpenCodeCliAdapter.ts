@@ -124,6 +124,9 @@ export class OpenCodeCliAdapter implements IGenerationGateway {
             },
           });
         } catch (err) {
+          if (err instanceof MalformedOutputError) {
+            return reject(err);
+          }
           reject(
             new MalformedOutputError(
               `Failed to parse opencode output: ${(err as Error).message}`,
@@ -147,6 +150,7 @@ export class OpenCodeCliAdapter implements IGenerationGateway {
   } {
     const lines = rawOutput.split('\n');
     let collectedText = '';
+    let structuredEventsDetected = false;
     let totalTokens: {
       input?: number;
       output?: number;
@@ -162,6 +166,7 @@ export class OpenCodeCliAdapter implements IGenerationGateway {
 
       try {
         const parsed = JSON.parse(trimmed) as OpenCodeEvent;
+        structuredEventsDetected = true;
         if (parsed.type === 'text' && parsed.part?.text) {
           collectedText += parsed.part.text;
         }
@@ -180,18 +185,24 @@ export class OpenCodeCliAdapter implements IGenerationGateway {
       }
     }
 
-    // If NDJSON did not yield text, check if raw stdout was plain text
-    if (!collectedText) {
-      collectedText = rawOutput;
+    if (structuredEventsDetected) {
+      const cleaned = this.stripThinkingBlocks(collectedText);
+      if (!cleaned) {
+        throw new MalformedOutputError(
+          'Structured NDJSON events were detected but no usable text event was produced',
+          rawOutput
+        );
+      }
+      return {
+        text: cleaned,
+        tokens: totalTokens,
+      };
     }
 
-    // Strip <think> blocks if present
-    const cleaned = this.stripThinkingBlocks(collectedText);
-
-    return {
-      text: cleaned,
-      tokens: totalTokens,
-    };
+    throw new MalformedOutputError(
+      'No structured NDJSON events detected in opencode output',
+      rawOutput
+    );
   }
 
   private stripThinkingBlocks(text: string): string {

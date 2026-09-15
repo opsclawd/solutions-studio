@@ -48,6 +48,61 @@ exit 0
     }
   });
 
+  it('throws MalformedOutputError when structured NDJSON contains no text event', async () => {
+    const tempScript = path.join(
+      os.tmpdir(),
+      `mock-opencode-notext-${Date.now()}.sh`
+    );
+    const scriptContent = `#!/bin/sh
+cat << 'EOF'
+{"type":"step_start","timestamp":100}
+{"type":"step_finish","part":{"tokens":{"input":15,"output":0,"total":15}}}
+EOF
+exit 0
+`;
+    await fs.writeFile(tempScript, scriptContent, { mode: 0o755 });
+
+    try {
+      const adapter = new OpenCodeCliAdapter({
+        executablePath: tempScript,
+      });
+
+      await expect(
+        adapter.generate({ prompt: 'test' })
+      ).rejects.toThrow(MalformedOutputError);
+    } finally {
+      await fs.unlink(tempScript).catch(() => {});
+    }
+  });
+
+  it('throws MalformedOutputError when text event contains only thinking tags and no usable text', async () => {
+    const tempScript = path.join(
+      os.tmpdir(),
+      `mock-opencode-onlythink-${Date.now()}.sh`
+    );
+    const scriptContent = `#!/bin/sh
+cat << 'EOF'
+{"type":"step_start","timestamp":100}
+{"type":"text","part":{"type":"text","text":"<think>Only thinking here, no response text</think>"}}
+{"type":"step_finish","part":{"tokens":{"input":15,"output":10,"total":25}}}
+EOF
+exit 0
+`;
+    await fs.writeFile(tempScript, scriptContent, { mode: 0o755 });
+
+    try {
+      const adapter = new OpenCodeCliAdapter({
+        executablePath: tempScript,
+      });
+
+      await expect(
+        adapter.generate({ prompt: 'test' })
+      ).rejects.toThrow(MalformedOutputError);
+    } finally {
+      await fs.unlink(tempScript).catch(() => {});
+    }
+  });
+
   it('throws MalformedOutputError when output is empty', async () => {
     const tempScript = path.join(os.tmpdir(), `mock-opencode-empty-${Date.now()}.sh`);
     const scriptContent = `#!/bin/sh

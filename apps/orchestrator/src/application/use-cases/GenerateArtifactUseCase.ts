@@ -1,6 +1,8 @@
 import { IGenerationGateway } from '../ports/generation/IGenerationGateway.js';
 import { IMermaidLinterGateway } from '../ports/validation/IMermaidLinterGateway.js';
-import { RepairRetryExhaustionError } from '../ports/generation/GenerationErrors.js';
+import { RepairRetryExhaustionError } from './RepairErrors.js';
+
+export { RepairRetryExhaustionError } from './RepairErrors.js';
 
 export interface GenerateArtifactOptions {
   maxRepairAttempts?: number;

@@ -40,16 +40,3 @@ export class MalformedOutputError extends GenerationGatewayError {
     super(`Malformed or unexpected CLI output: ${message}`, cause);
   }
 }
-
-export class RepairRetryExhaustionError extends Error {
-  constructor(
-    message: string,
-    public readonly attempts: number,
-    public readonly lastCandidate: string,
-    public readonly errors: string[]
-  ) {
-    super(message);
-    this.name = this.constructor.name;
-    Object.setPrototypeOf(this, new.target.prototype);
-  }
-}

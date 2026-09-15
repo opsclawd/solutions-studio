@@ -21,11 +21,12 @@ apps/orchestrator/
       ports/
         generation/
           IGenerationGateway.ts     <-- Agnostic text generation port
-          GenerationErrors.ts       <-- Normalized typed failure hierarchy
+          GenerationErrors.ts       <-- Normalized typed gateway failure hierarchy
         validation/
           IMermaidLinterGateway.ts  <-- Deterministic diagram validator port
       use-cases/
         GenerateArtifactUseCase.ts  <-- Closed-loop validation & repair loop (max 2 attempts)
+        RepairErrors.ts             <-- Application orchestration failure (RepairRetryExhaustionError)
     infrastructure/
       generation/
         AntigravityCliAdapter.ts    <-- agy CLI adapter
@@ -48,13 +49,15 @@ apps/orchestrator/
 ### Core Seam Invariants
 - **Port Agnosticism:** `IGenerationGateway` exposes only `generate(request: GenerationRequest): Promise<GenerationResult>`. It does not expose `repairSyntax`, Mermaid concepts, or provider-specific flags.
 - **Application-Owned Repair:** The retry loop, repair prompt formulation, candidate extraction, and exhaustion policy (`maxRepairAttempts = 2`) belong exclusively to `GenerateArtifactUseCase`.
-- **Normalized Error Hierarchy:** All CLI-specific stdout, stderr, process signals, and exit codes are mapped to typed errors:
-  - `ExecutableNotFoundError`
-  - `AuthenticationOrConfigError`
-  - `CliExecutionTimeoutError`
-  - `NonZeroExitError`
-  - `MalformedOutputError`
-  - `RepairRetryExhaustionError`
+- **Decoupled Error Classification:**
+  - **Gateway Failures (`application/ports/generation/GenerationErrors.ts`):** Normalizes provider- and process-level failures:
+    - `ExecutableNotFoundError`
+    - `AuthenticationOrConfigError`
+    - `CliExecutionTimeoutError`
+    - `NonZeroExitError`
+    - `MalformedOutputError`
+  - **Application Failures (`application/use-cases/RepairErrors.ts`):** Represents domain/workflow level failures:
+    - `RepairRetryExhaustionError`: Raised when valid syntax cannot be produced within the retry budget.
 
 ---
 
@@ -65,7 +68,7 @@ apps/orchestrator/
 pnpm --filter @solutions-studio/orchestrator build
 ```
 
-### 2. Run Deterministic Unit Tests (23 tests)
+### 2. Run Deterministic Unit Tests (25 tests)
 ```bash
 pnpm --filter @solutions-studio/orchestrator test
 ```
@@ -108,6 +111,7 @@ pnpm --filter @solutions-studio/orchestrator tracer --provider opencode
   - `opencode run --format json` streams newline-delimited JSON (NDJSON) events (`step_start`, `text`, `step_finish`).
   - Generated output can include `<think>...</think>` reasoning tokens and diagnostic stderr lines (`[oc-crofai] ...`).
   - `OpenCodeCliAdapter` parses NDJSON line-by-line, accumulates text parts, and strips internal `<think>` blocks.
+  - If structured NDJSON events are detected but no `text` event is present, the adapter strictly raises `MalformedOutputError` rather than falling back to unparsed stdout.
   - Closing `child.stdin?.end()` immediately after process spawn prevents stdin pipe blocking.
 
 ### 3. Headless Mermaid Linter (`@mermaid-js/mermaid-cli`)
@@ -119,6 +123,19 @@ pnpm --filter @solutions-studio/orchestrator tracer --provider opencode
 
 ---
 
+## Security Constraints
+
+> [!WARNING]
+> **CLI Tool Execution Security Boundary:**
+> A prompt instructing an agent CLI not to use tools (e.g., `"Output ONLY raw text without running commands"`) **is not a security boundary**.
+>
+> In `AntigravityCliAdapter`, passing `--dangerously-skip-permissions` bypasses interactive permission confirmation to enable headless non-interactive execution. While acceptable for the Phase 0 synthetic tracer spike, **this must not become the production execution contract** without proper sandboxing. Production promotion in Phase 1 requires:
+> 1. Process/container isolation (e.g., isolated container execution or restrictive seccomp/cgroups).
+> 2. Filesystem isolation (read-only mount or ephemeral scratchpad).
+> 3. Disabling tool capabilities at the agent/CLI configuration level rather than relying on prompt steering.
+
+---
+
 ## Exit Gate Evaluation
 
 | Criterion | Requirement | Result |
@@ -126,7 +143,7 @@ pnpm --filter @solutions-studio/orchestrator tracer --provider opencode
 | **Provider Interoperability** | Both `agy` and `opencode` participate in the identical validation & repair orchestration without application code modifications | **PASS** |
 | **Deterministic Validation** | Headless validation catches syntax errors and re-verifies repaired candidates | **PASS** |
 | **Typed Failure Normalization** | Exit codes, timeouts, malformed output, and retry exhaustion mapped to typed domain/gateway errors | **PASS** |
-| **Automated Test Coverage** | 100% pass rate across unit suites and real CLI integration tests with synthetic fixtures | **PASS** (23 unit, 3 integration) |
+| **Automated Test Coverage** | 100% pass rate across unit suites and real CLI integration tests with synthetic fixtures | **PASS** (25 unit, 3 integration) |
 | **Architectural Zero-Relocation** | Code is placed directly in target Phase 1 locations (`apps/orchestrator/src/...`) | **PASS** |
 
 ### Exit Gate Verdict: **GO**
