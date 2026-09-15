@@ -105,11 +105,16 @@ By utilizing a ​**Markdown-First MVP Architecture**​, the platform bypasses 
 
 ##### 4.1 Monorepo Structure & Clean Separation
 
-The system is structured as a TypeScript monorepo to enforce architectural boundaries and enable direct type sharing:
+The system is structured as a TypeScript monorepo to enforce architectural boundaries while keeping domain business rules independent from transport validation and infrastructure libraries:
 
-* `packages/domain-contracts`: Contains shared Zod schemas, artifact interfaces, Gherkin syntax validators, and domain entities. Has **zero** external runtime dependencies.
-* `apps/orchestrator`: Fastify backend implementing the Application use cases and Infrastructure adapters (Azure OpenAI, Babel AST linter, Mermaid CLI, SQLite).
+* `packages/domain`: Contains domain entities, value objects, domain services, invariants, and domain errors. This package has **zero external runtime dependencies** and contains no framework, persistence, transport, UI, parser, or AI-provider concerns.
+* `packages/contracts`: Contains shared application/API DTOs, Zod validation schemas, artifact serialization formats, and command/event contracts shared between applications. This package may depend on narrowly scoped boundary-validation libraries such as Zod but **must not contain domain business rules**.
+* `apps/orchestrator`: Fastify backend implementing the Application use cases and Infrastructure adapters (Azure OpenAI, Babel AST linter, Mermaid CLI, Gherkin parser, SQLite).
 * `apps/web`: Next.js frontend hosting the Monaco Markdown editor, SVG preview canvas, and sandboxed prototype iframe.
+
+**Validation Boundary Rule:** Structural and transport validation belongs at system boundaries (`packages/contracts` and application adapters). Business validity belongs in `packages/domain`. For example, Zod may validate that a citation object contains a non-empty `sourceId`, while the domain enforces whether an artifact has sufficient verified citations to be accepted.
+
+**Syntax vs. Domain Validation:** Parser-backed syntax checks are infrastructure concerns. A Gherkin parser determines whether generated acceptance criteria are syntactically valid; domain rules determine whether those criteria are grounded, testable, non-ambiguous, and sufficiently cited. Parser implementations must remain swappable behind application ports and must not become dependencies of `packages/domain`.
 
 ###### 4.2 The Markdown Ingestion Schema
 
@@ -236,7 +241,7 @@ Phase 0: Technical De-Risking (48-Hour Tracer Spikes)
 └── Spike B: Sandboxed <iframe> execution of dynamic LLM React/Tailwind code via @babel/standalone
 
 Phase 1: Vertical Slice 1 — The Visual Process Canvas (Weeks 1–2)
-├── Setup pnpm monorepo structure (/packages/domain-contracts, /apps/orchestrator, /apps/web)
+├── Setup pnpm monorepo structure (/packages/domain, /packages/contracts, /apps/orchestrator, /apps/web)
 ├── Implement ILlmGateway (Azure OpenAI) and ICodeLinterGateway (Mermaid CLI)
 ├── Fastify /process endpoint with self-repair loop
 └── Next.js split-pane UI: Monaco editor on left, interactive Mermaid SVG on right
