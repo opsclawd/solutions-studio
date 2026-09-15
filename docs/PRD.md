@@ -21,7 +21,7 @@ The **Spec-to-Prototype Delivery Engine ("Solutions Studio")** is an internal, p
 3. ​**Normalized SQL DDL relational schemas and OpenAPI contracts**​.
 4. ​**Traceable, Gherkin-formatted user stories with strict citation mapping**​.
 
-By utilizing a ​**Markdown-First MVP Architecture**​, the platform bypasses the fragility, latency, and chunking failures of multimodal PDF/Excel ingestion, achieving 100% deterministic context recall within private, large-context LLM windows.
+By utilizing a ​**Markdown-First MVP Architecture**​, the platform bypasses the fragility, latency, and chunking failures of multimodal PDF/Excel ingestion, achieving deterministic full-context synthesis within the configured generation runtime.
 
 ## 2. Product Goals & Non-Goals
 
@@ -31,12 +31,13 @@ By utilizing a ​**Markdown-First MVP Architecture**​, the platform bypasses 
 * **Deterministic Grounding:** Ensure 100% of generated business rules, data schemas, and UI states link directly to verified SME transcripts or SOP citations.
 * **Self-Healing Code/Diagrams:** Enforce an automated AST/linter loop that self-corrects invalid syntax before rendering artifacts to the user.
 * **Governed Golden Paths:** Generate foundational artifacts that follow enterprise architectural standards (Clean Architecture, DDD, role-based access control, append-only audit histories).
+* **Provider Independence:** Keep generation orchestration independent from any specific model vendor, API, CLI, or agent runtime so generation backends can be replaced without changing domain or application business rules.
 
 ### 2.2 Non-Goals (Explicitly Out of Scope for MVP)
 
 * **Direct Multi-File Native Ingestion:** No direct PDF OCR, raw Excel parsing, or raw audio transcription in v1.0. All inputs must be converted into the standardized Markdown schema.
 * **Autonomous Production Code Deployment:** The tool generates ​*prototypes, specifications, and scaffolding*​; it does not autonomously push production code to live environments.
-* **Public Model Exposure:** No telemetry, source documents, or generated specs may leave the private corporate cloud boundary.
+* **Unapproved Generation Provider Exposure:** Production enterprise context may only be transmitted through generation adapters and underlying providers approved for the deployment environment. Phase 0 tracer spikes may use developer-configured CLI adapters only with synthetic/non-sensitive fixtures unless the configured provider is enterprise-approved.
 
 ## 3. User Personas & Workflows
 
@@ -79,27 +80,28 @@ By utilizing a ​**Markdown-First MVP Architecture**​, the platform bypasses 
                                       │ calls
 ┌──────────────────────────────────────▼──────────────────────────────────────┐
 │                           APPLICATION LAYER                                 │
-│  Orchestration Use Cases:                                                           │
-│  - GenerateArtifactUseCase (Coordinates Prompt -> LLM -> Linter -> Repair)  │
-│  - ValidateWorkspaceContextUseCase                                              │
-│  - ExportToBacklogUseCase                                                       │
-│                                                                                │
-│  Outbound Ports (Interfaces):                                                   │
-│  - ILlmGateway (synthesize, repairSyntax)                                      │
-│  - ICodeLinterGateway (validateAst, testSyntax)                                │
-│  - IArtifactRepository (save, getByWorkspace)                                 │
-│  - IBacklogExportGateway (pushWorkItem)                                       │
+│  Orchestration Use Cases:                                                   │
+│  - GenerateArtifactUseCase (Prompt -> Generate -> Validate -> Repair)       │
+│  - ValidateWorkspaceContextUseCase                                          │
+│  - ExportToBacklogUseCase                                                   │
+│                                                                             │
+│  Outbound Ports (Interfaces):                                               │
+│  - IGenerationGateway (generate)                                            │
+│  - ICodeLinterGateway (validateAst, testSyntax)                             │
+│  - IArtifactRepository (save, getByWorkspace)                              │
+│  - IBacklogExportGateway (pushWorkItem)                                    │
 └───────────────────┬─────────────────────────────────────┬───────────────────┘
                     │ uses                                │ implemented by
 ┌───────────────────▼──────────────────────┐ ┌───────────▼───────────────────┐
 │             DOMAIN LAYER                │ │     INFRASTRUCTURE LAYER     │
 │  (Pure Business Rules & Entities)       │ │ (Swappable Technology Adapters│
-│  - Entities: Workspace, Artifact, Story  │ │ - AzureOpenAiAdapter         │
-│  - Value Objects: CitationReference,     │ │ - MermaidCliLinterAdapter     │
-│    ValidationReport, AmbiguityScore     │ │ - BabelAstLinterAdapter       │
-│  - Invariants: Zero ungrounded stories, │ │ - PGliteSchemaLinterAdapter   │
-│    mandatory citation mapping, strict    │ │ - BetterSqliteRepository       │
-│    state transition rules               │ │ - AzureDevOpsRestAdapter      │
+│  - Entities: Workspace, Artifact, Story  │ │ - AntigravityCliAdapter      │
+│  - Value Objects: CitationReference,     │ │ - OpenCodeCliAdapter         │
+│    ValidationReport, AmbiguityScore     │ │ - MermaidCliLinterAdapter    │
+│  - Invariants: Zero ungrounded stories, │ │ - BabelAstLinterAdapter      │
+│    mandatory citation mapping, strict    │ │ - PGliteSchemaLinterAdapter  │
+│    state transition rules               │ │ - BetterSqliteRepository     │
+│                                         │ │ - AzureDevOpsRestAdapter     │
 └──────────────────────────────────────────┘ └───────────────────────────────┘
 ```
 
@@ -107,16 +109,33 @@ By utilizing a ​**Markdown-First MVP Architecture**​, the platform bypasses 
 
 The system is structured as a TypeScript monorepo to enforce architectural boundaries while keeping domain business rules independent from transport validation and infrastructure libraries:
 
-* `packages/domain`: Contains domain entities, value objects, domain services, invariants, and domain errors. This package has **zero external runtime dependencies** and contains no framework, persistence, transport, UI, parser, or AI-provider concerns.
+* `packages/domain`: Contains domain entities, value objects, domain services, invariants, and domain errors. This package has **zero external runtime dependencies** and contains no framework, persistence, transport, UI, parser, or generation-provider concerns.
 * `packages/contracts`: Contains shared application/API DTOs, Zod validation schemas, artifact serialization formats, and command/event contracts shared between applications. This package may depend on narrowly scoped boundary-validation libraries such as Zod but **must not contain domain business rules**.
-* `apps/orchestrator`: Fastify backend implementing the Application use cases and Infrastructure adapters (Azure OpenAI, Babel AST linter, Mermaid CLI, Gherkin parser, SQLite).
+* `apps/orchestrator`: Fastify backend implementing Application use cases and Infrastructure adapters (generation CLI adapters, Babel AST linter, Mermaid CLI, Gherkin parser, SQLite).
 * `apps/web`: Next.js frontend hosting the Monaco Markdown editor, SVG preview canvas, and sandboxed prototype iframe.
 
 **Validation Boundary Rule:** Structural and transport validation belongs at system boundaries (`packages/contracts` and application adapters). Business validity belongs in `packages/domain`. For example, Zod may validate that a citation object contains a non-empty `sourceId`, while the domain enforces whether an artifact has sufficient verified citations to be accepted.
 
 **Syntax vs. Domain Validation:** Parser-backed syntax checks are infrastructure concerns. A Gherkin parser determines whether generated acceptance criteria are syntactically valid; domain rules determine whether those criteria are grounded, testable, non-ambiguous, and sufficiently cited. Parser implementations must remain swappable behind application ports and must not become dependencies of `packages/domain`.
 
-###### 4.2 The Markdown Ingestion Schema
+##### 4.2 Generation Gateway & CLI Adapter Boundary
+
+The Application layer depends on a capability-oriented `IGenerationGateway`, not on an LLM vendor, model API, or specific CLI. The initial outbound contract is intentionally narrow:
+
+```ts
+interface IGenerationGateway {
+  generate(request: GenerationRequest): Promise<GenerationResult>;
+}
+```
+
+* **Initial adapters:** `AntigravityCliAdapter` (`agy`) and `OpenCodeCliAdapter` (`opencode`). Provider selection is configuration-driven and must not alter application orchestration code.
+* **Normalized execution contract:** CLI-specific output formats, exit codes, authentication failures, timeouts, conversation/session identifiers, and model metadata are normalized by the adapter into `GenerationResult` or typed gateway errors.
+* **Application-owned repair loop:** Artifact-specific repair is not a gateway responsibility. `GenerateArtifactUseCase` constructs repair prompts, invokes `IGenerationGateway.generate(...)`, runs deterministic validators, and controls retry/exhaustion policy.
+* **Text-generation mode:** Generation CLIs are invoked in a constrained, non-interactive mode with optional agent tooling disabled or restricted. Solutions Studio owns the workflow, validation loop, and artifact lifecycle.
+* **Deterministic testing:** A fake `IGenerationGateway` implementation must support automated orchestration tests without invoking a real CLI.
+* **Future adapters:** Direct model APIs, enterprise-hosted inference, or local/open-weight runtimes may be added without changes to domain rules or application use cases.
+
+##### 4.3 The Markdown Ingestion Schema
 
 To achieve deterministic outputs, the system requires all input files within a workspace to implement the following YAML Frontmatter + Markdown structure:
 
@@ -162,7 +181,7 @@ status: "verified"
 ### FR-1: Workspace & Context Management
 
 * **FR-1.1:** The system shall support project-based workspaces. All `.md` files uploaded to a workspace are concatenated into an active project context.
-* **FR-1.2:** Context windows shall support up to 100,000 tokens of Markdown text per workspace, utilizing direct full-context loading into the LLM inference engine.
+* **FR-1.2:** Context windows shall support up to 100,000 tokens of Markdown text per workspace, utilizing direct full-context loading into the configured generation runtime.
 * **FR-1.3:** The workspace interface shall provide a Markdown editor (Monaco) allowing the BA to edit, format, and save changes to context files in real time.
 
 ### FR-2: Interactive Wireframe & Prototype Engine
@@ -181,8 +200,8 @@ status: "verified"
 * **FR-3.2:** The system shall render the diagram within an interactive SVG viewport supporting zoom, pan, and SVG export.
 * **FR-3.3 (Closed-Loop Syntax Repair):**
   * The backend shall execute a headless syntax pass using `@mermaid-js/mermaid-cli`.
-  * If parsing fails, the error message and failed code shall be returned to the LLM with the prompt: *"The following Mermaid syntax produced an error: [Error]. Correct the syntax and return ONLY the valid Mermaid code."*
-  * The system shall attempt up to 2 automated repair cycles before presenting an error to the user.
+  * If parsing fails, the application shall construct a repair request containing the parser error and failed Mermaid source and send it through `IGenerationGateway`.
+  * The system shall attempt up to 2 automated repair cycles before presenting a typed validation failure to the user.
 
 ### FR-4: Data Contract & Relational Schema Engine
 
@@ -209,9 +228,10 @@ status: "verified"
 
 ### 6.1 Security & Data Sovereignty
 
-* **NFR-1.1 (Data Isolation):** Zero enterprise context data, transcripts, or generated schemas shall be transmitted to public LLM endpoints or used for external model training.
+* **NFR-1.1 (Generation Data Boundary):** Enterprise context, transcripts, and generated specifications may only be transmitted through explicitly configured generation adapters whose underlying provider/runtime is approved for the deployment environment. Phase 0 tests against unapproved external providers must use synthetic or non-sensitive fixtures.
 * **NFR-1.2 (Identity & Access):** The platform shall integrate with Microsoft Entra ID (Azure AD) via OAuth 2.0 / OpenID Connect with PKCE.
-* **NFR-1.3 (Client Isolation):** Dynamic UI code generated by the LLM must execute exclusively within sandboxed `<iframe>` environments with restricted `sandbox="allow-scripts"` attributes, preventing parent DOM traversal or unauthorized cookie/token access.
+* **NFR-1.3 (Client Isolation):** Dynamic UI code generated by the generation runtime must execute exclusively within sandboxed `<iframe>` environments with restricted `sandbox="allow-scripts"` attributes, preventing parent DOM traversal or unauthorized cookie/token access. The sandbox must additionally enforce a restrictive Content Security Policy that blocks unauthorized outbound network access.
+* **NFR-1.4 (Generation Runtime Isolation):** CLI generation adapters must run with only the capabilities required for text generation and must not implicitly receive unrelated workspace or environment access.
 
 ### 6.2 Performance & Reliability
 
@@ -220,6 +240,7 @@ status: "verified"
   * Mermaid diagrams: < 6 seconds.
   * Full React interactive prototype: < 15 seconds.
 * **NFR-2.2 (Syntax Success Rate):** Automated self-healing loops must ensure > 98% of rendered Mermaid and React artifacts load without rendering exceptions on the first UI display.
+* **NFR-2.3 (Provider Substitutability):** Switching between supported generation adapters must not require changes to domain rules, use-case orchestration, artifact validators, or API contracts.
 
 ## 7. Recommended Technical Stack (MVP)
 
@@ -231,19 +252,31 @@ status: "verified"
 | **Backend API**        | **Node.js (TypeScript) with Fastify**                                       | Type-sharing with frontend, high-throughput asynchronous execution, lightweight footprint.     |
 | **Validation Linters** | `@mermaid-js/mermaid-cli`,`zod`,`sqlfluff`/`@electric-sql/pglite` | Headless syntax parsers to validate and trigger self-correction loops before user rendering.   |
 | **Persistence (MVP)**  | **Local File System / Azure Blob Storage + SQLite**                         | Minimal overhead for MVP; stores workspaces, versioned `.md` files, and generated artifacts. |
-| **LLM Tier**           | **Azure OpenAI Service (GPT-4o)**                                           | Enterprise compliance, data privacy, and large context capacity (128k tokens).                 |
+| **Generation Runtime** | **Provider-agnostic CLI adapters; initial implementations: Antigravity (`agy`) and OpenCode (`opencode`)** | Preserves model/provider portability; adapter normalizes headless CLI execution behind `IGenerationGateway`. |
 
 ## 8. Delivery Plan: Vertical Slice Roadmap
 
+Phase 0 implementations are **mergeable tracer implementations**, not disposable prototypes. They must establish reusable seams, tests, fixtures, typed failures, and documented findings that carry forward into Phase 1.
+
 ```
-Phase 0: Technical De-Risking (48-Hour Tracer Spikes)
-├── Spike A: Closed-loop Mermaid CLI syntax auto-repair script (validate -> fail -> repair)
-└── Spike B: Sandboxed <iframe> execution of dynamic LLM React/Tailwind code via @babel/standalone
+Phase 0: Technical De-Risking (48-Hour Mergeable Tracer Spikes)
+├── Spike A: Provider-Agnostic Generation + Closed-Loop Mermaid Repair
+│   ├── Define IGenerationGateway with a single generate operation
+│   ├── Implement deterministic FakeGenerationGateway for orchestration tests
+│   ├── Implement AntigravityCliAdapter (agy) and OpenCodeCliAdapter (opencode)
+│   ├── Select provider through configuration; no orchestration code changes between adapters
+│   ├── Normalize CLI timeout/auth/exit/output failures into typed gateway errors
+│   ├── Run generation in constrained text-only mode
+│   └── Prove invalid Mermaid -> validate -> repair -> revalidate within <= 2 repair attempts
+└── Spike B: Sandboxed <iframe> execution of dynamic generated React/Tailwind code via @babel/standalone
+    ├── Demonstrate state transitions and validation behavior
+    ├── Prevent child access to parent DOM/storage
+    └── Enforce restrictive CSP for outbound network access
 
 Phase 1: Vertical Slice 1 — The Visual Process Canvas (Weeks 1–2)
 ├── Setup pnpm monorepo structure (/packages/domain, /packages/contracts, /apps/orchestrator, /apps/web)
-├── Implement ILlmGateway (Azure OpenAI) and ICodeLinterGateway (Mermaid CLI)
-├── Fastify /process endpoint with self-repair loop
+├── Promote IGenerationGateway + agy/opencode adapters and ICodeLinterGateway (Mermaid CLI) from Phase 0
+├── Fastify /process endpoint with application-owned self-repair loop
 └── Next.js split-pane UI: Monaco editor on left, interactive Mermaid SVG on right
 
 Phase 2: Vertical Slice 2 — Spec & Data Contract Engine (Weeks 3–4)
