@@ -33,4 +33,6 @@ jobs:
         run: pnpm --filter @solutions-studio/orchestrator build
 
       - name: Run unit tests
+        env:
+          PUPPETEER_CONFIG_PATH: ${{ github.workspace }}/.github/puppeteer-config.json
         run: pnpm --filter @solutions-studio/orchestrator test

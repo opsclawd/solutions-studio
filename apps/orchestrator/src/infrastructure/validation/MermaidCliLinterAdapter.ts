@@ -30,17 +30,6 @@ export class MermaidCliLinterAdapter implements IMermaidLinterGateway {
     const configured = options?.puppeteerConfigPath ?? process.env.PUPPETEER_CONFIG_PATH;
     if (configured && existsSync(configured)) {
       this.puppeteerConfigPath = configured;
-    } else {
-      const candidates = [
-        path.resolve(process.cwd(), 'puppeteer-config.json'),
-        path.resolve(process.cwd(), 'apps/orchestrator/puppeteer-config.json'),
-      ];
-      for (const candidate of candidates) {
-        if (existsSync(candidate)) {
-          this.puppeteerConfigPath = candidate;
-          break;
-        }
-      }
     }
   }
 
