@@ -29,9 +29,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Ensure Puppeteer browser binary
-        run: pnpm --filter @solutions-studio/orchestrator exec puppeteer browsers install chrome-headless-shell
-
       - name: Build orchestrator
         run: pnpm --filter @solutions-studio/orchestrator build
 
