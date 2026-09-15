@@ -38,6 +38,8 @@
 * **"Acceleration, Not Authority" Guardrails:** The LLM acts purely as an execution accelerator. All outputs must pass automated linting, schema validation (Zod/JSON Schema), and human-in-the-loop review by the BA and SME before acceptance.
 * **Air-Gapped Corporate Privacy:** Operates entirely within private cloud boundaries (e.g., private Azure OpenAI endpoints). Enterprise data, pipeline parameters, operational logs, and proprietary workflows are never transmitted to public models or used for model training.
 
+* **Architectural Defensibility (Decoupled by Design):** Unlike fragile AI wrappers, the Solutions Studio is engineered on Clean Architecture and Domain-Driven Design (DDD). The core business rules—what constitutes an ambiguous requirement, an ungrounded user story, or an invalid state transition—exist completely independent of AI models or UI frameworks. The LLM and linters operate as swappable infrastructure adapters behind strict interface ports. If Azure OpenAI is replaced, or an internal open-weights model is deployed on-premises, not a single line of domain business logic changes.
+
 #### 4. Delivery Handoff (One-Click Export)
 
 * **Zero-Friction Backlog Sync:** Direct one-click export pushing structured user stories and acceptance criteria into Jira or Azure DevOps backlogs.

@@ -70,39 +70,48 @@ By utilizing a ​**Markdown-First MVP Architecture**​, the platform bypasses 
 ## 4. Architectural & System Design
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           PRESENTATION LAYER                            │
-│  Split-Pane Workspace: Markdown Context (Left) | Canvas & Preview (Right)│
-│  - Monaco Code Editor (Syntax Highlighting & DDL Review)                │
-│  - Sandboxed <iframe> Runner (Live React / Tailwind Prototype)          │
-│  - Interactive SVG Viewport (Mermaid.js Pan/Zoom Engine)                │
-└────────────────────────────────────┬────────────────────────────────────┘
-                                     │ HTTPS / WebSockets
-┌────────────────────────────────────▼────────────────────────────────────┐
-│                    API ORCHESTRATION & VALIDATION LAYER                 │
-│  Node.js (TypeScript) / Fastify Runtime                                 │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │ Artifact Router: Intent Classifier & Prompt Template Engine       │  │
-│  └─────────────────────────────────┬─────────────────────────────────┘  │
-│                                    │                                    │
-│  ┌─────────────────────────────────▼─────────────────────────────────┐  │
-│  │ Closed-Loop Deterministic Validation Gates (Self-Correction Loop) │  │
-│  │  - Mermaid CLI Headless Parser (Syntax & Node integrity)          │  │
-│  │  - Babel/ESLint AST Parser (React / Tailwind UI Validation)       │  │
-│  │  - SQL Linter / PGlite in-memory dry-run (DDL & Key Integrity)    │  │
-│  │  - JSON Schema / Zod Validator (OpenAPI & State Machines)         │  │
-│  └─────────────────────────────────┬─────────────────────────────────┘  │
-└────────────────────────────────────┼────────────────────────────────────┘
-                                     │ Context Injection (128k+ Window)
-┌────────────────────────────────────▼────────────────────────────────────┐
-│                       PRIVATE LLM INFERENCE TIER                        │
-│  Enterprise Private Endpoint (e.g., Azure OpenAI GPT-4o)                │
-│  - Zero data retention for model training                               │
-│  - Direct context injection: System Prompt + Full Markdown Workspaces   │
-└─────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        INTERFACE / PRESENTATION LAYER                       │
+│  - Next.js (App Router) + Tailwind CSS + Monaco Code Editor                 │
+│  - Interactive Sandboxed <iframe> Runtime (Client-side React Compilation)   │
+│  - Fastify HTTP Controllers, SSE Streaming Handlers, Zod Payload Parsers     │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                      │ calls
+┌──────────────────────────────────────▼──────────────────────────────────────┐
+│                           APPLICATION LAYER                                 │
+│  Orchestration Use Cases:                                                           │
+│  - GenerateArtifactUseCase (Coordinates Prompt -> LLM -> Linter -> Repair)  │
+│  - ValidateWorkspaceContextUseCase                                              │
+│  - ExportToBacklogUseCase                                                       │
+│                                                                                │
+│  Outbound Ports (Interfaces):                                                   │
+│  - ILlmGateway (synthesize, repairSyntax)                                      │
+│  - ICodeLinterGateway (validateAst, testSyntax)                                │
+│  - IArtifactRepository (save, getByWorkspace)                                 │
+│  - IBacklogExportGateway (pushWorkItem)                                       │
+└───────────────────┬─────────────────────────────────────┬───────────────────┘
+                    │ uses                                │ implemented by
+┌───────────────────▼──────────────────────┐ ┌───────────▼───────────────────┐
+│             DOMAIN LAYER                │ │     INFRASTRUCTURE LAYER     │
+│  (Pure Business Rules & Entities)       │ │ (Swappable Technology Adapters│
+│  - Entities: Workspace, Artifact, Story  │ │ - AzureOpenAiAdapter         │
+│  - Value Objects: CitationReference,     │ │ - MermaidCliLinterAdapter     │
+│    ValidationReport, AmbiguityScore     │ │ - BabelAstLinterAdapter       │
+│  - Invariants: Zero ungrounded stories, │ │ - PGliteSchemaLinterAdapter   │
+│    mandatory citation mapping, strict    │ │ - BetterSqliteRepository       │
+│    state transition rules               │ │ - AzureDevOpsRestAdapter      │
+└──────────────────────────────────────────┘ └───────────────────────────────┘
 ```
 
-### 4.1 The Markdown Ingestion Schema
+##### 4.1 Monorepo Structure & Clean Separation
+
+The system is structured as a TypeScript monorepo to enforce architectural boundaries and enable direct type sharing:
+
+* `packages/domain-contracts`: Contains shared Zod schemas, artifact interfaces, Gherkin syntax validators, and domain entities. Has **zero** external runtime dependencies.
+* `apps/orchestrator`: Fastify backend implementing the Application use cases and Infrastructure adapters (Azure OpenAI, Babel AST linter, Mermaid CLI, SQLite).
+* `apps/web`: Next.js frontend hosting the Monaco Markdown editor, SVG preview canvas, and sandboxed prototype iframe.
+
+###### 4.2 The Markdown Ingestion Schema
 
 To achieve deterministic outputs, the system requires all input files within a workspace to implement the following YAML Frontmatter + Markdown structure:
 
@@ -219,28 +228,35 @@ status: "verified"
 | **Persistence (MVP)**  | **Local File System / Azure Blob Storage + SQLite**                         | Minimal overhead for MVP; stores workspaces, versioned `.md` files, and generated artifacts. |
 | **LLM Tier**           | **Azure OpenAI Service (GPT-4o)**                                           | Enterprise compliance, data privacy, and large context capacity (128k tokens).                 |
 
-## 8. MVP Delivery Plan & Milestones
+## 8. Delivery Plan: Vertical Slice Roadmap
 
 ```
-Week 1 - 2: Core Workspace & Context Engine
-├── Standardized Markdown template finalized
-├── Workspace file manager (Monaco Editor + Azure Blob integration)
-└── Direct-context injection pipeline into Azure OpenAI
+Phase 0: Technical De-Risking (48-Hour Tracer Spikes)
+├── Spike A: Closed-loop Mermaid CLI syntax auto-repair script (validate -> fail -> repair)
+└── Spike B: Sandboxed <iframe> execution of dynamic LLM React/Tailwind code via @babel/standalone
 
-Week 3 - 4: Generation Engines & Validation Loops
-├── Mermaid.js flowchart/ERD generator with AST auto-repair loop
-├── Gherkin user story generator with Ambiguity Linter
-└── PostgreSQL / Azure SQL schema generator with constraint linters
+Phase 1: Vertical Slice 1 — The Visual Process Canvas (Weeks 1–2)
+├── Setup pnpm monorepo structure (/packages/domain-contracts, /apps/orchestrator, /apps/web)
+├── Implement ILlmGateway (Azure OpenAI) and ICodeLinterGateway (Mermaid CLI)
+├── Fastify /process endpoint with self-repair loop
+└── Next.js split-pane UI: Monaco editor on left, interactive Mermaid SVG on right
 
-Week 5: Interactive UI Sandbox
-├── Sandboxed iframe React + Tailwind compiler
-├── Live prototype state-machine simulator
-└── Split-pane preview UI integration
+Phase 2: Vertical Slice 2 — Spec & Data Contract Engine (Weeks 3–4)
+├── Implement PGlite schema linter adapter (dry-run DDL validation)
+├── Implement Ambiguity Audit engine for Gherkin acceptance criteria
+├── Fastify /schema and /stories endpoints with mandatory source citation checks
+└── Monaco split-view syntax highlighting for PostgreSQL/Azure SQL DDL & BDD specs
 
-Week 6: Pilot Validation & Backlog Export
-├── Pilot deployment on an active business workflow (e.g., Compliance/Field Inspection form)
-├── Azure DevOps / Jira JSON export adapter
-└── User feedback review & v1.1 roadmap prioritization
+Phase 3: Vertical Slice 3 — Interactive Form Sandbox (Week 5)
+├── Implement Babel AST parser for generated React components
+├── Fastify /wireframe generation endpoint
+└── Live sandbox runner inside Next.js with state toggle simulation and validation triggers
+
+Phase 4: Vertical Slice 4 — Governance, Persistence & Handoff (Week 6)
+├── SQLite / Azure Blob storage repository implementation
+├── Microsoft Entra ID authentication integration
+├── Azure DevOps / Jira API backlog export adapter
+└── Pilot run on an active enterprise business workflow (e.g., Compliance / Field Inspection intake)
 ```
 
 ## 9. Success Metrics & ROI (KPIs)
