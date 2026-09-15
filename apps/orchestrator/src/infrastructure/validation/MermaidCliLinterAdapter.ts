@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { randomUUID } from 'node:crypto';
@@ -11,11 +12,13 @@ import {
 export interface MermaidCliLinterAdapterOptions {
   executablePath?: string;
   timeoutMs?: number;
+  puppeteerConfigPath?: string;
 }
 
 export class MermaidCliLinterAdapter implements IMermaidLinterGateway {
   private readonly executablePath: string;
   private readonly timeoutMs: number;
+  private readonly puppeteerConfigPath?: string;
 
   constructor(options?: MermaidCliLinterAdapterOptions) {
     this.executablePath =
@@ -23,6 +26,22 @@ export class MermaidCliLinterAdapter implements IMermaidLinterGateway {
       process.env.MMDC_BIN_PATH ??
       path.resolve(process.cwd(), 'node_modules/.bin/mmdc');
     this.timeoutMs = options?.timeoutMs ?? 15_000;
+
+    const configured = options?.puppeteerConfigPath ?? process.env.PUPPETEER_CONFIG_PATH;
+    if (configured && existsSync(configured)) {
+      this.puppeteerConfigPath = configured;
+    } else {
+      const candidates = [
+        path.resolve(process.cwd(), 'puppeteer-config.json'),
+        path.resolve(process.cwd(), 'apps/orchestrator/puppeteer-config.json'),
+      ];
+      for (const candidate of candidates) {
+        if (existsSync(candidate)) {
+          this.puppeteerConfigPath = candidate;
+          break;
+        }
+      }
+    }
   }
 
   async validate(mermaidCode: string): Promise<MermaidValidationResult> {
@@ -67,6 +86,10 @@ export class MermaidCliLinterAdapter implements IMermaidLinterGateway {
   ): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
     return new Promise((resolve) => {
       const args = ['-i', inputFile, '-o', outputFile, '-e', 'svg'];
+      if (this.puppeteerConfigPath) {
+        args.push('-p', this.puppeteerConfigPath);
+      }
+
       let stdout = '';
       let stderr = '';
       let timedOut = false;
