@@ -1,0 +1,21 @@
+{
+  "name": "@solutions-studio/orchestrator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run --dir test/unit",
+    "test:integration": "vitest run --dir test/integration",
+    "tracer": "tsx scripts/run-tracer.ts"
+  },
+  "dependencies": {
+    "@mermaid-js/mermaid-cli": "^11.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.5",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.2"
+  }
+}
