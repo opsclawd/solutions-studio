@@ -10,7 +10,7 @@
     "dev:web": "pnpm --filter @solutions-studio/web dev",
     "tracer": "pnpm --filter @solutions-studio/orchestrator tracer",
     "lint": "eslint .",
-    "typecheck": "pnpm --filter @solutions-studio/orchestrator typecheck && pnpm --filter @solutions-studio/web typecheck",
+    "typecheck": "pnpm -r --if-present typecheck",
     "format": "prettier --check .",
     "format:fix": "prettier --write .",
     "postinstall": "node scripts/check-hooks.js || true"

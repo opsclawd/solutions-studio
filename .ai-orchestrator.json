@@ -5,10 +5,8 @@
       "pnpm lint",
       "pnpm typecheck",
       "pnpm format",
-      "pnpm --filter @solutions-studio/orchestrator build",
-      "pnpm --filter @solutions-studio/web build",
-      "pnpm --filter @solutions-studio/orchestrator test",
-      "pnpm --filter @solutions-studio/web test"
+      "pnpm -r --if-present build",
+      "pnpm -r --if-present test"
     ],
     "tiers": [
       ["pnpm format:fix"],
@@ -16,10 +14,8 @@
         "pnpm lint",
         "pnpm typecheck",
         "pnpm format",
-        "pnpm --filter @solutions-studio/orchestrator build",
-        "pnpm --filter @solutions-studio/web build",
-        "pnpm --filter @solutions-studio/orchestrator test",
-        "pnpm --filter @solutions-studio/web test"
+        "pnpm -r --if-present build",
+        "pnpm -r --if-present test"
       ]
     ],
     "timeout": 600
