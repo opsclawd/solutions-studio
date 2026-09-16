@@ -8,10 +8,16 @@ import type {
   RequirementRevisionDtoSchema,
   RequirementsBaselineDtoSchema,
   CandidateFindingDtoSchema,
-  InstantDtoSchema
+  InstantDtoSchema,
+  SourceTypeSchema,
+  RequirementCategorySchema,
+  RequirementOriginSchema
 } from './schemas.js';
 
 export type InstantDto = z.infer<typeof InstantDtoSchema>;
+export type SourceTypeDto = z.infer<typeof SourceTypeSchema>;
+export type RequirementCategoryDto = z.infer<typeof RequirementCategorySchema>;
+export type RequirementOriginDto = z.infer<typeof RequirementOriginSchema>;
 export type EvidenceLocatorDto = z.infer<typeof EvidenceLocatorDtoSchema>;
 export type EvidenceReferenceDto = z.infer<typeof EvidenceReferenceDtoSchema>;
 export type SourceDto = z.infer<typeof SourceDtoSchema>;

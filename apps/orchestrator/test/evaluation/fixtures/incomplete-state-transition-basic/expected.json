@@ -1,0 +1,59 @@
+{
+  "fixtureId": "incomplete-state-transition-basic",
+  "version": "1.0.0",
+  "title": "Incomplete Order State Transition Path",
+  "description": "Tests discovery of dead-end lifecycle states where orders entering FULFILLING have no permitted transitions if out-of-stock or fulfillment errors occur.",
+  "categories": ["incomplete-state-transitions"],
+  "canonicalMessyPackage": false,
+  "sources": [
+    {
+      "sourceRevisionId": "ORDER-LIFECYCLE-001-R1",
+      "sourceId": "ORDER-LIFECYCLE-001",
+      "sourceType": "sop",
+      "revision": 1,
+      "path": "source.md"
+    }
+  ],
+  "expectedRequirements": [
+    {
+      "requirementKey": "REQ-ORDER-STATE-01",
+      "category": "lifecycle-state",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "ORDER-LIFECYCLE-001-R1",
+          "locator": "state-machine-definitions#1.2"
+        }
+      ],
+      "statementPattern": ".*Order lifecycle states are defined as.*"
+    },
+    {
+      "requirementKey": "REQ-ORDER-STATE-02",
+      "category": "lifecycle-state",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "ORDER-LIFECYCLE-001-R1",
+          "locator": "permitted-transitions#2.3"
+        }
+      ],
+      "statementPattern": ".*FULFILLING transitions to SHIPPED.*"
+    }
+  ],
+  "expectedFindings": [
+    {
+      "findingKey": "FINDING-TRANS-01",
+      "category": "incomplete-state-transitions",
+      "type": "incomplete-state-machine",
+      "evidence": [
+        {
+          "sourceRevisionId": "ORDER-LIFECYCLE-001-R1",
+          "locator": "permitted-transitions#2.3"
+        }
+      ],
+      "relatedRequirementKeys": ["REQ-ORDER-STATE-01", "REQ-ORDER-STATE-02"],
+      "rationale": "State FULFILLING only defines a forward transition to SHIPPED. If warehouse fulfillment fails, inventory is unavailable, or a customer cancels, no exit path is specified, leaving orders permanently stuck."
+    }
+  ],
+  "expectedNonFindings": []
+}

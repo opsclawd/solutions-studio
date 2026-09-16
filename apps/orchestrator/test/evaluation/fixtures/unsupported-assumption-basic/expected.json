@@ -1,0 +1,47 @@
+{
+  "fixtureId": "unsupported-assumption-basic",
+  "version": "1.0.0",
+  "title": "Unsupported High-Availability and Zero-Latency Assumption",
+  "description": "Tests discovery of unvalidated critical operational assumptions regarding third-party/legacy reliability (100% uptime, zero downtime windows, sub-50ms SLA).",
+  "categories": ["unsupported-assumptions"],
+  "canonicalMessyPackage": false,
+  "sources": [
+    {
+      "sourceRevisionId": "MAINFRAME-INT-001-R1",
+      "sourceId": "MAINFRAME-INT-001",
+      "sourceType": "sop",
+      "revision": 1,
+      "path": "source.md"
+    }
+  ],
+  "expectedRequirements": [
+    {
+      "requirementKey": "REQ-ASSUME-01",
+      "category": "nfr",
+      "origin": "ASSUMED",
+      "evidence": [
+        {
+          "sourceRevisionId": "MAINFRAME-INT-001-R1",
+          "locator": "system-topology-and-assumptions#1.4"
+        }
+      ],
+      "statementPattern": ".*operates with 100% network uptime.*responds synchronously within 50 milliseconds.*"
+    }
+  ],
+  "expectedFindings": [
+    {
+      "findingKey": "FINDING-ASSUME-01",
+      "category": "unsupported-assumptions",
+      "type": "unsupported-assumption",
+      "evidence": [
+        {
+          "sourceRevisionId": "MAINFRAME-INT-001-R1",
+          "locator": "system-topology-and-assumptions#1.4"
+        }
+      ],
+      "relatedRequirementKeys": ["REQ-ASSUME-01"],
+      "rationale": "System design relies on unverified, high-risk assumptions of 100% network availability and sub-50ms latency for an on-premise legacy mainframe with no fallback mode or circuit breaker."
+    }
+  ],
+  "expectedNonFindings": []
+}

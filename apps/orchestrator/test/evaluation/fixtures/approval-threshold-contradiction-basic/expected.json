@@ -1,0 +1,63 @@
+{
+  "fixtureId": "approval-threshold-contradiction-basic",
+  "version": "1.0.0",
+  "title": "Basic Single-Source Approval Threshold Contradiction",
+  "description": "Tests discovery of contradictory VP approval thresholds ($50,000 vs $25,000) defined within different sections of the same standard operating procedure, where Section 2.1 permits team manager authorization up to $50,000 without VP approval while Section 4.3 mandates VP sign-off above $25,000.",
+  "categories": ["contradictory-approval-thresholds"],
+  "canonicalMessyPackage": false,
+  "sources": [
+    {
+      "sourceRevisionId": "SOP-PROC-001-R1",
+      "sourceId": "SOP-PROC-001",
+      "sourceType": "sop",
+      "revision": 1,
+      "path": "source.md"
+    }
+  ],
+  "expectedRequirements": [
+    {
+      "requirementKey": "REQ-APP-01",
+      "category": "business-rule",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "SOP-PROC-001-R1",
+          "locator": "procurement-thresholds#2.1"
+        }
+      ],
+      "statementPattern": ".*up to and including \\$50,000 may be authorized.*without Department Vice President approval.*"
+    },
+    {
+      "requirementKey": "REQ-APP-02",
+      "category": "business-rule",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "SOP-PROC-001-R1",
+          "locator": "department-sign-off-rules#4.3"
+        }
+      ],
+      "statementPattern": ".*greater than \\$25,000.*Vice President.*"
+    }
+  ],
+  "expectedFindings": [
+    {
+      "findingKey": "FINDING-APP-01",
+      "category": "contradictory-approval-thresholds",
+      "type": "contradiction",
+      "evidence": [
+        {
+          "sourceRevisionId": "SOP-PROC-001-R1",
+          "locator": "procurement-thresholds#2.1"
+        },
+        {
+          "sourceRevisionId": "SOP-PROC-001-R1",
+          "locator": "department-sign-off-rules#4.3"
+        }
+      ],
+      "relatedRequirementKeys": ["REQ-APP-01", "REQ-APP-02"],
+      "rationale": "Section 2.1 permits purchase orders up to $50,000 to be authorized without Department Vice President approval, whereas Section 4.3 mandates Vice President sign-off for any order greater than $25,000, creating mutually exclusive approval rules for transactions between $25,000 and $50,000."
+    }
+  ],
+  "expectedNonFindings": []
+}

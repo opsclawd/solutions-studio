@@ -1,0 +1,47 @@
+{
+  "fixtureId": "undefined-cardinality-basic",
+  "version": "1.0.0",
+  "title": "Undefined Cardinality in Billing Instrument Hierarchy",
+  "description": "Tests discovery of unbounded entity relations where collections ('multiple billing profiles', 'multiple credit cards') lack explicit minimum/maximum cardinality constraints.",
+  "categories": ["undefined-cardinality"],
+  "canonicalMessyPackage": false,
+  "sources": [
+    {
+      "sourceRevisionId": "ORG-MODEL-001-R1",
+      "sourceId": "ORG-MODEL-001",
+      "sourceType": "schema",
+      "revision": 1,
+      "path": "source.md"
+    }
+  ],
+  "expectedRequirements": [
+    {
+      "requirementKey": "REQ-CARD-01",
+      "category": "data-constraint",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "ORG-MODEL-001-R1",
+          "locator": "entity-relations#2.1"
+        }
+      ],
+      "statementPattern": ".*attach multiple billing profiles.*multiple authorized corporate credit cards.*"
+    }
+  ],
+  "expectedFindings": [
+    {
+      "findingKey": "FINDING-CARD-01",
+      "category": "undefined-cardinality",
+      "type": "undefined-cardinality",
+      "evidence": [
+        {
+          "sourceRevisionId": "ORG-MODEL-001-R1",
+          "locator": "entity-relations#2.1"
+        }
+      ],
+      "relatedRequirementKeys": ["REQ-CARD-01"],
+      "rationale": "The relationship between organizations, billing profiles, and credit cards specifies 'multiple' without defining bounds (minimum zero allowed? maximum cap? pagination limits?)."
+    }
+  ],
+  "expectedNonFindings": []
+}

@@ -1,14 +1,14 @@
 [
   {
-    "path": "apps/web/tsconfig.json",
-    "beforeHash": "6697ee199de15f7bb5ba8a5d5d7d1c8d5ecdc26245b4038e8a04b8b52e0281f6",
-    "afterHash": "cd2b76f68ee9f22a334eb256692e04dc8b42254a647695d1a96f545951d2abb3",
+    "path": ".ai-orchestrator.json",
+    "beforeHash": "1a46b27b2ee3314b110fb1659534c433cdb2e0e1076445a21e25c9932df9e96d",
+    "afterHash": "719ff6a4a8b2b12bfdb46a09e2dbb151c4265f69bd173586ed947709632d228d",
     "diagnostic": "1 validation command(s) failed: typecheck ( ELIFECYCLE  Command failed with exit code 2.). See validate/ logs."
   },
   {
     "path": "validate/failure.json",
-    "beforeHash": "1e266896e288f8ccc7ee0a2bbccfd9e0089f18f03f9832935e14e4db6280221a",
-    "afterHash": "4e1781dec394d215e964b52f00b4dede464fff2cec6407e056d46032814366ec",
+    "beforeHash": "68626c01c48e7603b38537e282dc045ed415abf5d96cecdfb1900bc6a7a73147",
+    "afterHash": "2f5aa095580aff79de77bd5b072ee10071317714777172f3a8adf0b5b4c1e138",
     "diagnostic": "1 validation command(s) failed: typecheck ( ELIFECYCLE  Command failed with exit code 2.). See validate/ logs."
   }
 ]

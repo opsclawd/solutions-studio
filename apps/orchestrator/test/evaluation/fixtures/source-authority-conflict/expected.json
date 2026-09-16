@@ -1,0 +1,70 @@
+{
+  "fixtureId": "source-authority-conflict",
+  "version": "1.0.0",
+  "title": "Authority Conflict Between Field Practice and Information Security Policy",
+  "description": "Tests discovery of contradictions arising from different source authorities, where operational interview evidence reports practices that directly violate authoritative corporate security policy.",
+  "categories": ["source-authority-conflict"],
+  "canonicalMessyPackage": false,
+  "sources": [
+    {
+      "sourceRevisionId": "INT-FIELD-001-R1",
+      "sourceId": "INT-FIELD-001",
+      "sourceType": "interview",
+      "revision": 1,
+      "path": "source.1.md"
+    },
+    {
+      "sourceRevisionId": "POL-SEC-001-R1",
+      "sourceId": "POL-SEC-001",
+      "sourceType": "policy",
+      "revision": 1,
+      "path": "source.2.md"
+    }
+  ],
+  "expectedRequirements": [
+    {
+      "requirementKey": "REQ-INTERVIEW-PRACTICE",
+      "category": "exception",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "INT-FIELD-001-R1",
+          "locator": "telemetry-retrieval#3.2"
+        }
+      ],
+      "statementPattern": ".*unencrypted consumer USB flash drives.*"
+    },
+    {
+      "requirementKey": "REQ-POLICY-RULE",
+      "category": "business-rule",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "POL-SEC-001-R1",
+          "locator": "removable-media-standards#1.1"
+        }
+      ],
+      "statementPattern": ".*unencrypted removable storage devices be connected.*strictly prohibited.*"
+    }
+  ],
+  "expectedFindings": [
+    {
+      "findingKey": "FINDING-AUTH-CONFLICT-01",
+      "category": "source-authority-conflict",
+      "type": "contradiction",
+      "evidence": [
+        {
+          "sourceRevisionId": "INT-FIELD-001-R1",
+          "locator": "telemetry-retrieval#3.2"
+        },
+        {
+          "sourceRevisionId": "POL-SEC-001-R1",
+          "locator": "removable-media-standards#1.1"
+        }
+      ],
+      "relatedRequirementKeys": ["REQ-INTERVIEW-PRACTICE", "REQ-POLICY-RULE"],
+      "rationale": "Field engineering interview describes routine use of unencrypted consumer USB drives to transfer logs, which directly violates the mandatory enterprise information security policy prohibiting unencrypted removable media."
+    }
+  ],
+  "expectedNonFindings": []
+}

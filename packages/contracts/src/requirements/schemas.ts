@@ -15,6 +15,10 @@ export const InstantDtoSchema = z.string().refine(isValidInstant, {
   message: 'Invalid RFC 3339/ISO-8601 instant string with timezone and calendar validity'
 });
 
+export const SourceTypeSchema = z.enum(SOURCE_TYPES);
+export const RequirementCategorySchema = z.enum(REQUIREMENT_CATEGORIES);
+export const RequirementOriginSchema = z.enum(REQUIREMENT_ORIGINS);
+
 export const EvidenceLocatorDtoSchema = z.string().min(1);
 
 export const EvidenceReferenceDtoSchema = z.object({
@@ -24,7 +28,7 @@ export const EvidenceReferenceDtoSchema = z.object({
 
 export const SourceDtoSchema = z.object({
   id: z.string().min(1),
-  sourceType: z.enum(SOURCE_TYPES)
+  sourceType: SourceTypeSchema
 });
 
 export const RequirementDtoSchema = z.object({

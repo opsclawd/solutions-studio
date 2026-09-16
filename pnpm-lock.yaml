@@ -29,6 +29,12 @@ importers:
       '@mermaid-js/mermaid-cli':
         specifier: ^11.4.2
         version: 11.17.0(@types/react@18.3.31)(puppeteer@25.11.0)(tailwindcss@4.3.3)
+      '@solutions-studio/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@solutions-studio/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
     devDependencies:
       '@types/node':
         specifier: ^22.7.5
