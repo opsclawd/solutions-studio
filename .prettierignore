@@ -1,0 +1,13 @@
+dist
+node_modules
+.next
+coverage
+test-results
+playwright-report
+chrome-headless-shell
+pnpm-lock.yaml
+.ai-runs
+.ai-worktrees
+.ai-tmp
+# Deliberately malformed/adversarial test payloads, not application code (see eslint.config.js)
+**/test/fixtures/**

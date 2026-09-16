@@ -5,7 +5,7 @@ import {
   AuthenticationOrConfigError,
   NonZeroExitError,
   MalformedOutputError,
-  CliExecutionTimeoutError,
+  CliExecutionTimeoutError
 } from '../../src/application/ports/generation/GenerationErrors.js';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
@@ -14,12 +14,10 @@ import * as os from 'node:os';
 describe('OpenCodeCliAdapter', () => {
   it('throws ExecutableNotFoundError when binary does not exist', async () => {
     const adapter = new OpenCodeCliAdapter({
-      executablePath: '/tmp/non-existent-opencode-binary-xyz',
+      executablePath: '/tmp/non-existent-opencode-binary-xyz'
     });
 
-    await expect(
-      adapter.generate({ prompt: 'test' })
-    ).rejects.toThrow(ExecutableNotFoundError);
+    await expect(adapter.generate({ prompt: 'test' })).rejects.toThrow(ExecutableNotFoundError);
   });
 
   it('parses NDJSON stream and strips <think> blocks', async () => {
@@ -36,7 +34,7 @@ exit 0
 
     try {
       const adapter = new OpenCodeCliAdapter({
-        executablePath: tempScript,
+        executablePath: tempScript
       });
 
       const result = await adapter.generate({ prompt: 'test' });
@@ -49,10 +47,7 @@ exit 0
   });
 
   it('throws MalformedOutputError when structured NDJSON contains no text event', async () => {
-    const tempScript = path.join(
-      os.tmpdir(),
-      `mock-opencode-notext-${Date.now()}.sh`
-    );
+    const tempScript = path.join(os.tmpdir(), `mock-opencode-notext-${Date.now()}.sh`);
     const scriptContent = `#!/bin/sh
 cat << 'EOF'
 {"type":"step_start","timestamp":100}
@@ -64,22 +59,17 @@ exit 0
 
     try {
       const adapter = new OpenCodeCliAdapter({
-        executablePath: tempScript,
+        executablePath: tempScript
       });
 
-      await expect(
-        adapter.generate({ prompt: 'test' })
-      ).rejects.toThrow(MalformedOutputError);
+      await expect(adapter.generate({ prompt: 'test' })).rejects.toThrow(MalformedOutputError);
     } finally {
       await fs.unlink(tempScript).catch(() => {});
     }
   });
 
   it('throws MalformedOutputError when text event contains only thinking tags and no usable text', async () => {
-    const tempScript = path.join(
-      os.tmpdir(),
-      `mock-opencode-onlythink-${Date.now()}.sh`
-    );
+    const tempScript = path.join(os.tmpdir(), `mock-opencode-onlythink-${Date.now()}.sh`);
     const scriptContent = `#!/bin/sh
 cat << 'EOF'
 {"type":"step_start","timestamp":100}
@@ -92,12 +82,10 @@ exit 0
 
     try {
       const adapter = new OpenCodeCliAdapter({
-        executablePath: tempScript,
+        executablePath: tempScript
       });
 
-      await expect(
-        adapter.generate({ prompt: 'test' })
-      ).rejects.toThrow(MalformedOutputError);
+      await expect(adapter.generate({ prompt: 'test' })).rejects.toThrow(MalformedOutputError);
     } finally {
       await fs.unlink(tempScript).catch(() => {});
     }
@@ -112,12 +100,10 @@ exit 0
 
     try {
       const adapter = new OpenCodeCliAdapter({
-        executablePath: tempScript,
+        executablePath: tempScript
       });
 
-      await expect(
-        adapter.generate({ prompt: 'test' })
-      ).rejects.toThrow(MalformedOutputError);
+      await expect(adapter.generate({ prompt: 'test' })).rejects.toThrow(MalformedOutputError);
     } finally {
       await fs.unlink(tempScript).catch(() => {});
     }
@@ -133,12 +119,12 @@ exit 1
 
     try {
       const adapter = new OpenCodeCliAdapter({
-        executablePath: tempScript,
+        executablePath: tempScript
       });
 
-      await expect(
-        adapter.generate({ prompt: 'test' })
-      ).rejects.toThrow(AuthenticationOrConfigError);
+      await expect(adapter.generate({ prompt: 'test' })).rejects.toThrow(
+        AuthenticationOrConfigError
+      );
     } finally {
       await fs.unlink(tempScript).catch(() => {});
     }
@@ -154,12 +140,10 @@ exit 99
 
     try {
       const adapter = new OpenCodeCliAdapter({
-        executablePath: tempScript,
+        executablePath: tempScript
       });
 
-      await expect(
-        adapter.generate({ prompt: 'test' })
-      ).rejects.toThrow(NonZeroExitError);
+      await expect(adapter.generate({ prompt: 'test' })).rejects.toThrow(NonZeroExitError);
     } finally {
       await fs.unlink(tempScript).catch(() => {});
     }
@@ -176,12 +160,10 @@ exit 0
     try {
       const adapter = new OpenCodeCliAdapter({
         executablePath: tempScript,
-        defaultTimeoutMs: 100,
+        defaultTimeoutMs: 100
       });
 
-      await expect(
-        adapter.generate({ prompt: 'test' })
-      ).rejects.toThrow(CliExecutionTimeoutError);
+      await expect(adapter.generate({ prompt: 'test' })).rejects.toThrow(CliExecutionTimeoutError);
     } finally {
       await fs.unlink(tempScript).catch(() => {});
     }

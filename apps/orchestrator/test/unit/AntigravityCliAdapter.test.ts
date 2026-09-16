@@ -5,7 +5,7 @@ import {
   AuthenticationOrConfigError,
   NonZeroExitError,
   MalformedOutputError,
-  CliExecutionTimeoutError,
+  CliExecutionTimeoutError
 } from '../../src/application/ports/generation/GenerationErrors.js';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
@@ -14,12 +14,10 @@ import * as os from 'node:os';
 describe('AntigravityCliAdapter', () => {
   it('throws ExecutableNotFoundError when binary does not exist', async () => {
     const adapter = new AntigravityCliAdapter({
-      executablePath: '/tmp/non-existent-agy-binary-xyz',
+      executablePath: '/tmp/non-existent-agy-binary-xyz'
     });
 
-    await expect(
-      adapter.generate({ prompt: 'test' })
-    ).rejects.toThrow(ExecutableNotFoundError);
+    await expect(adapter.generate({ prompt: 'test' })).rejects.toThrow(ExecutableNotFoundError);
   });
 
   it('parses valid JSON response from agy CLI', async () => {
@@ -35,7 +33,7 @@ exit 0
 
     try {
       const adapter = new AntigravityCliAdapter({
-        executablePath: tempScript,
+        executablePath: tempScript
       });
 
       const result = await adapter.generate({ prompt: 'test' });
@@ -58,12 +56,10 @@ exit 0
 
     try {
       const adapter = new AntigravityCliAdapter({
-        executablePath: tempScript,
+        executablePath: tempScript
       });
 
-      await expect(
-        adapter.generate({ prompt: 'test' })
-      ).rejects.toThrow(MalformedOutputError);
+      await expect(adapter.generate({ prompt: 'test' })).rejects.toThrow(MalformedOutputError);
     } finally {
       await fs.unlink(tempScript).catch(() => {});
     }
@@ -79,12 +75,12 @@ exit 1
 
     try {
       const adapter = new AntigravityCliAdapter({
-        executablePath: tempScript,
+        executablePath: tempScript
       });
 
-      await expect(
-        adapter.generate({ prompt: 'test' })
-      ).rejects.toThrow(AuthenticationOrConfigError);
+      await expect(adapter.generate({ prompt: 'test' })).rejects.toThrow(
+        AuthenticationOrConfigError
+      );
     } finally {
       await fs.unlink(tempScript).catch(() => {});
     }
@@ -100,12 +96,10 @@ exit 42
 
     try {
       const adapter = new AntigravityCliAdapter({
-        executablePath: tempScript,
+        executablePath: tempScript
       });
 
-      await expect(
-        adapter.generate({ prompt: 'test' })
-      ).rejects.toThrow(NonZeroExitError);
+      await expect(adapter.generate({ prompt: 'test' })).rejects.toThrow(NonZeroExitError);
     } finally {
       await fs.unlink(tempScript).catch(() => {});
     }
@@ -122,12 +116,10 @@ exit 0
     try {
       const adapter = new AntigravityCliAdapter({
         executablePath: tempScript,
-        defaultTimeoutMs: 100,
+        defaultTimeoutMs: 100
       });
 
-      await expect(
-        adapter.generate({ prompt: 'test' })
-      ).rejects.toThrow(CliExecutionTimeoutError);
+      await expect(adapter.generate({ prompt: 'test' })).rejects.toThrow(CliExecutionTimeoutError);
     } finally {
       await fs.unlink(tempScript).catch(() => {});
     }

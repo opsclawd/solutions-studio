@@ -1,4 +1,4 @@
-import { IGenerationGateway } from '../../application/ports/generation/IGenerationGateway.js';
+import type { IGenerationGateway } from '../../application/ports/generation/IGenerationGateway.js';
 import { AntigravityCliAdapter } from './AntigravityCliAdapter.js';
 import { OpenCodeCliAdapter } from './OpenCodeCliAdapter.js';
 
@@ -26,14 +26,14 @@ export class GatewayFactory {
         return new AntigravityCliAdapter({
           executablePath: config?.agyBinPath ?? process.env.AGY_BIN_PATH,
           defaultTimeoutMs: config?.timeoutMs,
-          cwd: config?.cwd,
+          cwd: config?.cwd
         });
 
       case 'opencode':
         return new OpenCodeCliAdapter({
           executablePath: config?.opencodeBinPath ?? process.env.OPENCODE_BIN_PATH,
           defaultTimeoutMs: config?.timeoutMs,
-          cwd: config?.cwd,
+          cwd: config?.cwd
         });
 
       case 'fake':

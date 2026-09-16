@@ -7,10 +7,7 @@ describe('MermaidCliLinterAdapter', () => {
   const adapter = new MermaidCliLinterAdapter();
 
   it('validates a valid Mermaid flowchart fixture successfully', async () => {
-    const fixturePath = path.resolve(
-      process.cwd(),
-      'test/fixtures/mermaid/valid-flowchart.mmd'
-    );
+    const fixturePath = path.resolve(process.cwd(), 'test/fixtures/mermaid/valid-flowchart.mmd');
     const validCode = await fs.readFile(fixturePath, 'utf-8');
 
     const result = await adapter.validate(validCode);
@@ -19,10 +16,7 @@ describe('MermaidCliLinterAdapter', () => {
   }, 15_000);
 
   it('detects syntax error in an invalid Mermaid fixture and captures error message', async () => {
-    const fixturePath = path.resolve(
-      process.cwd(),
-      'test/fixtures/mermaid/invalid-syntax.mmd'
-    );
+    const fixturePath = path.resolve(process.cwd(), 'test/fixtures/mermaid/invalid-syntax.mmd');
     const invalidCode = await fs.readFile(fixturePath, 'utf-8');
 
     const result = await adapter.validate(invalidCode);

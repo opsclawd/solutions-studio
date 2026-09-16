@@ -4,11 +4,11 @@ import path from 'path';
 export default defineConfig({
   test: {
     environment: 'node',
-    globals: true,
+    globals: true
   },
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
-  },
+      '@': path.resolve(__dirname, './src')
+    }
+  }
 });

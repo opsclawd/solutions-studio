@@ -35,11 +35,7 @@ export interface CompilerOptions {
   maxLoopDurationMs?: number;
 }
 
-export const DEFAULT_ALLOWED_MODULES = [
-  'react',
-  'react-dom',
-  'react/jsx-runtime',
-];
+export const DEFAULT_ALLOWED_MODULES = ['react', 'react-dom', 'react/jsx-runtime'];
 
 /**
  * Babel AST transform plugin that inserts execution-time guards into all loops (while, for, do-while).
@@ -47,6 +43,10 @@ export const DEFAULT_ALLOWED_MODULES = [
  * preventing untrusted code from freezing the browser renderer thread.
  */
 export function createLoopTimeoutPlugin(maxDurationMs: number = 1000) {
+  // @babel/standalone's type declarations don't export a precise PluginObj/NodePath
+  // shape for this visitor pattern; `any` here is a Babel plugin-API interop boundary,
+  // not application logic.
+  /* eslint-disable @typescript-eslint/no-explicit-any */
   return function loopTimeoutPlugin({ types: t }: any) {
     let loopId = 0;
     return {
@@ -61,11 +61,8 @@ export function createLoopTimeoutPlugin(maxDurationMs: number = 1000) {
           const initDecl = t.variableDeclaration('const', [
             t.variableDeclarator(
               startVar,
-              t.callExpression(
-                t.memberExpression(t.identifier('Date'), t.identifier('now')),
-                []
-              )
-            ),
+              t.callExpression(t.memberExpression(t.identifier('Date'), t.identifier('now')), [])
+            )
           ]);
 
           const checkStmt = t.ifStatement(
@@ -73,10 +70,7 @@ export function createLoopTimeoutPlugin(maxDurationMs: number = 1000) {
               '>',
               t.binaryExpression(
                 '-',
-                t.callExpression(
-                  t.memberExpression(t.identifier('Date'), t.identifier('now')),
-                  []
-                ),
+                t.callExpression(t.memberExpression(t.identifier('Date'), t.identifier('now')), []),
                 startVar
               ),
               t.numericLiteral(maxDurationMs)
@@ -85,7 +79,7 @@ export function createLoopTimeoutPlugin(maxDurationMs: number = 1000) {
               t.newExpression(t.identifier('Error'), [
                 t.stringLiteral(
                   `Infinite loop detected: synchronous loop exceeded execution threshold of ${maxDurationMs}ms.`
-                ),
+                )
               ])
             )
           );
@@ -100,17 +94,21 @@ export function createLoopTimeoutPlugin(maxDurationMs: number = 1000) {
           }
 
           path.insertBefore(initDecl);
-        },
-      },
+        }
+      }
     };
   };
+  /* eslint-enable @typescript-eslint/no-explicit-any */
 }
 
 /**
  * Validates that all import statements in the source code target only whitelisted modules.
  * Returns an error message if an unapproved import is detected, or null if valid.
  */
-export function validateImports(code: string, allowedModules: string[] = DEFAULT_ALLOWED_MODULES): string | null {
+export function validateImports(
+  code: string,
+  allowedModules: string[] = DEFAULT_ALLOWED_MODULES
+): string | null {
   // Matches: import ... from 'module' or import ... from "module"
   const importRegex = /import\s+(?:[\w\s{},*]*\s+from\s+)?['"]([^'"]+)['"]/g;
   let match: RegExpExecArray | null;
@@ -141,8 +139,8 @@ export function compileTsx(sourceCode: string, options: CompilerOptions = {}): C
     return {
       success: false,
       error: {
-        message: 'Source code cannot be empty.',
-      },
+        message: 'Source code cannot be empty.'
+      }
     };
   }
 
@@ -153,8 +151,8 @@ export function compileTsx(sourceCode: string, options: CompilerOptions = {}): C
     return {
       success: false,
       error: {
-        message: importError,
-      },
+        message: importError
+      }
     };
   }
 
@@ -166,26 +164,24 @@ export function compileTsx(sourceCode: string, options: CompilerOptions = {}): C
       presets: [
         ['env', { modules: 'commonjs', targets: { esmodules: true } }],
         ['react', { runtime: 'classic' }],
-        ['typescript', { isTSX: true, allExtensions: true }],
+        ['typescript', { isTSX: true, allExtensions: true }]
       ],
-      plugins: [
-        createLoopTimeoutPlugin(maxLoopDuration),
-      ],
-      compact: false,
+      plugins: [createLoopTimeoutPlugin(maxLoopDuration)],
+      compact: false
     });
 
     if (!transformed.code) {
       return {
         success: false,
         error: {
-          message: 'Babel transformation produced empty code.',
-        },
+          message: 'Babel transformation produced empty code.'
+        }
       };
     }
 
     return {
       success: true,
-      code: transformed.code,
+      code: transformed.code
     };
   } catch (err: unknown) {
     const babelErr = err as {
@@ -205,8 +201,8 @@ export function compileTsx(sourceCode: string, options: CompilerOptions = {}): C
         line: babelErr.loc?.line,
         column: babelErr.loc?.column,
         snippet: babelErr.codeFrame,
-        rawError: String(err),
-      },
+        rawError: String(err)
+      }
     };
   }
 }

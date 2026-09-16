@@ -1,15 +1,15 @@
 import { spawn } from 'node:child_process';
-import {
+import type {
   IGenerationGateway,
   GenerationRequest,
-  GenerationResult,
+  GenerationResult
 } from '../../application/ports/generation/IGenerationGateway.js';
 import {
   ExecutableNotFoundError,
   AuthenticationOrConfigError,
   CliExecutionTimeoutError,
   NonZeroExitError,
-  MalformedOutputError,
+  MalformedOutputError
 } from '../../application/ports/generation/GenerationErrors.js';
 
 export interface AntigravityCliAdapterOptions {
@@ -52,13 +52,7 @@ export class AntigravityCliAdapter implements IGenerationGateway {
       'System: You are an automated artifact generation engine. Output ONLY the raw requested text without using any tools, running commands, or providing conversational commentary.';
     const promptText = `${systemInstruction}\n\n${request.prompt}`;
 
-    const args = [
-      '--output-format',
-      'json',
-      '--dangerously-skip-permissions',
-      '-p',
-      promptText,
-    ];
+    const args = ['--output-format', 'json', '--dangerously-skip-permissions', '-p', promptText];
 
     return new Promise((resolve, reject) => {
       let stdoutData = '';
@@ -67,7 +61,7 @@ export class AntigravityCliAdapter implements IGenerationGateway {
 
       const child = spawn(this.executablePath, args, {
         cwd: this.cwd,
-        env: { ...process.env },
+        env: { ...process.env }
       });
 
       child.stdin?.end();
@@ -101,9 +95,7 @@ export class AntigravityCliAdapter implements IGenerationGateway {
 
         if (code !== 0) {
           const combinedErr = `${stderrData}\n${stdoutData}`.trim();
-          if (
-            /auth|unauthorized|api[ _-]?key|login|credentials|token/i.test(combinedErr)
-          ) {
+          if (/auth|unauthorized|api[ _-]?key|login|credentials|token/i.test(combinedErr)) {
             return reject(new AuthenticationOrConfigError(combinedErr));
           }
           return reject(new NonZeroExitError(code, stderrData, stdoutData));
@@ -113,9 +105,7 @@ export class AntigravityCliAdapter implements IGenerationGateway {
           // agy stdout might have leading/trailing newlines or diagnostic lines
           const trimmedStdout = stdoutData.trim();
           if (!trimmedStdout) {
-            return reject(
-              new MalformedOutputError('agy produced empty stdout', stdoutData)
-            );
+            return reject(new MalformedOutputError('agy produced empty stdout', stdoutData));
           }
 
           // In case of any leading warnings before the JSON object, extract JSON substring
@@ -159,11 +149,11 @@ export class AntigravityCliAdapter implements IGenerationGateway {
                     input: parsed.usage.input_tokens,
                     output: parsed.usage.output_tokens,
                     thinking: parsed.usage.thinking_tokens,
-                    total: parsed.usage.total_tokens,
+                    total: parsed.usage.total_tokens
                   }
                 : undefined,
-              raw: parsed,
-            },
+              raw: parsed
+            }
           });
         } catch (err) {
           reject(

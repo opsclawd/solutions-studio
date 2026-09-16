@@ -1,7 +1,7 @@
-import {
+import type {
   IGenerationGateway,
   GenerationRequest,
-  GenerationResult,
+  GenerationResult
 } from '../../src/application/ports/generation/IGenerationGateway.js';
 
 export type ScriptedResponse =
@@ -13,7 +13,7 @@ export class FakeGenerationGateway implements IGenerationGateway {
   private responseQueue: ScriptedResponse[] = [];
   private defaultResponse: ScriptedResponse = {
     type: 'success',
-    text: 'graph TD;\n  A[Start] --> B[Finish];',
+    text: 'graph TD;\n  A[Start] --> B[Finish];'
   };
 
   constructor(initialResponses?: (string | ScriptedResponse)[]) {
@@ -58,8 +58,8 @@ export class FakeGenerationGateway implements IGenerationGateway {
       metadata: nextResponse.metadata ?? {
         provider: 'fake',
         durationMs: 5,
-        tokens: { input: 10, output: 20, total: 30 },
-      },
+        tokens: { input: 10, output: 20, total: 30 }
+      }
     };
   }
 

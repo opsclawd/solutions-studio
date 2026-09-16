@@ -21,7 +21,11 @@ export default function SecurityMessageSpoofingFixture() {
     let exposedTokens = 0;
     for (const script of scripts) {
       const text = script.textContent || '';
-      if (text.includes('HARNESS_TOKEN') || text.includes('sandboxToken') || /tok_[a-z0-9]+/i.test(text)) {
+      if (
+        text.includes('HARNESS_TOKEN') ||
+        text.includes('sandboxToken') ||
+        /tok_[a-z0-9]+/i.test(text)
+      ) {
         exposedTokens++;
       }
     }
@@ -30,32 +34,41 @@ export default function SecurityMessageSpoofingFixture() {
     // 2. Deliberately attempt to spoof authoritative lifecycle events to window.parent
     try {
       // Attempt to spoof SANDBOX_RENDERED with a bogus render time
-      window.parent.postMessage({
-        source: 'solutions-studio-sandbox',
-        version: 'solutions-studio-sandbox-v1',
-        type: 'SANDBOX_RENDERED',
-        renderTimeMs: 999999,
-        executionId: 999,
-      }, '*');
+      window.parent.postMessage(
+        {
+          source: 'solutions-studio-sandbox',
+          version: 'solutions-studio-sandbox-v1',
+          type: 'SANDBOX_RENDERED',
+          renderTimeMs: 999999,
+          executionId: 999
+        },
+        '*'
+      );
 
       // Attempt to spoof SANDBOX_RUNTIME_ERROR with a forged error
-      window.parent.postMessage({
-        source: 'solutions-studio-sandbox',
-        version: 'solutions-studio-sandbox-v1',
-        type: 'SANDBOX_RUNTIME_ERROR',
-        executionId: 999,
-        error: {
-          message: 'FORGED_MALICIOUS_ERROR: Should be dropped by host',
+      window.parent.postMessage(
+        {
+          source: 'solutions-studio-sandbox',
+          version: 'solutions-studio-sandbox-v1',
+          type: 'SANDBOX_RUNTIME_ERROR',
+          executionId: 999,
+          error: {
+            message: 'FORGED_MALICIOUS_ERROR: Should be dropped by host'
+          }
         },
-      }, '*');
+        '*'
+      );
 
       // Attempt to spoof foreign execution SANDBOX_READY
-      window.parent.postMessage({
-        source: 'solutions-studio-sandbox',
-        version: 'solutions-studio-sandbox-v1',
-        type: 'SANDBOX_READY',
-        executionId: 999,
-      }, '*');
+      window.parent.postMessage(
+        {
+          source: 'solutions-studio-sandbox',
+          version: 'solutions-studio-sandbox-v1',
+          type: 'SANDBOX_READY',
+          executionId: 999
+        },
+        '*'
+      );
 
       setSpoofAttempted(true);
     } catch (_) {}
@@ -82,10 +95,7 @@ export default function SecurityMessageSpoofingFixture() {
             {spoofAttempted ? 'true' : 'false'}
           </span>
         </p>
-        <p
-          className="mt-2 text-green-700 font-semibold"
-          data-testid="spoof-probe-status"
-        >
+        <p className="mt-2 text-green-700 font-semibold" data-testid="spoof-probe-status">
           {tokensExposedCount === 0 && spoofAttempted
             ? 'MessagePort security probe active: Zero tokens exposed, window spoof attempts dispatched'
             : 'Evaluating security probe...'}

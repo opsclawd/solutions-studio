@@ -1,8 +1,12 @@
 #!/usr/bin/env tsx
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { GenerateArtifactUseCase } from '../src/application/use-cases/GenerateArtifactUseCase.js';
-import { GatewayFactory, ProviderType } from '../src/infrastructure/generation/GatewayFactory.js';
+import {
+  GenerateArtifactUseCase,
+  RepairRetryExhaustionError
+} from '../src/application/use-cases/GenerateArtifactUseCase.js';
+import { GatewayFactory } from '../src/infrastructure/generation/GatewayFactory.js';
+import type { ProviderType } from '../src/infrastructure/generation/GatewayFactory.js';
 import { MermaidCliLinterAdapter } from '../src/infrastructure/validation/MermaidCliLinterAdapter.js';
 import { FakeGenerationGateway } from '../test/fakes/FakeGenerationGateway.js';
 
@@ -42,10 +46,7 @@ async function main() {
     fakeFallback = new FakeGenerationGateway([repairedContent]);
   }
 
-  const gateway = GatewayFactory.createGateway(
-    { provider: providerArg },
-    fakeFallback
-  );
+  const gateway = GatewayFactory.createGateway({ provider: providerArg }, fakeFallback);
   const linter = new MermaidCliLinterAdapter();
   const useCase = new GenerateArtifactUseCase(gateway, linter);
 
@@ -54,7 +55,7 @@ async function main() {
 
   try {
     const result = await useCase.validateAndRepair(fixtureContent, {
-      maxRepairAttempts: 2,
+      maxRepairAttempts: 2
     });
     const duration = Date.now() - startTime;
 
@@ -71,8 +72,8 @@ async function main() {
   } catch (error) {
     console.error('\n================ Tracer Failed ====================');
     console.error((error as Error).message);
-    if ((error as any).errors) {
-      console.error('History of errors:', (error as any).errors);
+    if (error instanceof RepairRetryExhaustionError) {
+      console.error('History of errors:', error.errors);
     }
     console.error('====================================================\n');
     process.exit(1);

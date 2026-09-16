@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { SandboxFrame, SandboxStatus, SandboxError } from '@/features/prototype-sandbox/SandboxFrame';
+import type { SandboxStatus, SandboxError } from '@/features/prototype-sandbox/SandboxFrame';
+import { SandboxFrame } from '@/features/prototype-sandbox/SandboxFrame';
 import {
   COUNTER_FIXTURE_CODE,
   VALVE_INSPECTION_FIXTURE_CODE,
@@ -13,72 +14,75 @@ import {
   SECURITY_STORAGE_THEFT_FIXTURE_CODE,
   SECURITY_NETWORK_EXFILTRATION_FIXTURE_CODE,
   SECURITY_MESSAGE_SPOOFING_FIXTURE_CODE,
-  SECURITY_PROTOTYPE_POISONING_FIXTURE_CODE,
+  SECURITY_PROTOTYPE_POISONING_FIXTURE_CODE
 } from '../../../../test/fixtures/prototype-sandbox';
 
 const FIXTURES: Record<string, { name: string; description: string; code: string }> = {
   counter: {
     name: 'Interactive Counter (State Transition)',
     description: 'Verifies React useState hook and user button click updates inside sandbox',
-    code: COUNTER_FIXTURE_CODE,
+    code: COUNTER_FIXTURE_CODE
   },
   'valve-inspection': {
     name: 'Valve Inspection (PRD Business Rule)',
     description: 'Implements PRD synthetic rule: safe pressure range [450.0 - 850.0] PSI',
-    code: VALVE_INSPECTION_FIXTURE_CODE,
+    code: VALVE_INSPECTION_FIXTURE_CODE
   },
   'compile-error': {
     name: 'Compile Error (Malformed TSX)',
-    description: 'Tests client-side Babel syntax error detection and structured line/col extraction',
-    code: COMPILE_ERROR_FIXTURE_CODE,
+    description:
+      'Tests client-side Babel syntax error detection and structured line/col extraction',
+    code: COMPILE_ERROR_FIXTURE_CODE
   },
   'runtime-error': {
     name: 'Runtime Error (Render Exception)',
     description: 'Verifies sandbox React ErrorBoundary catches exceptions without crashing host',
-    code: RUNTIME_ERROR_FIXTURE_CODE,
+    code: RUNTIME_ERROR_FIXTURE_CODE
   },
   'infinite-loop': {
     name: 'Infinite Loop (AST Protection)',
     description: 'Proves compiler loop guard terminates synchronous while(true) after 1000ms',
-    code: INFINITE_LOOP_FIXTURE_CODE,
+    code: INFINITE_LOOP_FIXTURE_CODE
   },
   'async-hang': {
     name: 'Async Hang (Host Timeout Recovery)',
     description: 'Proves host timeout timer (4000ms) triggers teardown and iframe recreation',
-    code: ASYNC_HANG_FIXTURE_CODE,
+    code: ASYNC_HANG_FIXTURE_CODE
   },
   'security-dom': {
     name: 'Security: Parent DOM Escape',
     description: 'Proves sandboxed code cannot access or mutate parent document',
-    code: SECURITY_DOM_ESCAPE_FIXTURE_CODE,
+    code: SECURITY_DOM_ESCAPE_FIXTURE_CODE
   },
   'security-storage': {
     name: 'Security: Host Storage / Cookie Theft',
     description: 'Proves sandboxed code cannot read host localStorage, sessionStorage, or cookies',
-    code: SECURITY_STORAGE_THEFT_FIXTURE_CODE,
+    code: SECURITY_STORAGE_THEFT_FIXTURE_CODE
   },
   'security-network': {
     name: 'Security: Multi-Vector Network Exfiltration',
     description: 'Proves CSP blocks fetch, XHR, sendBeacon, images, scripts, and navigation',
-    code: SECURITY_NETWORK_EXFILTRATION_FIXTURE_CODE,
+    code: SECURITY_NETWORK_EXFILTRATION_FIXTURE_CODE
   },
   'security-spoofing': {
     name: 'Security: Message Spoofing & Port Privacy',
-    description: 'Proves zero DOM script secrets and host drops spoofed window.parent lifecycle messages',
-    code: SECURITY_MESSAGE_SPOOFING_FIXTURE_CODE,
+    description:
+      'Proves zero DOM script secrets and host drops spoofed window.parent lifecycle messages',
+    code: SECURITY_MESSAGE_SPOOFING_FIXTURE_CODE
   },
   'security-prototype-poisoning': {
     name: 'Security: Prototype Poisoning Defense',
-    description: 'Proves overriding MessagePort.prototype.postMessage cannot intercept privatePort or alter lifecycle events',
-    code: SECURITY_PROTOTYPE_POISONING_FIXTURE_CODE,
-  },
+    description:
+      'Proves overriding MessagePort.prototype.postMessage cannot intercept privatePort or alter lifecycle events',
+    code: SECURITY_PROTOTYPE_POISONING_FIXTURE_CODE
+  }
 };
 
 export default function DevSandboxPage() {
   const [selectedKey, setSelectedKey] = useState<string>('counter');
   const [sourceCode, setSourceCode] = useState<string>(FIXTURES.counter.code);
-  const [status, setStatus] = useState<SandboxStatus>('IDLE');
-  const [lastError, setLastError] = useState<SandboxError | null>(null);
+  const [, setStatus] = useState<SandboxStatus>('IDLE');
+  const [, setLastError] = useState<SandboxError | null>(null);
 
   const handleStatusChange = React.useCallback((s: SandboxStatus) => {
     setStatus(s);
@@ -110,13 +114,18 @@ export default function DevSandboxPage() {
             </span>
           </div>
           <p className="text-xs text-gray-500 mt-1">
-            Dynamic React/Tailwind compilation via <code className="font-mono">@babel/standalone</code> inside an isolated <code className="font-mono">sandbox=&quot;allow-scripts&quot;</code> iframe.
+            Dynamic React/Tailwind compilation via{' '}
+            <code className="font-mono">@babel/standalone</code> inside an isolated{' '}
+            <code className="font-mono">sandbox=&quot;allow-scripts&quot;</code> iframe.
           </p>
         </div>
 
         {/* Fixture Selector */}
         <div className="flex items-center gap-2">
-          <label htmlFor="fixture-select" className="text-xs font-medium text-gray-700 whitespace-nowrap">
+          <label
+            htmlFor="fixture-select"
+            className="text-xs font-medium text-gray-700 whitespace-nowrap"
+          >
             Load Fixture:
           </label>
           <select

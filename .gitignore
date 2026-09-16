@@ -9,3 +9,4 @@ chrome-headless-shell/
 .ai-runs/
 .ai-worktrees/
 .ai-tmp/
+*.tsbuildinfo

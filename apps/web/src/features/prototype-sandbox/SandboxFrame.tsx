@@ -12,16 +12,15 @@
  */
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { compileTsx, CompileErrorDetails } from './SandboxCompiler';
-import {
-  buildSandboxHtml,
-  RuntimeOptions,
-} from './SandboxRuntime';
+import type { CompileErrorDetails } from './SandboxCompiler';
+import { compileTsx } from './SandboxCompiler';
+import type { RuntimeOptions } from './SandboxRuntime';
+import { buildSandboxHtml } from './SandboxRuntime';
+import type { SandboxExecuteMessage } from './SandboxProtocol';
 import {
   isSandboxClientMessage,
   PROTOCOL_VERSION,
-  SANDBOX_MESSAGE_SOURCE,
-  SandboxExecuteMessage,
+  SANDBOX_MESSAGE_SOURCE
 } from './SandboxProtocol';
 
 export type SandboxStatus =
@@ -67,13 +66,13 @@ export const SandboxFrame: React.FC<SandboxFrameProps> = ({
   onRendered,
   onStatusChange,
   title = 'Solutions Studio Prototype Sandbox',
-  showDiagnostics = true,
+  showDiagnostics = true
 }) => {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [status, setStatus] = useState<SandboxStatus>('IDLE');
   const [iframeKey, setIframeKey] = useState<number>(1);
   const [srcDoc, setSrcDoc] = useState<string>('');
-  const [compiledCode, setCompiledCode] = useState<string>('');
+  const [, setCompiledCode] = useState<string>('');
   const [compileError, setCompileError] = useState<CompileErrorDetails | null>(null);
   const [runtimeError, setRuntimeError] = useState<SandboxRuntimeErrorDetails | null>(null);
   const [renderTimeMs, setRenderTimeMs] = useState<number | null>(null);
@@ -122,33 +121,36 @@ export const SandboxFrame: React.FC<SandboxFrameProps> = ({
   }, [clearTimeoutTimer, closeActivePort]);
 
   // Handle authoritative lifecycle events over the private MessagePort
-  const handlePortMessage = useCallback((data: unknown) => {
-    if (!isSandboxClientMessage(data)) {
-      return;
-    }
-
-    if (data.executionId !== executionIdRef.current) {
-      return;
-    }
-
-    switch (data.type) {
-      case 'SANDBOX_RENDERED': {
-        clearTimeoutTimer();
-        setRenderTimeMs(data.renderTimeMs);
-        updateStatus('RENDERED');
-        onRenderedRef.current?.(data.renderTimeMs);
-        break;
+  const handlePortMessage = useCallback(
+    (data: unknown) => {
+      if (!isSandboxClientMessage(data)) {
+        return;
       }
 
-      case 'SANDBOX_RUNTIME_ERROR': {
-        clearTimeoutTimer();
-        setRuntimeError(data.error);
-        updateStatus('RUNTIME_ERROR');
-        onErrorRef.current?.({ type: 'RUNTIME_ERROR', details: data.error });
-        break;
+      if (data.executionId !== executionIdRef.current) {
+        return;
       }
-    }
-  }, [clearTimeoutTimer, updateStatus]);
+
+      switch (data.type) {
+        case 'SANDBOX_RENDERED': {
+          clearTimeoutTimer();
+          setRenderTimeMs(data.renderTimeMs);
+          updateStatus('RENDERED');
+          onRenderedRef.current?.(data.renderTimeMs);
+          break;
+        }
+
+        case 'SANDBOX_RUNTIME_ERROR': {
+          clearTimeoutTimer();
+          setRuntimeError(data.error);
+          updateStatus('RUNTIME_ERROR');
+          onErrorRef.current?.({ type: 'RUNTIME_ERROR', details: data.error });
+          break;
+        }
+      }
+    },
+    [clearTimeoutTimer, updateStatus]
+  );
 
   // Handle incoming handshake messages from the sandboxed iframe
   useEffect(() => {
@@ -198,7 +200,7 @@ export const SandboxFrame: React.FC<SandboxFrameProps> = ({
           version: PROTOCOL_VERSION,
           type: 'SANDBOX_EXECUTE',
           code: pendingCodeRef.current,
-          executionId: executionIdRef.current,
+          executionId: executionIdRef.current
         };
         iframeRef.current.contentWindow.postMessage(executeMessage, '*', [channel.port2]);
       }
@@ -257,7 +259,7 @@ export const SandboxFrame: React.FC<SandboxFrameProps> = ({
     // 3. Prepare iframe srcDoc HTML with epoch ID
     const html = buildSandboxHtml({
       ...runtimeOptions,
-      executionId: executionIdRef.current,
+      executionId: executionIdRef.current
     });
     setSrcDoc(html);
 
@@ -282,10 +284,20 @@ export const SandboxFrame: React.FC<SandboxFrameProps> = ({
       clearTimeoutTimer();
       closeActivePort();
     };
-  }, [code, timeoutMs, runtimeOptions, updateStatus, clearTimeoutTimer, closeActivePort, recreateIframe]);
+  }, [
+    code,
+    timeoutMs,
+    runtimeOptions,
+    updateStatus,
+    clearTimeoutTimer,
+    closeActivePort,
+    recreateIframe
+  ]);
 
   return (
-    <div className={`sandbox-frame-container flex flex-col w-full h-full bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm ${className}`}>
+    <div
+      className={`sandbox-frame-container flex flex-col w-full h-full bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm ${className}`}
+    >
       {/* Diagnostics / Status Header */}
       {showDiagnostics && (
         <div className="sandbox-header flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200 text-xs text-gray-600">
@@ -297,20 +309,24 @@ export const SandboxFrame: React.FC<SandboxFrameProps> = ({
                 status === 'RENDERED'
                   ? 'bg-green-100 text-green-700'
                   : status === 'COMPILE_ERROR' || status === 'RUNTIME_ERROR' || status === 'TIMEOUT'
-                  ? 'bg-red-100 text-red-700'
-                  : status === 'COMPILING' || status === 'LOADING'
-                  ? 'bg-blue-100 text-blue-700'
-                  : 'bg-gray-100 text-gray-600'
+                    ? 'bg-red-100 text-red-700'
+                    : status === 'COMPILING' || status === 'LOADING'
+                      ? 'bg-blue-100 text-blue-700'
+                      : 'bg-gray-100 text-gray-600'
               }`}
             >
               {status}
             </span>
             {renderTimeMs !== null && status === 'RENDERED' && (
-              <span data-testid="render-time-badge" className="text-gray-400">({renderTimeMs}ms)</span>
+              <span data-testid="render-time-badge" className="text-gray-400">
+                ({renderTimeMs}ms)
+              </span>
             )}
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-gray-400 font-mono text-[10px]">sandbox=&quot;allow-scripts&quot;</span>
+            <span className="text-gray-400 font-mono text-[10px]">
+              sandbox=&quot;allow-scripts&quot;
+            </span>
             <button
               onClick={recreateIframe}
               className="px-2 py-1 text-[11px] rounded bg-white hover:bg-gray-100 border border-gray-300 text-gray-700 shadow-sm transition"
@@ -369,7 +385,8 @@ export const SandboxFrame: React.FC<SandboxFrameProps> = ({
           className="p-3 bg-yellow-50 border-b border-yellow-200 text-yellow-800 text-xs flex items-center justify-between"
         >
           <div>
-            <span className="font-semibold">Execution Timeout:</span> Component exceeded {timeoutMs}ms execution budget. Iframe was reset for safety.
+            <span className="font-semibold">Execution Timeout:</span> Component exceeded {timeoutMs}
+            ms execution budget. Iframe was reset for safety.
           </div>
           <button
             onClick={recreateIframe}

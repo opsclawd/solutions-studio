@@ -27,19 +27,14 @@ export function buildSandboxCsp(options: SandboxCspOptions = {}): string {
 
   const directives: Record<string, string[]> = {
     'default-src': ["'none'"],
-    'script-src': [
-      "'unsafe-inline'",
-      ...(allowEval ? ["'unsafe-eval'"] : []),
-    ],
-    'style-src': [
-      ...(allowInlineStyles ? ["'unsafe-inline'"] : []),
-    ],
+    'script-src': ["'unsafe-inline'", ...(allowEval ? ["'unsafe-eval'"] : [])],
+    'style-src': [...(allowInlineStyles ? ["'unsafe-inline'"] : [])],
     'connect-src': ["'none'"],
     'img-src': imageSources,
     'font-src': ['data:'],
     'object-src': ["'none'"],
     'base-uri': ["'none'"],
-    'form-action': ["'none'"],
+    'form-action': ["'none'"]
   };
 
   return Object.entries(directives)

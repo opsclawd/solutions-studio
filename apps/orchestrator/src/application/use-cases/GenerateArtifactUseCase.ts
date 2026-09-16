@@ -1,5 +1,5 @@
-import { IGenerationGateway } from '../ports/generation/IGenerationGateway.js';
-import { IMermaidLinterGateway } from '../ports/validation/IMermaidLinterGateway.js';
+import type { IGenerationGateway } from '../ports/generation/IGenerationGateway.js';
+import type { IMermaidLinterGateway } from '../ports/validation/IMermaidLinterGateway.js';
 import { RepairRetryExhaustionError } from './RepairErrors.js';
 
 export { RepairRetryExhaustionError } from './RepairErrors.js';
@@ -61,7 +61,7 @@ export class GenerateArtifactUseCase {
       return {
         content: currentCandidate,
         repairsNeeded: 0,
-        repairHistory: [],
+        repairHistory: []
       };
     }
 
@@ -69,7 +69,7 @@ export class GenerateArtifactUseCase {
     repairHistory.push({
       attempt: 0,
       candidate: currentCandidate,
-      errorMessage: initialValidation.errorMessage ?? 'Unknown validation error',
+      errorMessage: initialValidation.errorMessage ?? 'Unknown validation error'
     });
 
     let repairAttempts = 0;
@@ -79,7 +79,7 @@ export class GenerateArtifactUseCase {
       const repairPrompt = this.buildRepairPrompt(currentCandidate, lastError);
 
       const repairResult = await this.generationGateway.generate({
-        prompt: repairPrompt,
+        prompt: repairPrompt
       });
 
       currentCandidate = this.extractMermaidContent(repairResult.text);
@@ -89,21 +89,19 @@ export class GenerateArtifactUseCase {
         return {
           content: currentCandidate,
           repairsNeeded: repairAttempts,
-          repairHistory,
+          repairHistory
         };
       }
 
       repairHistory.push({
         attempt: repairAttempts,
         candidate: currentCandidate,
-        errorMessage: validation.errorMessage ?? 'Unknown validation error',
+        errorMessage: validation.errorMessage ?? 'Unknown validation error'
       });
     }
 
     // If still invalid after max attempts, throw typed exhaustion failure
-    const errorMessages = repairHistory.map(
-      (h) => `Attempt ${h.attempt}: ${h.errorMessage}`
-    );
+    const errorMessages = repairHistory.map((h) => `Attempt ${h.attempt}: ${h.errorMessage}`);
     throw new RepairRetryExhaustionError(
       `Repair failed after ${maxAttempts} attempt(s). Diagram remains invalid.`,
       repairAttempts,

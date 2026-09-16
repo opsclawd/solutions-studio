@@ -9,7 +9,8 @@
  * - PostMessage execution harness adhering to SandboxProtocol
  */
 
-import { buildCspMetaTag, SandboxCspOptions } from './SandboxCsp';
+import type { SandboxCspOptions } from './SandboxCsp';
+import { buildCspMetaTag } from './SandboxCsp';
 import { REACT_UMD, REACT_DOM_UMD } from './runtime-assets/react-bundles';
 import { TAILWIND_SANDBOX_CSS } from './runtime-assets/tailwind-styles';
 import { PROTOCOL_VERSION, SANDBOX_MESSAGE_SOURCE } from './SandboxProtocol';

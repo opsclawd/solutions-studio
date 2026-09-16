@@ -4,9 +4,9 @@ import { existsSync } from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { randomUUID } from 'node:crypto';
-import {
+import type {
   IMermaidLinterGateway,
-  MermaidValidationResult,
+  MermaidValidationResult
 } from '../../application/ports/validation/IMermaidLinterGateway.js';
 
 export interface MermaidCliLinterAdapterOptions {
@@ -38,7 +38,7 @@ export class MermaidCliLinterAdapter implements IMermaidLinterGateway {
     if (!trimmed) {
       return {
         isValid: false,
-        errorMessage: 'Empty Mermaid diagram definition',
+        errorMessage: 'Empty Mermaid diagram definition'
       };
     }
 
@@ -59,13 +59,10 @@ export class MermaidCliLinterAdapter implements IMermaidLinterGateway {
       const cleanedError = this.cleanErrorMessage(combinedOutput);
       return {
         isValid: false,
-        errorMessage: cleanedError || 'Mermaid parsing failed with non-zero exit code',
+        errorMessage: cleanedError || 'Mermaid parsing failed with non-zero exit code'
       };
     } finally {
-      await Promise.allSettled([
-        fs.unlink(inputFile),
-        fs.unlink(outputFile),
-      ]);
+      await Promise.allSettled([fs.unlink(inputFile), fs.unlink(outputFile)]);
     }
   }
 
@@ -84,7 +81,7 @@ export class MermaidCliLinterAdapter implements IMermaidLinterGateway {
       let timedOut = false;
 
       const child = spawn(this.executablePath, args, {
-        env: { ...process.env },
+        env: { ...process.env }
       });
 
       const timer = setTimeout(() => {
@@ -93,7 +90,7 @@ export class MermaidCliLinterAdapter implements IMermaidLinterGateway {
         resolve({
           exitCode: -1,
           stdout,
-          stderr: `Mermaid CLI execution timed out after ${this.timeoutMs}ms`,
+          stderr: `Mermaid CLI execution timed out after ${this.timeoutMs}ms`
         });
       }, this.timeoutMs);
 
@@ -110,7 +107,7 @@ export class MermaidCliLinterAdapter implements IMermaidLinterGateway {
         resolve({
           exitCode: -1,
           stdout,
-          stderr: `Failed to invoke mmdc: ${err.message}`,
+          stderr: `Failed to invoke mmdc: ${err.message}`
         });
       });
 
