@@ -6,3 +6,6 @@ dist/
 test-results/
 playwright-report/
 chrome-headless-shell/
+.ai-runs/
+.ai-worktrees/
+.ai-tmp/
