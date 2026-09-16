@@ -1,0 +1,19 @@
+{
+  "validation": {
+    "commands": [
+      "pnpm --filter @solutions-studio/orchestrator build",
+      "pnpm --filter @solutions-studio/web build",
+      "pnpm --filter @solutions-studio/orchestrator test",
+      "pnpm --filter @solutions-studio/web test"
+    ],
+    "tiers": [
+      [
+        "pnpm --filter @solutions-studio/orchestrator build",
+        "pnpm --filter @solutions-studio/web build",
+        "pnpm --filter @solutions-studio/orchestrator test",
+        "pnpm --filter @solutions-studio/web test"
+      ]
+    ],
+    "timeout": 600
+  }
+}
