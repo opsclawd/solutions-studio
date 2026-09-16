@@ -19,6 +19,7 @@ export interface RuntimeOptions {
   extraCss?: string;
   initialCode?: string;
   executionId?: number;
+  sandboxToken?: string;
 }
 
 export function buildSandboxHtml(options: RuntimeOptions = {}): string {
@@ -56,6 +57,7 @@ ${safeReactDOM}
   var PROTOCOL_VERSION = '${PROTOCOL_VERSION}';
   var SANDBOX_MESSAGE_SOURCE = '${SANDBOX_MESSAGE_SOURCE}';
   var currentExecutionId = ${options.executionId ?? 0};
+  var HARNESS_TOKEN = '${options.sandboxToken ?? ""}';
 
   if (window.React && !window.React.default) {
     window.React.default = window.React;
@@ -71,6 +73,8 @@ ${safeReactDOM}
         source: SANDBOX_MESSAGE_SOURCE,
         version: PROTOCOL_VERSION,
         type: 'SANDBOX_RUNTIME_ERROR',
+        executionId: currentExecutionId,
+        token: HARNESS_TOKEN,
         error: {
           message: message ? String(message) : 'Uncaught window error',
           stack: error && error.stack ? error.stack : undefined
@@ -88,6 +92,8 @@ ${safeReactDOM}
         source: SANDBOX_MESSAGE_SOURCE,
         version: PROTOCOL_VERSION,
         type: 'SANDBOX_RUNTIME_ERROR',
+        executionId: currentExecutionId,
+        token: HARNESS_TOKEN,
         error: {
           message: reason ? (reason.message || String(reason)) : 'Unhandled Promise Rejection',
           stack: reason && reason.stack ? reason.stack : undefined
@@ -95,8 +101,6 @@ ${safeReactDOM}
       }, '*');
     } catch (_) {}
   };
-
-  var currentExecutionId = null;
 
   // Top-level React ErrorBoundary component
   function createErrorBoundary() {
@@ -118,6 +122,7 @@ ${safeReactDOM}
             version: PROTOCOL_VERSION,
             type: 'SANDBOX_RUNTIME_ERROR',
             executionId: currentExecutionId,
+            token: HARNESS_TOKEN,
             error: {
               message: error ? (error.message || String(error)) : 'Render Error',
               stack: error && error.stack ? error.stack : undefined,
@@ -196,7 +201,8 @@ ${safeReactDOM}
             version: PROTOCOL_VERSION,
             type: 'SANDBOX_RENDERED',
             renderTimeMs: renderTimeMs,
-            executionId: execId
+            executionId: execId,
+            token: HARNESS_TOKEN
           }, '*');
         } catch (_) {}
       };
@@ -219,6 +225,7 @@ ${safeReactDOM}
         version: PROTOCOL_VERSION,
         type: 'SANDBOX_RUNTIME_ERROR',
         executionId: execId,
+        token: HARNESS_TOKEN,
         error: {
           message: err ? (err.message || String(err)) : 'Execution failed',
           stack: err && err.stack ? err.stack : undefined
@@ -231,13 +238,15 @@ ${safeReactDOM}
   window.addEventListener('message', function(event) {
     var data = event.data;
     if (!data || data.source !== SANDBOX_MESSAGE_SOURCE) return;
+    if (data.token !== HARNESS_TOKEN) return;
 
     if (data.type === 'SANDBOX_PING') {
       window.parent.postMessage({
         source: SANDBOX_MESSAGE_SOURCE,
         version: PROTOCOL_VERSION,
         type: 'SANDBOX_READY',
-        executionId: currentExecutionId
+        executionId: currentExecutionId,
+        token: HARNESS_TOKEN
       }, '*');
       return;
     }
@@ -249,6 +258,7 @@ ${safeReactDOM}
     }
 
     if (data.type === 'SANDBOX_EXECUTE') {
+      currentExecutionId = data.executionId;
       executeComponent(data.code, data.props, data.executionId);
     }
   });
@@ -260,7 +270,8 @@ ${safeReactDOM}
         source: SANDBOX_MESSAGE_SOURCE,
         version: PROTOCOL_VERSION,
         type: 'SANDBOX_READY',
-        executionId: currentExecutionId
+        executionId: currentExecutionId,
+        token: HARNESS_TOKEN
       }, '*');
     } catch (_) {}
   }

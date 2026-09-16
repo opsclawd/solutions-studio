@@ -92,4 +92,54 @@ describe('SandboxCompiler', () => {
     `;
     expect(validateImports(code)).toBeNull();
   });
+
+  it('injects loop timeout protection into while loops and terminates infinite execution', () => {
+    const loopTsx = `
+      export function runLoop() {
+        let count = 0;
+        while (true) {
+          count++;
+        }
+        return count;
+      }
+    `;
+
+    // Compile with a small 50ms timeout threshold
+    const result = compileTsx(loopTsx, { maxLoopDurationMs: 50 });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.code).toContain('Infinite loop detected');
+      expect(result.code).toContain('Date.now()');
+
+      // Execute code in a scoped Function to verify it throws rather than hanging
+      const exportsObj: any = {};
+      const runner = new Function('exports', result.code);
+      runner(exportsObj);
+
+      expect(() => {
+        exportsObj.runLoop();
+      }).toThrow(/Infinite loop detected: synchronous loop exceeded execution threshold of 50ms/);
+    }
+  });
+
+  it('allows normal fast loops to execute without error', () => {
+    const fastLoopTsx = `
+      export function sum() {
+        let total = 0;
+        for (let i = 0; i < 100; i++) {
+          total += i;
+        }
+        return total;
+      }
+    `;
+
+    const result = compileTsx(fastLoopTsx);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const exportsObj: any = {};
+      const runner = new Function('exports', result.code);
+      runner(exportsObj);
+      expect(exportsObj.sum()).toBe(4950);
+    }
+  });
 });

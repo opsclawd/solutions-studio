@@ -32,6 +32,7 @@ export type CompileResult = CompileSuccess | CompileFailure;
 export interface CompilerOptions {
   allowedModules?: string[];
   filename?: string;
+  maxLoopDurationMs?: number;
 }
 
 export const DEFAULT_ALLOWED_MODULES = [
@@ -39,6 +40,71 @@ export const DEFAULT_ALLOWED_MODULES = [
   'react-dom',
   'react/jsx-runtime',
 ];
+
+/**
+ * Babel AST transform plugin that inserts execution-time guards into all loops (while, for, do-while).
+ * If any loop executes continuously beyond maxDurationMs, it throws an InfiniteLoopError,
+ * preventing untrusted code from freezing the browser renderer thread.
+ */
+export function createLoopTimeoutPlugin(maxDurationMs: number = 1000) {
+  return function loopTimeoutPlugin({ types: t }: any) {
+    let loopId = 0;
+    return {
+      visitor: {
+        'WhileStatement|ForStatement|DoWhileStatement|ForInStatement|ForOfStatement'(path: any) {
+          if (path.node._guardedLoop) return;
+          path.node._guardedLoop = true;
+
+          loopId++;
+          const startVar = path.scope.generateUidIdentifier(`loop_start_${loopId}`);
+
+          const initDecl = t.variableDeclaration('const', [
+            t.variableDeclarator(
+              startVar,
+              t.callExpression(
+                t.memberExpression(t.identifier('Date'), t.identifier('now')),
+                []
+              )
+            ),
+          ]);
+
+          const checkStmt = t.ifStatement(
+            t.binaryExpression(
+              '>',
+              t.binaryExpression(
+                '-',
+                t.callExpression(
+                  t.memberExpression(t.identifier('Date'), t.identifier('now')),
+                  []
+                ),
+                startVar
+              ),
+              t.numericLiteral(maxDurationMs)
+            ),
+            t.throwStatement(
+              t.newExpression(t.identifier('Error'), [
+                t.stringLiteral(
+                  `Infinite loop detected: synchronous loop exceeded execution threshold of ${maxDurationMs}ms.`
+                ),
+              ])
+            )
+          );
+
+          const body = path.node.body;
+          if (!body || t.isEmptyStatement(body)) {
+            path.node.body = t.blockStatement([checkStmt]);
+          } else if (t.isBlockStatement(body)) {
+            body.body.unshift(checkStmt);
+          } else {
+            path.node.body = t.blockStatement([checkStmt, body]);
+          }
+
+          path.insertBefore(initDecl);
+        },
+      },
+    };
+  };
+}
 
 /**
  * Validates that all import statements in the source code target only whitelisted modules.
@@ -92,14 +158,18 @@ export function compileTsx(sourceCode: string, options: CompilerOptions = {}): C
     };
   }
 
-  // 2. Perform AST transpilation via Babel
+  // 2. Perform AST transpilation via Babel with loop guard
   try {
+    const maxLoopDuration = options.maxLoopDurationMs ?? 1000;
     const transformed = Babel.transform(trimmed, {
       filename: options.filename ?? 'SandboxComponent.tsx',
       presets: [
         ['env', { modules: 'commonjs', targets: { esmodules: true } }],
         ['react', { runtime: 'classic' }],
         ['typescript', { isTSX: true, allExtensions: true }],
+      ],
+      plugins: [
+        createLoopTimeoutPlugin(maxLoopDuration),
       ],
       compact: false,
     });

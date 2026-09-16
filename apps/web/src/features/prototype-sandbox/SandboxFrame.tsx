@@ -82,6 +82,7 @@ export const SandboxFrame: React.FC<SandboxFrameProps> = ({
   const pendingCodeRef = useRef<string>('');
   const isInitialMountRef = useRef<boolean>(true);
   const executionIdRef = useRef<number>(0);
+  const tokenRef = useRef<string>('');
 
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
@@ -123,11 +124,13 @@ export const SandboxFrame: React.FC<SandboxFrameProps> = ({
         return;
       }
 
+      // 2. Enforce exact capability token and executionId epoch equality
+      if (data.executionId !== executionIdRef.current || data.token !== tokenRef.current) {
+        return;
+      }
+
       switch (data.type) {
         case 'SANDBOX_READY': {
-          if (data.executionId && data.executionId !== executionIdRef.current) {
-            return;
-          }
           if (!pendingCodeRef.current) {
             return;
           }
@@ -139,6 +142,7 @@ export const SandboxFrame: React.FC<SandboxFrameProps> = ({
               type: 'SANDBOX_EXECUTE',
               code: pendingCodeRef.current,
               executionId: executionIdRef.current,
+              token: tokenRef.current,
             };
             iframeRef.current.contentWindow.postMessage(executeMessage, '*');
           }
@@ -146,9 +150,6 @@ export const SandboxFrame: React.FC<SandboxFrameProps> = ({
         }
 
         case 'SANDBOX_RENDERED': {
-          if (data.executionId && data.executionId !== executionIdRef.current) {
-            return;
-          }
           clearTimeoutTimer();
           setRenderTimeMs(data.renderTimeMs);
           updateStatus('RENDERED');
@@ -157,9 +158,6 @@ export const SandboxFrame: React.FC<SandboxFrameProps> = ({
         }
 
         case 'SANDBOX_RUNTIME_ERROR': {
-          if (data.executionId && data.executionId !== executionIdRef.current) {
-            return;
-          }
           clearTimeoutTimer();
           setRuntimeError(data.error);
           updateStatus('RUNTIME_ERROR');
@@ -185,6 +183,7 @@ export const SandboxFrame: React.FC<SandboxFrameProps> = ({
       setCompiledCode('');
       setSrcDoc('');
       pendingCodeRef.current = '';
+      tokenRef.current = '';
       clearTimeoutTimer();
       return;
     }
@@ -194,8 +193,10 @@ export const SandboxFrame: React.FC<SandboxFrameProps> = ({
     setRuntimeError(null);
     updateStatus('COMPILING');
 
-    // Track new execution epoch
+    // Track new execution epoch and unique capability token
     executionIdRef.current += 1;
+    const epochToken = 'tok_' + Math.random().toString(36).substring(2) + Date.now().toString(36);
+    tokenRef.current = epochToken;
 
     // 1. Transpile in host via Babel
     const result = compileTsx(trimmed);
@@ -214,10 +215,11 @@ export const SandboxFrame: React.FC<SandboxFrameProps> = ({
     pendingCodeRef.current = result.code;
     updateStatus('LOADING');
 
-    // 3. Prepare iframe srcDoc HTML and recreate iframe on subsequent code updates
+    // 3. Prepare iframe srcDoc HTML with epoch ID & capability token, and recreate iframe on subsequent code updates
     const html = buildSandboxHtml({
       ...runtimeOptions,
       executionId: executionIdRef.current,
+      sandboxToken: tokenRef.current,
     });
     setSrcDoc(html);
 
@@ -230,6 +232,7 @@ export const SandboxFrame: React.FC<SandboxFrameProps> = ({
     // 4. Arm timeout timer
     timeoutTimerRef.current = setTimeout(() => {
       updateStatus('TIMEOUT');
+      pendingCodeRef.current = '';
       const timeoutMessage = `Sandbox execution timed out after ${timeoutMs}ms. Possible infinite loop or unresponsive component.`;
       onErrorRef.current?.({ type: 'TIMEOUT', message: timeoutMessage });
       recreateIframe();

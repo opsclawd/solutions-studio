@@ -1,8 +1,4 @@
 import { defineConfig, devices } from '@playwright/test';
-import fs from 'fs';
-
-const localChromePath = '/home/gary/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome';
-const useLocalExecutable = fs.existsSync(localChromePath);
 
 export default defineConfig({
   testDir: './test/browser',
@@ -17,14 +13,12 @@ export default defineConfig({
   use: {
     baseURL: 'http://localhost:3000',
     trace: 'on-first-retry',
-    ...(useLocalExecutable ? { launchOptions: { executablePath: localChromePath } } : {}),
   },
   projects: [
     {
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
-        ...(useLocalExecutable ? { launchOptions: { executablePath: localChromePath } } : {}),
       },
     },
   ],
