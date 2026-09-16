@@ -1,0 +1,14 @@
+{
+  "runUuid": "875e1b8f-4def-4905-8bb6-a3afb2cd5c28",
+  "phase": "validate",
+  "kind": "validation_failed",
+  "message": "1 validation command(s) failed: typecheck ( ELIFECYCLE  Command failed with exit code 2.). See validate/ logs.",
+  "canRetry": true,
+  "suggestedAction": "Open the validate phase logs and rerun the failing command(s) locally.",
+  "artifacts": [
+    "validate/2-typecheck.stdout.log",
+    "validate/2-typecheck.stderr.log",
+    "validate/validation-result.json"
+  ],
+  "detectedAt": "2026-09-16T19:48:49.161Z"
+}

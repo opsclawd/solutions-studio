@@ -89,6 +89,37 @@ importers:
         specifier: ^2.1.2
         version: 2.1.9(@types/node@22.20.2)
 
+  packages/contracts:
+    dependencies:
+      '@solutions-studio/domain':
+        specifier: workspace:*
+        version: link:../domain
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.7.5
+        version: 22.20.2
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.2
+        version: 2.1.9(@types/node@22.20.2)
+
+  packages/domain:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.7.5
+        version: 22.20.2
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.2
+        version: 2.1.9(@types/node@22.20.2)
+
 packages:
 
   '@alloc/quick-lru@5.3.0':
