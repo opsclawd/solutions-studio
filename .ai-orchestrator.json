@@ -2,10 +2,10 @@
   "validation": {
     "commands": [
       "pnpm format:fix",
+      "pnpm -r --if-present build",
       "pnpm lint",
       "pnpm typecheck",
       "pnpm format",
-      "pnpm -r --if-present build",
       "pnpm -r --if-present test"
     ],
     "tiers": [
