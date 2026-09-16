@@ -55,11 +55,7 @@ export class FakeGenerationGateway implements IGenerationGateway {
 
     return {
       text: nextResponse.text,
-      metadata: nextResponse.metadata ?? {
-        provider: 'fake',
-        durationMs: 5,
-        tokens: { input: 10, output: 20, total: 30 }
-      }
+      metadata: nextResponse.metadata
     };
   }
 

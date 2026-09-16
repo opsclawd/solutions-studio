@@ -1,14 +1,8 @@
 [
   {
-    "path": ".ai-orchestrator.json",
-    "beforeHash": "1a46b27b2ee3314b110fb1659534c433cdb2e0e1076445a21e25c9932df9e96d",
-    "afterHash": "719ff6a4a8b2b12bfdb46a09e2dbb151c4265f69bd173586ed947709632d228d",
-    "diagnostic": "1 validation command(s) failed: typecheck ( ELIFECYCLE  Command failed with exit code 2.). See validate/ logs."
-  },
-  {
     "path": "validate/failure.json",
-    "beforeHash": "68626c01c48e7603b38537e282dc045ed415abf5d96cecdfb1900bc6a7a73147",
-    "afterHash": "2f5aa095580aff79de77bd5b072ee10071317714777172f3a8adf0b5b4c1e138",
+    "beforeHash": "377fb26d7f2bceab0773403f71eb495f9f04e545fe2c2ade2f0f670c3a65c33c",
+    "afterHash": "75d7aa27801de6d0c67f9ddb8f3a82b00f6e8d85d292b3d002558f9e9c04fde3",
     "diagnostic": "1 validation command(s) failed: typecheck ( ELIFECYCLE  Command failed with exit code 2.). See validate/ logs."
   }
 ]
