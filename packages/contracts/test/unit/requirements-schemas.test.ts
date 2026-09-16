@@ -1,0 +1,298 @@
+import { describe, it, expect } from 'vitest';
+import {
+  InstantDtoSchema,
+  EvidenceLocatorDtoSchema,
+  EvidenceReferenceDtoSchema,
+  SourceDtoSchema,
+  RequirementDtoSchema,
+  SourceRevisionDtoSchema,
+  RequirementRevisionDtoSchema,
+  RequirementsBaselineDtoSchema,
+  CandidateFindingDtoSchema
+} from '../../src/requirements/index.js';
+
+describe('Requirements Contract Schemas', () => {
+  describe('InstantDtoSchema', () => {
+    it('accepts RFC 3339 / ISO-8601 instant strings with timezone', () => {
+      expect(InstantDtoSchema.parse('2026-09-15T10:00:00.000Z')).toBe('2026-09-15T10:00:00.000Z');
+      expect(InstantDtoSchema.parse('2026-09-15T10:00:00+02:00')).toBe('2026-09-15T10:00:00+02:00');
+      expect(InstantDtoSchema.parse('2024-02-29T12:00:00Z')).toBe('2024-02-29T12:00:00Z');
+    });
+
+    it('rejects locale-formatted, timezone-less, invalid-calendar, and arbitrary-text inputs', () => {
+      expect(() => InstantDtoSchema.parse('09/15/2026')).toThrow();
+      expect(() => InstantDtoSchema.parse('2026-09-15T10:00:00')).toThrow();
+      expect(() => InstantDtoSchema.parse('2026-09-15')).toThrow();
+      expect(() => InstantDtoSchema.parse('2026-02-30T12:00:00Z')).toThrow();
+      expect(() => InstantDtoSchema.parse('2026-02-29T12:00:00Z')).toThrow();
+      expect(() => InstantDtoSchema.parse('2026-04-31T12:00:00Z')).toThrow();
+      expect(() => InstantDtoSchema.parse('not-a-date')).toThrow();
+      expect(() => InstantDtoSchema.parse('')).toThrow();
+    });
+  });
+
+  describe('EvidenceLocatorDtoSchema', () => {
+    it('accepts non-empty strings', () => {
+      const parsed = EvidenceLocatorDtoSchema.parse('heading-path#1');
+      expect(parsed).toBe('heading-path#1');
+    });
+
+    it('rejects empty strings', () => {
+      expect(() => EvidenceLocatorDtoSchema.parse('')).toThrow();
+    });
+  });
+
+  describe('EvidenceReferenceDtoSchema', () => {
+    it('accepts valid evidence reference DTO', () => {
+      const raw = {
+        sourceRevisionId: 'INT-004@r3',
+        locator: 'business-logic-and-operational-rules#1'
+      };
+      const parsed = EvidenceReferenceDtoSchema.parse(raw);
+      expect(parsed).toEqual(raw);
+    });
+
+    it('rejects missing or empty fields', () => {
+      expect(() =>
+        EvidenceReferenceDtoSchema.parse({ sourceRevisionId: '', locator: 'h#1' })
+      ).toThrow();
+      expect(() => EvidenceReferenceDtoSchema.parse({ sourceRevisionId: 'INT-004@r1' })).toThrow();
+    });
+  });
+
+  describe('SourceDtoSchema & RequirementDtoSchema', () => {
+    it('validates SourceDto', () => {
+      const parsed = SourceDtoSchema.parse({ id: 'INT-004', sourceType: 'interview' });
+      expect(parsed.id).toBe('INT-004');
+      expect(parsed.sourceType).toBe('interview');
+
+      expect(() => SourceDtoSchema.parse({ id: 'INT-004', sourceType: 'unknown' })).toThrow();
+    });
+
+    it('validates RequirementDto', () => {
+      const parsed = RequirementDtoSchema.parse({ id: 'R-142' });
+      expect(parsed.id).toBe('R-142');
+
+      expect(() => RequirementDtoSchema.parse({ id: '' })).toThrow();
+    });
+  });
+
+  describe('SourceRevisionDtoSchema', () => {
+    it('validates a complete source revision DTO', () => {
+      const raw = {
+        id: 'INT-004@r1',
+        sourceId: 'INT-004',
+        revision: 1,
+        contentHash: 'hash-1234',
+        capturedAt: '2026-09-15T10:00:00.000Z',
+        verifiedAt: '2026-09-15T11:00:00.000Z',
+        supersedes: 'INT-004@r0'
+      };
+      const parsed = SourceRevisionDtoSchema.parse(raw);
+      expect(parsed).toEqual(raw);
+    });
+
+    it('rejects non-positive or float revision numbers', () => {
+      expect(() =>
+        SourceRevisionDtoSchema.parse({
+          id: 'INT-004@r0',
+          sourceId: 'INT-004',
+          revision: 0,
+          contentHash: 'hash',
+          capturedAt: '2026-09-15T10:00:00.000Z'
+        })
+      ).toThrow();
+
+      expect(() =>
+        SourceRevisionDtoSchema.parse({
+          id: 'INT-004@r1',
+          sourceId: 'INT-004',
+          revision: 1.5,
+          contentHash: 'hash',
+          capturedAt: '2026-09-15T10:00:00.000Z'
+        })
+      ).toThrow();
+    });
+
+    it('rejects invalid or arbitrary text in capturedAt and verifiedAt', () => {
+      expect(() =>
+        SourceRevisionDtoSchema.parse({
+          id: 'INT-004@r1',
+          sourceId: 'INT-004',
+          revision: 1,
+          contentHash: 'hash',
+          capturedAt: 'not-a-date'
+        })
+      ).toThrow();
+
+      expect(() =>
+        SourceRevisionDtoSchema.parse({
+          id: 'INT-004@r1',
+          sourceId: 'INT-004',
+          revision: 1,
+          contentHash: 'hash',
+          capturedAt: '2026-09-15T10:00:00.000Z',
+          verifiedAt: '2026-02-30T10:00:00.000Z'
+        })
+      ).toThrow();
+    });
+  });
+
+  describe('RequirementRevisionDtoSchema', () => {
+    it('validates a complete requirement revision DTO', () => {
+      const raw = {
+        id: 'R-142@r1',
+        requirementId: 'R-142',
+        revision: 1,
+        statement: 'Secondary inspection required above 800 PSI',
+        category: 'business-rule',
+        origin: 'EXPLICIT',
+        reviewState: 'ACCEPTED',
+        resolutionState: 'CLEAR',
+        evidence: [
+          {
+            sourceRevisionId: 'INT-004@r3',
+            locator: 'business-logic-and-operational-rules#1'
+          }
+        ],
+        rationale: 'Mandated by safety standards',
+        affectedActors: ['FieldLead'],
+        dependencies: ['R-100'],
+        supersedes: 'R-142@r0'
+      };
+      const parsed = RequirementRevisionDtoSchema.parse(raw);
+      expect(parsed).toEqual(raw);
+    });
+
+    it('proves boundary validation does NOT enforce domain business rules', () => {
+      // In domain, EXPLICIT requirement without evidence cannot enter a baseline,
+      // and PENDING + CONFLICTED cannot enter a baseline.
+      // But at the CONTRACT layer, structural shape is valid regardless of business lifecycle validity.
+      const structurallyValidBusinessInvalid = {
+        id: 'R-999@r1',
+        requirementId: 'R-999',
+        revision: 1,
+        statement: 'Pending conflicted statement without evidence',
+        category: 'business-rule',
+        origin: 'EXPLICIT',
+        reviewState: 'PENDING',
+        resolutionState: 'CONFLICTED',
+        evidence: [] // Empty evidence allowed by contract schema
+      };
+
+      const parsed = RequirementRevisionDtoSchema.parse(structurallyValidBusinessInvalid);
+      expect(parsed.reviewState).toBe('PENDING');
+      expect(parsed.resolutionState).toBe('CONFLICTED');
+      expect(parsed.evidence).toHaveLength(0);
+    });
+
+    it('rejects invalid enum values or empty required fields', () => {
+      expect(() =>
+        RequirementRevisionDtoSchema.parse({
+          id: 'R-142@r1',
+          requirementId: 'R-142',
+          revision: 1,
+          statement: '', // empty statement
+          category: 'business-rule',
+          origin: 'EXPLICIT',
+          reviewState: 'ACCEPTED',
+          resolutionState: 'CLEAR',
+          evidence: []
+        })
+      ).toThrow();
+
+      expect(() =>
+        RequirementRevisionDtoSchema.parse({
+          id: 'R-142@r1',
+          requirementId: 'R-142',
+          revision: 1,
+          statement: 'Valid statement',
+          category: 'non-existent-category',
+          origin: 'EXPLICIT',
+          reviewState: 'ACCEPTED',
+          resolutionState: 'CLEAR',
+          evidence: []
+        })
+      ).toThrow();
+    });
+  });
+
+  describe('RequirementsBaselineDtoSchema', () => {
+    it('validates a valid baseline DTO', () => {
+      const raw = {
+        id: 'BASELINE-01',
+        requirementRevisions: ['R-142@r1', 'R-143@r2'],
+        createdAt: '2026-09-15T12:00:00.000Z',
+        createdBy: 'REV-01'
+      };
+      const parsed = RequirementsBaselineDtoSchema.parse(raw);
+      expect(parsed).toEqual(raw);
+    });
+
+    it('allows empty requirementRevisions array structurally (business rule is domain-only)', () => {
+      const emptyRevisions = {
+        id: 'BASELINE-EMPTY',
+        requirementRevisions: [],
+        createdAt: '2026-09-15T12:00:00.000Z',
+        createdBy: 'REV-01'
+      };
+      const parsed = RequirementsBaselineDtoSchema.parse(emptyRevisions);
+      expect(parsed.requirementRevisions).toEqual([]);
+    });
+
+    it('rejects invalid or arbitrary text in createdAt', () => {
+      expect(() =>
+        RequirementsBaselineDtoSchema.parse({
+          id: 'BASELINE-01',
+          requirementRevisions: ['R-142@r1'],
+          createdAt: 'not-a-date',
+          createdBy: 'REV-01'
+        })
+      ).toThrow();
+    });
+  });
+
+  describe('CandidateFindingDtoSchema', () => {
+    it('validates a valid finding DTO', () => {
+      const raw = {
+        id: 'FINDING-01',
+        type: 'contradiction',
+        affectedRequirementRevisions: ['R-142@r1'],
+        evidence: [
+          {
+            sourceRevisionId: 'INT-004@r1',
+            locator: 'section#1'
+          }
+        ],
+        discoveredBy: 'model',
+        disposition: 'OPEN'
+      };
+      const parsed = CandidateFindingDtoSchema.parse(raw);
+      expect(parsed).toEqual(raw);
+    });
+
+    it('rejects invalid disposition or type', () => {
+      expect(() =>
+        CandidateFindingDtoSchema.parse({
+          id: 'FINDING-01',
+          type: 'invalid-type',
+          affectedRequirementRevisions: [],
+          evidence: [],
+          discoveredBy: 'model',
+          disposition: 'OPEN'
+        })
+      ).toThrow();
+
+      expect(() =>
+        CandidateFindingDtoSchema.parse({
+          id: 'FINDING-01',
+          type: 'contradiction',
+          affectedRequirementRevisions: [],
+          evidence: [],
+          discoveredBy: 'model',
+          disposition: 'NOT_A_DISPOSITION'
+        })
+      ).toThrow();
+    });
+  });
+});

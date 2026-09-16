@@ -1,0 +1,14 @@
+[
+  {
+    "path": "apps/web/tsconfig.json",
+    "beforeHash": "6697ee199de15f7bb5ba8a5d5d7d1c8d5ecdc26245b4038e8a04b8b52e0281f6",
+    "afterHash": "cd2b76f68ee9f22a334eb256692e04dc8b42254a647695d1a96f545951d2abb3",
+    "diagnostic": "1 validation command(s) failed: typecheck ( ELIFECYCLE  Command failed with exit code 2.). See validate/ logs."
+  },
+  {
+    "path": "validate/failure.json",
+    "beforeHash": "1e266896e288f8ccc7ee0a2bbccfd9e0089f18f03f9832935e14e4db6280221a",
+    "afterHash": "4e1781dec394d215e964b52f00b4dede464fff2cec6407e056d46032814366ec",
+    "diagnostic": "1 validation command(s) failed: typecheck ( ELIFECYCLE  Command failed with exit code 2.). See validate/ logs."
+  }
+]
