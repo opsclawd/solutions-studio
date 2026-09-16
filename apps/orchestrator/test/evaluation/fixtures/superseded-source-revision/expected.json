@@ -1,0 +1,59 @@
+{
+  "fixtureId": "superseded-source-revision",
+  "version": "1.0.0",
+  "title": "Superseded Source Revision Conflict",
+  "description": "Tests multi-revision provenance and discovery of supersession conflicts where Revision 1 allowed up to 25% discount, but was formally superseded by Revision 2 capping manager discretion at 15%.",
+  "categories": ["superseded-source-or-requirement"],
+  "canonicalMessyPackage": false,
+  "sources": [
+    {
+      "sourceRevisionId": "SOP-DISCOUNT-001-R1",
+      "sourceId": "SOP-DISCOUNT-001",
+      "sourceType": "sop",
+      "revision": 1,
+      "path": "source.1.md"
+    },
+    {
+      "sourceRevisionId": "SOP-DISCOUNT-001-R2",
+      "sourceId": "SOP-DISCOUNT-001",
+      "sourceType": "sop",
+      "revision": 2,
+      "path": "source.2.md",
+      "supersedes": "SOP-DISCOUNT-001-R1"
+    }
+  ],
+  "expectedRequirements": [
+    {
+      "requirementKey": "REQ-DISC-CURRENT",
+      "category": "business-rule",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "SOP-DISCOUNT-001-R2",
+          "locator": "discretionary-approval-limits#2.1"
+        }
+      ],
+      "statementPattern": ".*discretionary customer pricing discounts of up to 15%.*"
+    }
+  ],
+  "expectedFindings": [
+    {
+      "findingKey": "FINDING-SUPER-01",
+      "category": "superseded-source-or-requirement",
+      "type": "contradiction",
+      "evidence": [
+        {
+          "sourceRevisionId": "SOP-DISCOUNT-001-R1",
+          "locator": "discretionary-approval-limits#2.1"
+        },
+        {
+          "sourceRevisionId": "SOP-DISCOUNT-001-R2",
+          "locator": "discretionary-approval-limits#2.1"
+        }
+      ],
+      "relatedRequirementKeys": ["REQ-DISC-CURRENT"],
+      "rationale": "Revision 1 permitted sales managers to grant 25% discounts autonomously, which was subsequently superseded by Revision 2 restricting unescalated discretion to 15%."
+    }
+  ],
+  "expectedNonFindings": []
+}

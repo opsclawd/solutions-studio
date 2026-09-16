@@ -1,0 +1,47 @@
+{
+  "fixtureId": "temporal-ambiguity-basic",
+  "version": "1.0.0",
+  "title": "Temporal Ambiguity in Settlement Schedule",
+  "description": "Tests discovery of unmeasurable temporal requirements using vague phrasing ('periodically throughout the day', 'after a while') lacking explicit frequencies or deadlines.",
+  "categories": ["temporal-ambiguity"],
+  "canonicalMessyPackage": false,
+  "sources": [
+    {
+      "sourceRevisionId": "LEDGER-SPEC-001-R1",
+      "sourceId": "LEDGER-SPEC-001",
+      "sourceType": "sop",
+      "revision": 1,
+      "path": "source.md"
+    }
+  ],
+  "expectedRequirements": [
+    {
+      "requirementKey": "REQ-LEDGER-01",
+      "category": "business-rule",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "LEDGER-SPEC-001-R1",
+          "locator": "settlement-processing#4.2"
+        }
+      ],
+      "statementPattern": ".*reconciliation worker runs periodically throughout the day.*"
+    }
+  ],
+  "expectedFindings": [
+    {
+      "findingKey": "FINDING-TIME-01",
+      "category": "temporal-ambiguity",
+      "type": "temporal-ambiguity",
+      "evidence": [
+        {
+          "sourceRevisionId": "LEDGER-SPEC-001-R1",
+          "locator": "settlement-processing#4.2"
+        }
+      ],
+      "relatedRequirementKeys": ["REQ-LEDGER-01"],
+      "rationale": "Settlement execution and ledger synchronization rely on ambiguous temporal phrases ('periodically throughout the day', 'after a while') with no concrete cron schedule, SLA window, or completion timeout."
+    }
+  ],
+  "expectedNonFindings": []
+}

@@ -1,0 +1,356 @@
+{
+  "fixtureId": "canonical-messy-discovery-package",
+  "version": "1.0.0",
+  "title": "Canonical Messy Discovery Package",
+  "description": "The Phase 1 end-to-end exit gate composite fixture planting examples of all 10 required defect categories simultaneously across multiple sources and revisions, including multiple co-occurring contradictions across different defect categories.",
+  "categories": [
+    "contradictory-approval-thresholds",
+    "missing-actors-authorization",
+    "incomplete-state-transitions",
+    "missing-failure-recovery",
+    "temporal-ambiguity",
+    "undefined-cardinality",
+    "unsupported-assumptions",
+    "superseded-source-or-requirement",
+    "source-authority-conflict",
+    "false-positive-near-conflict"
+  ],
+  "canonicalMessyPackage": true,
+  "sources": [
+    {
+      "sourceRevisionId": "MESSY-SOP-001-R1",
+      "sourceId": "CORE-SOP-001",
+      "sourceType": "sop",
+      "revision": 1,
+      "path": "source.1.md"
+    },
+    {
+      "sourceRevisionId": "MESSY-SOP-001-R2",
+      "sourceId": "CORE-SOP-001",
+      "sourceType": "sop",
+      "revision": 2,
+      "path": "source.2.md",
+      "supersedes": "MESSY-SOP-001-R1"
+    },
+    {
+      "sourceRevisionId": "MESSY-INT-001-R1",
+      "sourceId": "LEGACY-INT-001",
+      "sourceType": "interview",
+      "revision": 1,
+      "path": "source.3.md"
+    },
+    {
+      "sourceRevisionId": "MESSY-POL-001-R1",
+      "sourceId": "SEC-POL-001",
+      "sourceType": "policy",
+      "revision": 1,
+      "path": "source.4.md"
+    }
+  ],
+  "expectedRequirements": [
+    {
+      "requirementKey": "REQ-MESSY-THRESH-1",
+      "category": "business-rule",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "MESSY-SOP-001-R2",
+          "locator": "executive-purchase-sign-off#2.1"
+        }
+      ],
+      "statementPattern": ".*exceeding \\$50,000 require CEO sign-off.*"
+    },
+    {
+      "requirementKey": "REQ-MESSY-THRESH-2",
+      "category": "business-rule",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "MESSY-SOP-001-R2",
+          "locator": "supplementary-procurement-rules#5.4"
+        }
+      ],
+      "statementPattern": ".*up to \\$100,000 may be authorized.*without CEO sign-off.*"
+    },
+    {
+      "requirementKey": "REQ-MESSY-AUTH-01",
+      "category": "business-rule",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "MESSY-SOP-001-R2",
+          "locator": "emergency-intervention-controls#4.1"
+        }
+      ],
+      "statementPattern": ".*Any console operator may execute.*Emergency Factory Shutdown.*"
+    },
+    {
+      "requirementKey": "REQ-MESSY-STATE-01",
+      "category": "lifecycle-state",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "MESSY-SOP-001-R2",
+          "locator": "batch-telemetry-processing#6.2"
+        }
+      ],
+      "statementPattern": ".*lifecycle states are defined as QUEUED, PROCESSING, and COMPLETED.*"
+    },
+    {
+      "requirementKey": "REQ-MESSY-ALERT-01",
+      "category": "integration",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "MESSY-SOP-001-R2",
+          "locator": "safety-alert-dispatches#7.3"
+        }
+      ],
+      "statementPattern": ".*dispatched via external telco gateway HTTP POST endpoint.*"
+    },
+    {
+      "requirementKey": "REQ-MESSY-TIME-01",
+      "category": "business-rule",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "MESSY-SOP-001-R2",
+          "locator": "archival-maintenance#8.1"
+        }
+      ],
+      "statementPattern": ".*executes periodically whenever host memory usage appears low.*"
+    },
+    {
+      "requirementKey": "REQ-MESSY-CARD-01",
+      "category": "data-constraint",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "MESSY-SOP-001-R2",
+          "locator": "entity-tagging#9.1"
+        }
+      ],
+      "statementPattern": ".*attach multiple data retention tags and multiple regulatory classifications.*"
+    },
+    {
+      "requirementKey": "REQ-MESSY-ASSUME-01",
+      "category": "nfr",
+      "origin": "ASSUMED",
+      "evidence": [
+        {
+          "sourceRevisionId": "MESSY-SOP-001-R2",
+          "locator": "external-ingestion-pipeline#10.2"
+        }
+      ],
+      "statementPattern": ".*infinite queries per second with 0% dropped connections.*"
+    },
+    {
+      "requirementKey": "REQ-MESSY-SUPER-R2",
+      "category": "business-rule",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "MESSY-SOP-001-R2",
+          "locator": "contractor-access-governance#3.1"
+        }
+      ],
+      "statementPattern": ".*contractor access duration is capped at 30 days.*"
+    },
+    {
+      "requirementKey": "REQ-MESSY-SRE-CHAT",
+      "category": "exception",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "MESSY-INT-001-R1",
+          "locator": "incident-remediation-practices#1.1"
+        }
+      ],
+      "statementPattern": ".*share production root database credentials across the team via a private messaging channel.*"
+    },
+    {
+      "requirementKey": "REQ-MESSY-SEC-POLICY",
+      "category": "business-rule",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "MESSY-POL-001-R1",
+          "locator": "credential-custody-and-handling#3.2"
+        }
+      ],
+      "statementPattern": ".*Production root credentials must be stored exclusively in the centralized HSM-backed Secrets Manager.*"
+    },
+    {
+      "requirementKey": "REQ-MESSY-SLA-SILVER",
+      "category": "nfr",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "MESSY-SOP-001-R2",
+          "locator": "support-service-level-agreements#11.1"
+        }
+      ],
+      "statementPattern": ".*Silver Support tier customers receive initial incident response within 24 business hours.*"
+    },
+    {
+      "requirementKey": "REQ-MESSY-SLA-GOLD",
+      "category": "nfr",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "MESSY-SOP-001-R2",
+          "locator": "support-service-level-agreements#11.2"
+        }
+      ],
+      "statementPattern": ".*Gold Support tier customers receive initial incident response within 4 business hours.*"
+    }
+  ],
+  "expectedFindings": [
+    {
+      "findingKey": "FINDING-MESSY-THRESH",
+      "category": "contradictory-approval-thresholds",
+      "type": "contradiction",
+      "evidence": [
+        {
+          "sourceRevisionId": "MESSY-SOP-001-R2",
+          "locator": "executive-purchase-sign-off#2.1"
+        },
+        {
+          "sourceRevisionId": "MESSY-SOP-001-R2",
+          "locator": "supplementary-procurement-rules#5.4"
+        }
+      ],
+      "relatedRequirementKeys": ["REQ-MESSY-THRESH-1", "REQ-MESSY-THRESH-2"],
+      "rationale": "Section 2.1 requires CEO sign-off for purchase commitments exceeding $50,000, whereas Section 5.4 permits corporate purchases up to $100,000 to be authorized without CEO sign-off, creating mutually exclusive approval rules for commitments between $50,000 and $100,000."
+    },
+    {
+      "findingKey": "FINDING-MESSY-AUTH-CONFLICT",
+      "category": "source-authority-conflict",
+      "type": "contradiction",
+      "evidence": [
+        {
+          "sourceRevisionId": "MESSY-INT-001-R1",
+          "locator": "incident-remediation-practices#1.1"
+        },
+        {
+          "sourceRevisionId": "MESSY-POL-001-R1",
+          "locator": "credential-custody-and-handling#3.2"
+        }
+      ],
+      "relatedRequirementKeys": ["REQ-MESSY-SRE-CHAT", "REQ-MESSY-SEC-POLICY"],
+      "rationale": "SRE interview reports sharing root credentials in team chat channels, which directly violates the information security policy mandating HSM-backed Secrets Manager storage and prohibiting chat credential transmission."
+    },
+    {
+      "findingKey": "FINDING-MESSY-SUPERSEDED",
+      "category": "superseded-source-or-requirement",
+      "type": "contradiction",
+      "evidence": [
+        {
+          "sourceRevisionId": "MESSY-SOP-001-R1",
+          "locator": "contractor-access-management#3.1"
+        },
+        {
+          "sourceRevisionId": "MESSY-SOP-001-R2",
+          "locator": "contractor-access-governance#3.1"
+        }
+      ],
+      "relatedRequirementKeys": ["REQ-MESSY-SUPER-R2"],
+      "rationale": "Revision 1 permitted contractor access duration up to 90 days before revalidation, which was superseded in Revision 2 by a strict 30-day cap."
+    },
+    {
+      "findingKey": "FINDING-MESSY-AUTH",
+      "category": "missing-actors-authorization",
+      "type": "missing-authorization",
+      "evidence": [
+        {
+          "sourceRevisionId": "MESSY-SOP-001-R2",
+          "locator": "emergency-intervention-controls#4.1"
+        }
+      ],
+      "relatedRequirementKeys": ["REQ-MESSY-AUTH-01"],
+      "rationale": "Emergency factory shutdown may be initiated by any console operator without administrative role verification or secondary authorization."
+    },
+    {
+      "findingKey": "FINDING-MESSY-TRANS",
+      "category": "incomplete-state-transitions",
+      "type": "incomplete-state-machine",
+      "evidence": [
+        {
+          "sourceRevisionId": "MESSY-SOP-001-R2",
+          "locator": "batch-telemetry-processing#6.2"
+        }
+      ],
+      "relatedRequirementKeys": ["REQ-MESSY-STATE-01"],
+      "rationale": "Batch telemetry processing lifecycle lacks error transitions from PROCESSING when malformed packets are encountered."
+    },
+    {
+      "findingKey": "FINDING-MESSY-RECOV",
+      "category": "missing-failure-recovery",
+      "type": "missing-failure-recovery",
+      "evidence": [
+        {
+          "sourceRevisionId": "MESSY-SOP-001-R2",
+          "locator": "safety-alert-dispatches#7.3"
+        }
+      ],
+      "relatedRequirementKeys": ["REQ-MESSY-ALERT-01"],
+      "rationale": "Outbound safety alert SMS dispatches lack retry policies, fallback routes, or dead-letter queuing when telco HTTP endpoints fail."
+    },
+    {
+      "findingKey": "FINDING-MESSY-TIME",
+      "category": "temporal-ambiguity",
+      "type": "temporal-ambiguity",
+      "evidence": [
+        {
+          "sourceRevisionId": "MESSY-SOP-001-R2",
+          "locator": "archival-maintenance#8.1"
+        }
+      ],
+      "relatedRequirementKeys": ["REQ-MESSY-TIME-01"],
+      "rationale": "Archival table compression uses ambiguous execution criteria ('periodically whenever host memory usage appears low') with no schedule or threshold bounds."
+    },
+    {
+      "findingKey": "FINDING-MESSY-CARD",
+      "category": "undefined-cardinality",
+      "type": "undefined-cardinality",
+      "evidence": [
+        {
+          "sourceRevisionId": "MESSY-SOP-001-R2",
+          "locator": "entity-tagging#9.1"
+        }
+      ],
+      "relatedRequirementKeys": ["REQ-MESSY-CARD-01"],
+      "rationale": "Metadata tagging allows multiple retention tags and regulatory classifications without specifying bounds or maximum allowed entries."
+    },
+    {
+      "findingKey": "FINDING-MESSY-ASSUME",
+      "category": "unsupported-assumptions",
+      "type": "unsupported-assumption",
+      "evidence": [
+        {
+          "sourceRevisionId": "MESSY-SOP-001-R2",
+          "locator": "external-ingestion-pipeline#10.2"
+        }
+      ],
+      "relatedRequirementKeys": ["REQ-MESSY-ASSUME-01"],
+      "rationale": "Ingestion pipeline assumes infinite throughput and zero dropped connections from an external geocoding provider without an SLA or fallback strategy."
+    }
+  ],
+  "expectedNonFindings": [
+    {
+      "description": "Silver (24-hour) and Gold (4-hour) customer support response times are partitioned by customer subscription tier and are not contradictory.",
+      "category": "false-positive-near-conflict",
+      "wouldBeType": "contradiction",
+      "evidence": [
+        {
+          "sourceRevisionId": "MESSY-SOP-001-R2",
+          "locator": "support-service-level-agreements#11.1"
+        },
+        {
+          "sourceRevisionId": "MESSY-SOP-001-R2",
+          "locator": "support-service-level-agreements#11.2"
+        }
+      ]
+    }
+  ]
+}

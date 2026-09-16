@@ -1,0 +1,68 @@
+{
+  "fixtureId": "false-positive-near-conflict-paraphrase",
+  "version": "1.0.0",
+  "title": "False Positive Near-Conflict on Paraphrased Timeframes",
+  "description": "Tests negative discovery where two independent sources express semantically identical requirements using different phrasing ('within 48 hours' vs 'no later than 48 hours', 'must complete enrollment' vs 'registration must be completed') for multi-factor authentication following initial account provisioning and must not be flagged as a contradiction.",
+  "categories": ["false-positive-near-conflict"],
+  "canonicalMessyPackage": false,
+  "sources": [
+    {
+      "sourceRevisionId": "ONBOARD-DOC-001-R1",
+      "sourceId": "ONBOARD-DOC-001",
+      "sourceType": "sop",
+      "revision": 1,
+      "path": "source.1.md"
+    },
+    {
+      "sourceRevisionId": "SEC-CHECK-001-R1",
+      "sourceId": "SEC-CHECK-001",
+      "sourceType": "policy",
+      "revision": 1,
+      "path": "source.2.md"
+    }
+  ],
+  "expectedRequirements": [
+    {
+      "requirementKey": "REQ-MFA-ONBOARD",
+      "category": "actors-permissions",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "ONBOARD-DOC-001-R1",
+          "locator": "security-setup#2.2"
+        }
+      ],
+      "statementPattern": ".*enrollment in multi-factor authentication within 48 hours.*"
+    },
+    {
+      "requirementKey": "REQ-MFA-SEC",
+      "category": "actors-permissions",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "SEC-CHECK-001-R1",
+          "locator": "mfa-compliance#1.3"
+        }
+      ],
+      "statementPattern": ".*multi-factor authentication registration must be completed no later than 48 hours.*"
+    }
+  ],
+  "expectedFindings": [],
+  "expectedNonFindings": [
+    {
+      "description": "Onboarding SOP ('within 48 hours') and Security Checklist ('no later than 48 hours') express identical multi-factor authentication requirements following initial account provisioning via paraphrase and must not be flagged as a contradiction.",
+      "category": "false-positive-near-conflict",
+      "wouldBeType": "contradiction",
+      "evidence": [
+        {
+          "sourceRevisionId": "ONBOARD-DOC-001-R1",
+          "locator": "security-setup#2.2"
+        },
+        {
+          "sourceRevisionId": "SEC-CHECK-001-R1",
+          "locator": "mfa-compliance#1.3"
+        }
+      ]
+    }
+  ]
+}

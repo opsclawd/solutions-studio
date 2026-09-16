@@ -1,0 +1,47 @@
+{
+  "fixtureId": "missing-authorization-basic",
+  "version": "1.0.0",
+  "title": "Missing Authorization Boundary for Permanent Purge",
+  "description": "Tests detection of unconstrained destructive actions lacking explicit caller roles, identity checks, or permission boundaries.",
+  "categories": ["missing-actors-authorization"],
+  "canonicalMessyPackage": false,
+  "sources": [
+    {
+      "sourceRevisionId": "TENANT-SPEC-001-R1",
+      "sourceId": "TENANT-SPEC-001",
+      "sourceType": "sop",
+      "revision": 1,
+      "path": "source.md"
+    }
+  ],
+  "expectedRequirements": [
+    {
+      "requirementKey": "REQ-PURGE-01",
+      "category": "business-rule",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "TENANT-SPEC-001-R1",
+          "locator": "permanent-data-purge#3.1"
+        }
+      ],
+      "statementPattern": ".*permanently removes all databases.*"
+    }
+  ],
+  "expectedFindings": [
+    {
+      "findingKey": "FINDING-AUTH-01",
+      "category": "missing-actors-authorization",
+      "type": "missing-authorization",
+      "evidence": [
+        {
+          "sourceRevisionId": "TENANT-SPEC-001-R1",
+          "locator": "permanent-data-purge#3.1"
+        }
+      ],
+      "relatedRequirementKeys": ["REQ-PURGE-01"],
+      "rationale": "The permanent purge action triggers irreversible destruction of organization databases and credentials without defining required authorization roles, privileges, or confirmation mechanisms."
+    }
+  ],
+  "expectedNonFindings": []
+}

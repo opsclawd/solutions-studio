@@ -1,0 +1,70 @@
+{
+  "fixtureId": "approval-threshold-contradiction-cross-source",
+  "version": "1.0.0",
+  "title": "Cross-Source Approval Threshold Contradiction",
+  "description": "Tests discovery of contradictory approval authority between a corporate finance policy (requiring CFO sign-off above $10,000) and an operations procedure (permitting Operations Director sign-off up to $50,000 without CFO review).",
+  "categories": ["contradictory-approval-thresholds"],
+  "canonicalMessyPackage": false,
+  "sources": [
+    {
+      "sourceRevisionId": "FIN-POL-002-R1",
+      "sourceId": "FIN-POL-002",
+      "sourceType": "policy",
+      "revision": 1,
+      "path": "source.1.md"
+    },
+    {
+      "sourceRevisionId": "OPS-SOP-004-R1",
+      "sourceId": "OPS-SOP-004",
+      "sourceType": "sop",
+      "revision": 1,
+      "path": "source.2.md"
+    }
+  ],
+  "expectedRequirements": [
+    {
+      "requirementKey": "REQ-FIN-01",
+      "category": "business-rule",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "FIN-POL-002-R1",
+          "locator": "executive-approval-limits#3.2"
+        }
+      ],
+      "statementPattern": ".*exceeding \\$10,000.*CFO.*"
+    },
+    {
+      "requirementKey": "REQ-OPS-01",
+      "category": "business-rule",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "OPS-SOP-004-R1",
+          "locator": "field-equipment-acquisition-workflow#1.5"
+        }
+      ],
+      "statementPattern": ".*up to \\$50,000.*without CFO review.*"
+    }
+  ],
+  "expectedFindings": [
+    {
+      "findingKey": "FINDING-CROSS-01",
+      "category": "contradictory-approval-thresholds",
+      "type": "contradiction",
+      "evidence": [
+        {
+          "sourceRevisionId": "FIN-POL-002-R1",
+          "locator": "executive-approval-limits#3.2"
+        },
+        {
+          "sourceRevisionId": "OPS-SOP-004-R1",
+          "locator": "field-equipment-acquisition-workflow#1.5"
+        }
+      ],
+      "relatedRequirementKeys": ["REQ-FIN-01", "REQ-OPS-01"],
+      "rationale": "Operations SOP permits expenditure up to $50,000 without CFO review, directly contradicting corporate finance policy requiring CFO sign-off for any expenditure exceeding $10,000."
+    }
+  ],
+  "expectedNonFindings": []
+}

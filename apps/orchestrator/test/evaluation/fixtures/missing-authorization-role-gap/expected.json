@@ -1,0 +1,63 @@
+{
+  "fixtureId": "missing-authorization-role-gap",
+  "version": "1.0.0",
+  "title": "Role Gap in Privileged MFA Override Authorization",
+  "description": "Tests discovery of authorization role gaps where front-line support staff are permitted to override critical security credentials without a defined gate to enforce mandatory secondary InfoSec approval.",
+  "categories": ["missing-actors-authorization"],
+  "canonicalMessyPackage": false,
+  "sources": [
+    {
+      "sourceRevisionId": "SUPPORT-SOP-003-R1",
+      "sourceId": "SUPPORT-SOP-003",
+      "sourceType": "sop",
+      "revision": 1,
+      "path": "source.md"
+    }
+  ],
+  "expectedRequirements": [
+    {
+      "requirementKey": "REQ-MFA-OVERRIDE",
+      "category": "actors-permissions",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "SUPPORT-SOP-003-R1",
+          "locator": "mfa-bypass-workflows#2.4"
+        }
+      ],
+      "statementPattern": ".*Tier 1 Support Agents may override customer MFA credentials.*"
+    },
+    {
+      "requirementKey": "REQ-SEC-SIGNOFF",
+      "category": "actors-permissions",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "SUPPORT-SOP-003-R1",
+          "locator": "privileged-modifications#5.1"
+        }
+      ],
+      "statementPattern": ".*secondary approval from an Information Security Officer.*"
+    }
+  ],
+  "expectedFindings": [
+    {
+      "findingKey": "FINDING-ROLE-GAP-01",
+      "category": "missing-actors-authorization",
+      "type": "missing-authorization",
+      "evidence": [
+        {
+          "sourceRevisionId": "SUPPORT-SOP-003-R1",
+          "locator": "mfa-bypass-workflows#2.4"
+        },
+        {
+          "sourceRevisionId": "SUPPORT-SOP-003-R1",
+          "locator": "privileged-modifications#5.1"
+        }
+      ],
+      "relatedRequirementKeys": ["REQ-MFA-OVERRIDE", "REQ-SEC-SIGNOFF"],
+      "rationale": "Tier 1 Support Agents are authorized to perform MFA credential overrides upon verbal verification, with no mechanism or boundary enforcing the mandated Information Security Officer secondary approval."
+    }
+  ],
+  "expectedNonFindings": []
+}
