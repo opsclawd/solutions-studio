@@ -22,7 +22,7 @@ describe('Real CLI Integration Spike (Synthetic Fixtures Only)', () => {
       const invalidCode = await fs.readFile(invalidFixturePath, 'utf-8');
 
       const result = await useCase.validateAndRepair(invalidCode, {
-        maxRepairAttempts: 2,
+        maxRepairAttempts: 2
       });
 
       expect(result.content).toBeDefined();
@@ -46,7 +46,7 @@ describe('Real CLI Integration Spike (Synthetic Fixtures Only)', () => {
       const invalidCode = await fs.readFile(invalidFixturePath, 'utf-8');
 
       const result = await useCase.validateAndRepair(invalidCode, {
-        maxRepairAttempts: 2,
+        maxRepairAttempts: 2
       });
 
       expect(result.content).toBeDefined();
@@ -64,7 +64,7 @@ describe('Real CLI Integration Spike (Synthetic Fixtures Only)', () => {
       expect(agyGateway).toBeInstanceOf(AntigravityCliAdapter);
 
       const opencodeGateway = GatewayFactory.createGateway({
-        provider: 'opencode',
+        provider: 'opencode'
       });
       expect(opencodeGateway).toBeInstanceOf(OpenCodeCliAdapter);
     });

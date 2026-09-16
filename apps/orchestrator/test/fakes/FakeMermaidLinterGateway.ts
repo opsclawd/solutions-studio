@@ -1,6 +1,6 @@
-import {
+import type {
   IMermaidLinterGateway,
-  MermaidValidationResult,
+  MermaidValidationResult
 } from '../../src/application/ports/validation/IMermaidLinterGateway.js';
 
 export class FakeMermaidLinterGateway implements IMermaidLinterGateway {
@@ -30,7 +30,7 @@ export class FakeMermaidLinterGateway implements IMermaidLinterGateway {
     if (/-->\s*($|\n|;)/.test(trimmed)) {
       return {
         isValid: false,
-        errorMessage: 'Parse error on line: missing target node for arrow',
+        errorMessage: 'Parse error on line: missing target node for arrow'
       };
     }
 

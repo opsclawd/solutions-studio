@@ -31,7 +31,11 @@ export default function SecurityDomEscapeFixture() {
         Parent DOM Boundary Probe
       </h2>
       <p className="text-sm text-gray-600">
-        Attempts to access <code className="bg-gray-100 px-1 py-0.5 rounded font-mono text-xs">window.parent.document</code>.
+        Attempts to access{' '}
+        <code className="bg-gray-100 px-1 py-0.5 rounded font-mono text-xs">
+          window.parent.document
+        </code>
+        .
       </p>
 
       <div
@@ -46,7 +50,10 @@ export default function SecurityDomEscapeFixture() {
       </div>
 
       <div className="text-xs text-gray-500">
-        Status: <span data-testid="dom-isolation-status" className="font-bold">{isBlocked ? 'BLOCKED' : 'BREACHED'}</span>
+        Status:{' '}
+        <span data-testid="dom-isolation-status" className="font-bold">
+          {isBlocked ? 'BLOCKED' : 'BREACHED'}
+        </span>
       </div>
     </div>
   );

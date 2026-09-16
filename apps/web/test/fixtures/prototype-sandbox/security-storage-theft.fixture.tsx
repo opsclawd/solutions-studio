@@ -9,7 +9,9 @@ import React, { useState, useEffect } from 'react';
 export default function SecurityStorageTheftFixture() {
   const [cookieResult, setCookieResult] = useState<string>('Testing cookie...');
   const [localStorageResult, setLocalStorageResult] = useState<string>('Testing localStorage...');
-  const [sessionStorageResult, setSessionStorageResult] = useState<string>('Testing sessionStorage...');
+  const [sessionStorageResult, setSessionStorageResult] = useState<string>(
+    'Testing sessionStorage...'
+  );
   const [isCookieBlocked, setIsCookieBlocked] = useState<boolean>(false);
   const [isLocalStorageBlocked, setIsLocalStorageBlocked] = useState<boolean>(false);
   const [isSessionStorageBlocked, setIsSessionStorageBlocked] = useState<boolean>(false);
@@ -102,7 +104,8 @@ export default function SecurityStorageTheftFixture() {
       </div>
 
       <div className="text-xs text-gray-500">
-        Status: <span data-testid="storage-isolation-status" className="font-bold">
+        Status:{' '}
+        <span data-testid="storage-isolation-status" className="font-bold">
           {isFullyIsolated ? 'ISOLATED' : 'VULNERABLE'}
         </span>
       </div>

@@ -1,5 +1,8 @@
 export class GenerationGatewayError extends Error {
-  constructor(message: string, public override readonly cause?: unknown) {
+  constructor(
+    message: string,
+    public override readonly cause?: unknown
+  ) {
     super(message);
     this.name = this.constructor.name;
     Object.setPrototypeOf(this, new.target.prototype);
@@ -7,7 +10,10 @@ export class GenerationGatewayError extends Error {
 }
 
 export class ExecutableNotFoundError extends GenerationGatewayError {
-  constructor(public readonly executableName: string, cause?: unknown) {
+  constructor(
+    public readonly executableName: string,
+    cause?: unknown
+  ) {
     super(`Generation CLI executable not found: '${executableName}'`, cause);
   }
 }
@@ -19,7 +25,10 @@ export class AuthenticationOrConfigError extends GenerationGatewayError {
 }
 
 export class CliExecutionTimeoutError extends GenerationGatewayError {
-  constructor(public readonly timeoutMs: number, cause?: unknown) {
+  constructor(
+    public readonly timeoutMs: number,
+    cause?: unknown
+  ) {
     super(`CLI execution timed out after ${timeoutMs}ms`, cause);
   }
 }
@@ -36,7 +45,11 @@ export class NonZeroExitError extends GenerationGatewayError {
 }
 
 export class MalformedOutputError extends GenerationGatewayError {
-  constructor(message: string, public readonly rawOutput: string, cause?: unknown) {
+  constructor(
+    message: string,
+    public readonly rawOutput: string,
+    cause?: unknown
+  ) {
     super(`Malformed or unexpected CLI output: ${message}`, cause);
   }
 }

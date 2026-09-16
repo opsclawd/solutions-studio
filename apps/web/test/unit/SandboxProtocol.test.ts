@@ -4,7 +4,7 @@ import {
   isSandboxClientMessage,
   isSandboxHostMessage,
   SANDBOX_MESSAGE_SOURCE,
-  PROTOCOL_VERSION,
+  PROTOCOL_VERSION
 } from '../../src/features/prototype-sandbox/SandboxProtocol';
 
 describe('SandboxProtocol', () => {
@@ -15,7 +15,7 @@ describe('SandboxProtocol', () => {
       source: SANDBOX_MESSAGE_SOURCE,
       version: PROTOCOL_VERSION,
       type: 'SANDBOX_READY',
-      executionId: validExecutionId,
+      executionId: validExecutionId
     };
     expect(isSandboxMessage(readyMsg)).toBe(true);
     expect(isSandboxClientMessage(readyMsg)).toBe(true);
@@ -26,7 +26,7 @@ describe('SandboxProtocol', () => {
       version: PROTOCOL_VERSION,
       type: 'SANDBOX_RENDERED',
       executionId: validExecutionId,
-      renderTimeMs: 42,
+      renderTimeMs: 42
     };
     expect(isSandboxMessage(renderedMsg)).toBe(true);
     expect(isSandboxClientMessage(renderedMsg)).toBe(true);
@@ -36,7 +36,7 @@ describe('SandboxProtocol', () => {
       version: PROTOCOL_VERSION,
       type: 'SANDBOX_EXECUTE',
       code: 'console.log(1)',
-      executionId: validExecutionId,
+      executionId: validExecutionId
     };
     expect(isSandboxMessage(executeMsg)).toBe(true);
     expect(isSandboxClientMessage(executeMsg)).toBe(false);
@@ -47,7 +47,7 @@ describe('SandboxProtocol', () => {
     const noExecutionId = {
       source: SANDBOX_MESSAGE_SOURCE,
       version: PROTOCOL_VERSION,
-      type: 'SANDBOX_READY',
+      type: 'SANDBOX_READY'
     };
     expect(isSandboxMessage(noExecutionId)).toBe(false);
     expect(isSandboxClientMessage(noExecutionId)).toBe(false);
@@ -60,7 +60,7 @@ describe('SandboxProtocol', () => {
       version: PROTOCOL_VERSION,
       type: 'SANDBOX_RENDERED',
       executionId: 1,
-      renderTimeMs: 'fast', // invalid type
+      renderTimeMs: 'fast' // invalid type
     };
     expect(isSandboxClientMessage(badRendered)).toBe(false);
 
@@ -70,7 +70,7 @@ describe('SandboxProtocol', () => {
       version: PROTOCOL_VERSION,
       type: 'SANDBOX_RUNTIME_ERROR',
       executionId: 1,
-      error: 'string-instead-of-object',
+      error: 'string-instead-of-object'
     };
     expect(isSandboxClientMessage(badRuntimeError)).toBe(false);
   });
@@ -79,6 +79,8 @@ describe('SandboxProtocol', () => {
     expect(isSandboxMessage(null)).toBe(false);
     expect(isSandboxMessage({})).toBe(false);
     expect(isSandboxMessage({ source: 'foreign-app' })).toBe(false);
-    expect(isSandboxClientMessage({ source: 'solutions-studio-sandbox', type: 'UNKNOWN_TYPE' })).toBe(false);
+    expect(
+      isSandboxClientMessage({ source: 'solutions-studio-sandbox', type: 'UNKNOWN_TYPE' })
+    ).toBe(false);
   });
 });

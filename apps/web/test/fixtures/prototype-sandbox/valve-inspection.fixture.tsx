@@ -37,9 +37,7 @@ export default function ValveInspectionFixture() {
         <span
           data-testid="status-badge"
           className={`text-xs px-2.5 py-1 rounded-full font-semibold ${
-            status === 'SUBMITTED'
-              ? 'bg-green-100 text-green-700'
-              : 'bg-gray-100 text-gray-700'
+            status === 'SUBMITTED' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
           }`}
         >
           {status}
@@ -48,10 +46,7 @@ export default function ValveInspectionFixture() {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label
-            htmlFor="pressure-input"
-            className="block text-sm font-medium text-gray-700 mb-1"
-          >
+          <label htmlFor="pressure-input" className="block text-sm font-medium text-gray-700 mb-1">
             Valve Pressure (PSI)
           </label>
           <input
@@ -70,9 +65,7 @@ export default function ValveInspectionFixture() {
                 : 'border-gray-300 focus:ring-blue-500'
             }`}
           />
-          <p className="mt-1 text-xs text-gray-500">
-            Mandatory operating range: 450.0 - 850.0 PSI
-          </p>
+          <p className="mt-1 text-xs text-gray-500">Mandatory operating range: 450.0 - 850.0 PSI</p>
         </div>
 
         {/* Dynamic Business Rule Validation Alerts */}

@@ -39,7 +39,9 @@ describe('SandboxCompiler', () => {
     if (!result.success) {
       expect(result.error.line).toBeDefined();
       expect(result.error.column).toBeDefined();
-      expect(result.error.message).toMatch(/Unterminated JSX contents|Expected corresponding JSX closing tag/i);
+      expect(result.error.message).toMatch(
+        /Unterminated JSX contents|Expected corresponding JSX closing tag/i
+      );
     }
   });
 
@@ -57,7 +59,9 @@ describe('SandboxCompiler', () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.message).toContain("Prohibited module import: 'axios'");
-      expect(result.error.message).toContain("Prototype sandbox only allows: [react, react-dom, react/jsx-runtime]");
+      expect(result.error.message).toContain(
+        'Prototype sandbox only allows: [react, react-dom, react/jsx-runtime]'
+      );
     }
   });
 

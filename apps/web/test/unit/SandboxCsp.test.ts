@@ -26,7 +26,7 @@ describe('SandboxCsp', () => {
     const csp = buildSandboxCsp({
       allowEval: false,
       allowInlineStyles: false,
-      allowedImageSources: ["'none'"],
+      allowedImageSources: ["'none'"]
     });
 
     expect(csp).not.toContain("'unsafe-eval'");

@@ -36,10 +36,7 @@ export interface SandboxResetMessage extends SandboxBaseMessage {
   type: 'SANDBOX_RESET';
 }
 
-export type SandboxHostMessage =
-  | SandboxExecuteMessage
-  | SandboxPingMessage
-  | SandboxResetMessage;
+export type SandboxHostMessage = SandboxExecuteMessage | SandboxPingMessage | SandboxResetMessage;
 
 // Sandbox -> Host Messages
 export interface SandboxReadyMessage extends SandboxBaseMessage {
@@ -106,9 +103,7 @@ export function isSandboxClientMessage(data: unknown): data is SandboxClientMess
     case 'SANDBOX_RUNTIME_ERROR': {
       const msg = data as Partial<SandboxRuntimeErrorMessage>;
       return (
-        typeof msg.error === 'object' &&
-        msg.error !== null &&
-        typeof msg.error.message === 'string'
+        typeof msg.error === 'object' && msg.error !== null && typeof msg.error.message === 'string'
       );
     }
     case 'SANDBOX_SECURITY_VIOLATION': {

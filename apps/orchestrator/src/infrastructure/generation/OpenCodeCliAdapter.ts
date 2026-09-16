@@ -1,15 +1,15 @@
 import { spawn } from 'node:child_process';
-import {
+import type {
   IGenerationGateway,
   GenerationRequest,
-  GenerationResult,
+  GenerationResult
 } from '../../application/ports/generation/IGenerationGateway.js';
 import {
   ExecutableNotFoundError,
   AuthenticationOrConfigError,
   CliExecutionTimeoutError,
   NonZeroExitError,
-  MalformedOutputError,
+  MalformedOutputError
 } from '../../application/ports/generation/GenerationErrors.js';
 
 export interface OpenCodeCliAdapterOptions {
@@ -44,8 +44,7 @@ export class OpenCodeCliAdapter implements IGenerationGateway {
   private readonly cwd?: string;
 
   constructor(options?: OpenCodeCliAdapterOptions) {
-    this.executablePath =
-      options?.executablePath ?? process.env.OPENCODE_BIN_PATH ?? 'opencode';
+    this.executablePath = options?.executablePath ?? process.env.OPENCODE_BIN_PATH ?? 'opencode';
     this.defaultTimeoutMs = options?.defaultTimeoutMs ?? 90_000;
     this.cwd = options?.cwd;
   }
@@ -66,7 +65,7 @@ export class OpenCodeCliAdapter implements IGenerationGateway {
 
       const child = spawn(this.executablePath, args, {
         cwd: this.cwd,
-        env: { ...process.env },
+        env: { ...process.env }
       });
 
       child.stdin?.end();
@@ -100,9 +99,7 @@ export class OpenCodeCliAdapter implements IGenerationGateway {
 
         if (code !== 0) {
           const combined = `${stderrData}\n${stdoutData}`.trim();
-          if (
-            /auth|unauthorized|api[ _-]?key|login|credentials|token/i.test(combined)
-          ) {
+          if (/auth|unauthorized|api[ _-]?key|login|credentials|token/i.test(combined)) {
             return reject(new AuthenticationOrConfigError(combined));
           }
           return reject(new NonZeroExitError(code, stderrData, stdoutData));
@@ -120,8 +117,8 @@ export class OpenCodeCliAdapter implements IGenerationGateway {
             text: extracted.text,
             metadata: {
               provider: 'opencode-cli',
-              tokens: extracted.tokens,
-            },
+              tokens: extracted.tokens
+            }
           });
         } catch (err) {
           if (err instanceof MalformedOutputError) {
@@ -151,12 +148,14 @@ export class OpenCodeCliAdapter implements IGenerationGateway {
     const lines = rawOutput.split('\n');
     let collectedText = '';
     let structuredEventsDetected = false;
-    let totalTokens: {
-      input?: number;
-      output?: number;
-      thinking?: number;
-      total?: number;
-    } | undefined;
+    let totalTokens:
+      | {
+          input?: number;
+          output?: number;
+          thinking?: number;
+          total?: number;
+        }
+      | undefined;
 
     for (const line of lines) {
       const trimmed = line.trim();
@@ -177,7 +176,7 @@ export class OpenCodeCliAdapter implements IGenerationGateway {
             input: tok.input,
             output: tok.output,
             thinking: tok.reasoning,
-            total: tok.total,
+            total: tok.total
           };
         }
       } catch {
@@ -195,7 +194,7 @@ export class OpenCodeCliAdapter implements IGenerationGateway {
       }
       return {
         text: cleaned,
-        tokens: totalTokens,
+        tokens: totalTokens
       };
     }
 

@@ -1,6 +1,9 @@
 {
   "validation": {
     "commands": [
+      "pnpm lint",
+      "pnpm typecheck",
+      "pnpm format",
       "pnpm --filter @solutions-studio/orchestrator build",
       "pnpm --filter @solutions-studio/web build",
       "pnpm --filter @solutions-studio/orchestrator test",
@@ -8,6 +11,9 @@
     ],
     "tiers": [
       [
+        "pnpm lint",
+        "pnpm typecheck",
+        "pnpm format",
         "pnpm --filter @solutions-studio/orchestrator build",
         "pnpm --filter @solutions-studio/web build",
         "pnpm --filter @solutions-studio/orchestrator test",

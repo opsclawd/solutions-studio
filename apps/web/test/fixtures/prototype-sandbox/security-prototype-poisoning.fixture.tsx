@@ -19,8 +19,7 @@ try {
       (window as any).__interceptedLifecycleCalls =
         ((window as any).__interceptedLifecycleCalls || 0) + 1;
     }
-    (window as any).__totalPostMessageCalls =
-      ((window as any).__totalPostMessageCalls || 0) + 1;
+    (window as any).__totalPostMessageCalls = ((window as any).__totalPostMessageCalls || 0) + 1;
 
     // Forward non-lifecycle / scheduler calls so React DOM internal scheduler can execute
     return originalPostMessage.apply(this, args);
@@ -67,10 +66,7 @@ export default function SecurityPrototypePoisoningFixture() {
             {capturedPortDetected ? 'true' : 'false'}
           </span>
         </p>
-        <p
-          className="mt-2 text-green-700 font-semibold"
-          data-testid="poisoning-probe-status"
-        >
+        <p className="mt-2 text-green-700 font-semibold" data-testid="poisoning-probe-status">
           {interceptedCalls === 0 && !capturedPortDetected
             ? 'Prototype poisoning defeated: Harness uses bound native intrinsic; 0 intercepted calls'
             : 'VULNERABILITY DETECTED: MessagePort.prototype.postMessage intercepted privatePort'}

@@ -5,7 +5,7 @@ import { FakeMermaidLinterGateway } from '../fakes/FakeMermaidLinterGateway.js';
 import { RepairRetryExhaustionError } from '../../src/application/use-cases/RepairErrors.js';
 import {
   CliExecutionTimeoutError,
-  NonZeroExitError,
+  NonZeroExitError
 } from '../../src/application/ports/generation/GenerationErrors.js';
 
 describe('GenerateArtifactUseCase', () => {
@@ -44,7 +44,9 @@ describe('GenerateArtifactUseCase', () => {
       expect(result.repairHistory).toHaveLength(1);
       expect(result.repairHistory[0].attempt).toBe(0);
       expect(fakeGateway.recordedRequests).toHaveLength(1);
-      expect(fakeGateway.recordedRequests[0].prompt).toContain('The following Mermaid syntax produced an error:');
+      expect(fakeGateway.recordedRequests[0].prompt).toContain(
+        'The following Mermaid syntax produced an error:'
+      );
       expect(fakeGateway.recordedRequests[0].prompt).toContain(invalidMermaid);
     });
 
@@ -109,9 +111,7 @@ describe('GenerateArtifactUseCase', () => {
       fakeGateway.queueResponse(invalidMermaid);
       fakeGateway.queueError(new NonZeroExitError(1, 'Model failed', ''));
 
-      await expect(useCase.validateAndRepair(invalidMermaid)).rejects.toThrow(
-        NonZeroExitError
-      );
+      await expect(useCase.validateAndRepair(invalidMermaid)).rejects.toThrow(NonZeroExitError);
     });
   });
 });
