@@ -77,3 +77,57 @@ export const CandidateFindingDtoSchema = z.object({
   disposition: z.enum(FINDING_DISPOSITIONS),
   rationale: z.string().optional()
 });
+
+export const CandidateEvidenceRefDtoSchema = EvidenceReferenceDtoSchema;
+
+export const CandidateRequirementDtoSchema = z.object({
+  requirementKey: z.string().min(1),
+  statement: z.string().min(1),
+  category: RequirementCategorySchema,
+  origin: RequirementOriginSchema,
+  evidence: z.array(CandidateEvidenceRefDtoSchema),
+  rationale: z.string().optional()
+});
+
+export const CandidateFindingResponseDtoSchema = z.object({
+  findingKey: z.string().min(1),
+  type: z.enum(FINDING_TYPES),
+  relatedRequirementKeys: z.array(z.string().min(1)),
+  evidence: z.array(CandidateEvidenceRefDtoSchema),
+  rationale: z.string().min(1)
+});
+
+export const CompiledRequirementsResponseDtoSchema = z
+  .object({
+    requirements: z.array(CandidateRequirementDtoSchema),
+    findings: z.array(CandidateFindingResponseDtoSchema)
+  })
+  .superRefine((data, ctx) => {
+    const seenRequirementKeys = new Set<string>();
+    for (let i = 0; i < data.requirements.length; i++) {
+      const key = data.requirements[i].requirementKey;
+      if (seenRequirementKeys.has(key)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Duplicate requirementKey: '${key}'`,
+          path: ['requirements', i, 'requirementKey']
+        });
+      } else {
+        seenRequirementKeys.add(key);
+      }
+    }
+
+    const seenFindingKeys = new Set<string>();
+    for (let i = 0; i < data.findings.length; i++) {
+      const key = data.findings[i].findingKey;
+      if (seenFindingKeys.has(key)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Duplicate findingKey: '${key}'`,
+          path: ['findings', i, 'findingKey']
+        });
+      } else {
+        seenFindingKeys.add(key);
+      }
+    }
+  });

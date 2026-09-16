@@ -8,7 +8,11 @@ import {
   SourceRevisionDtoSchema,
   RequirementRevisionDtoSchema,
   RequirementsBaselineDtoSchema,
-  CandidateFindingDtoSchema
+  CandidateFindingDtoSchema,
+  CandidateEvidenceRefDtoSchema,
+  CandidateRequirementDtoSchema,
+  CandidateFindingResponseDtoSchema,
+  CompiledRequirementsResponseDtoSchema
 } from '../../src/requirements/index.js';
 
 describe('Requirements Contract Schemas', () => {
@@ -293,6 +297,206 @@ describe('Requirements Contract Schemas', () => {
           disposition: 'NOT_A_DISPOSITION'
         })
       ).toThrow();
+    });
+  });
+
+  describe('Candidate Compilation Schemas', () => {
+    it('guarantees CandidateEvidenceRefDtoSchema is reference-identical to EvidenceReferenceDtoSchema', () => {
+      expect(CandidateEvidenceRefDtoSchema).toBe(EvidenceReferenceDtoSchema);
+      expect(CandidateRequirementDtoSchema.shape.evidence.element).toBe(EvidenceReferenceDtoSchema);
+      expect(CandidateFindingResponseDtoSchema.shape.evidence.element).toBe(
+        EvidenceReferenceDtoSchema
+      );
+    });
+
+    it('validates a valid CandidateRequirementDto', () => {
+      const valid = {
+        requirementKey: 'REQ-1',
+        statement: 'Must do X',
+        category: 'business-rule',
+        origin: 'EXPLICIT',
+        evidence: [{ sourceRevisionId: 'REV-1', locator: 'loc#1' }],
+        rationale: 'some rationale'
+      };
+      const parsed = CandidateRequirementDtoSchema.parse(valid);
+      expect(parsed).toEqual(valid);
+    });
+
+    it('allows empty evidence on CandidateRequirementDto structurally', () => {
+      const valid = {
+        requirementKey: 'REQ-2',
+        statement: 'Assumption Y',
+        category: 'business-rule',
+        origin: 'ASSUMED',
+        evidence: []
+      };
+      const parsed = CandidateRequirementDtoSchema.parse(valid);
+      expect(parsed.evidence).toHaveLength(0);
+    });
+
+    it('rejects CandidateRequirementDto with missing requirementKey or statement', () => {
+      expect(() =>
+        CandidateRequirementDtoSchema.parse({
+          requirementKey: '',
+          statement: 'Statement',
+          category: 'business-rule',
+          origin: 'EXPLICIT',
+          evidence: []
+        })
+      ).toThrow();
+
+      expect(() =>
+        CandidateRequirementDtoSchema.parse({
+          requirementKey: 'REQ-1',
+          statement: '',
+          category: 'business-rule',
+          origin: 'EXPLICIT',
+          evidence: []
+        })
+      ).toThrow();
+    });
+
+    it('rejects CandidateRequirementDto with invalid category or origin enum', () => {
+      expect(() =>
+        CandidateRequirementDtoSchema.parse({
+          requirementKey: 'REQ-1',
+          statement: 'Statement',
+          category: 'invalid-category',
+          origin: 'EXPLICIT',
+          evidence: []
+        })
+      ).toThrow();
+
+      expect(() =>
+        CandidateRequirementDtoSchema.parse({
+          requirementKey: 'REQ-1',
+          statement: 'Statement',
+          category: 'business-rule',
+          origin: 'INVALID_ORIGIN',
+          evidence: []
+        })
+      ).toThrow();
+    });
+
+    it('validates a valid CandidateFindingResponseDto', () => {
+      const valid = {
+        findingKey: 'FINDING-1',
+        type: 'contradiction',
+        relatedRequirementKeys: ['REQ-1'],
+        evidence: [{ sourceRevisionId: 'REV-1', locator: 'loc#1' }],
+        rationale: 'Conflict between statements'
+      };
+      const parsed = CandidateFindingResponseDtoSchema.parse(valid);
+      expect(parsed).toEqual(valid);
+    });
+
+    it('rejects CandidateFindingResponseDto with empty rationale', () => {
+      expect(() =>
+        CandidateFindingResponseDtoSchema.parse({
+          findingKey: 'FINDING-1',
+          type: 'contradiction',
+          relatedRequirementKeys: ['REQ-1'],
+          evidence: [],
+          rationale: ''
+        })
+      ).toThrow();
+    });
+
+    it('rejects CandidateFindingResponseDto with invalid type enum', () => {
+      expect(() =>
+        CandidateFindingResponseDtoSchema.parse({
+          findingKey: 'FINDING-1',
+          type: 'not-a-finding-type',
+          relatedRequirementKeys: [],
+          evidence: [],
+          rationale: 'Some rationale'
+        })
+      ).toThrow();
+    });
+
+    it('validates a complete CompiledRequirementsResponseDto', () => {
+      const validResponse = {
+        requirements: [
+          {
+            requirementKey: 'REQ-1',
+            statement: 'Primary inspection required',
+            category: 'business-rule',
+            origin: 'EXPLICIT',
+            evidence: [{ sourceRevisionId: 'REV-1', locator: 'h#1' }]
+          }
+        ],
+        findings: [
+          {
+            findingKey: 'FINDING-1',
+            type: 'missing-authorization',
+            relatedRequirementKeys: ['REQ-1'],
+            evidence: [{ sourceRevisionId: 'REV-1', locator: 'h#1' }],
+            rationale: 'No role specified for inspection'
+          }
+        ]
+      };
+      const parsed = CompiledRequirementsResponseDtoSchema.parse(validResponse);
+      expect(parsed).toEqual(validResponse);
+    });
+
+    it('allows empty requirements and findings arrays in CompiledRequirementsResponseDto', () => {
+      const emptyResponse = {
+        requirements: [],
+        findings: []
+      };
+      const parsed = CompiledRequirementsResponseDtoSchema.parse(emptyResponse);
+      expect(parsed.requirements).toEqual([]);
+      expect(parsed.findings).toEqual([]);
+    });
+
+    it('rejects CompiledRequirementsResponseDto with duplicate requirementKey values', () => {
+      const duplicateReqResponse = {
+        requirements: [
+          {
+            requirementKey: 'REQ-DUP',
+            statement: 'First statement',
+            category: 'business-rule',
+            origin: 'EXPLICIT',
+            evidence: [{ sourceRevisionId: 'REV-1', locator: 'h#1' }]
+          },
+          {
+            requirementKey: 'REQ-DUP',
+            statement: 'Second statement',
+            category: 'business-rule',
+            origin: 'EXPLICIT',
+            evidence: [{ sourceRevisionId: 'REV-1', locator: 'h#2' }]
+          }
+        ],
+        findings: []
+      };
+      expect(() => CompiledRequirementsResponseDtoSchema.parse(duplicateReqResponse)).toThrow(
+        /Duplicate requirementKey/
+      );
+    });
+
+    it('rejects CompiledRequirementsResponseDto with duplicate findingKey values', () => {
+      const duplicateFindingResponse = {
+        requirements: [],
+        findings: [
+          {
+            findingKey: 'FINDING-DUP',
+            type: 'contradiction',
+            relatedRequirementKeys: [],
+            evidence: [{ sourceRevisionId: 'REV-1', locator: 'h#1' }],
+            rationale: 'First finding'
+          },
+          {
+            findingKey: 'FINDING-DUP',
+            type: 'missing-authorization',
+            relatedRequirementKeys: [],
+            evidence: [{ sourceRevisionId: 'REV-1', locator: 'h#2' }],
+            rationale: 'Second finding'
+          }
+        ]
+      };
+      expect(() => CompiledRequirementsResponseDtoSchema.parse(duplicateFindingResponse)).toThrow(
+        /Duplicate findingKey/
+      );
     });
   });
 });
