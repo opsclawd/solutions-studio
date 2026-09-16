@@ -35,11 +35,13 @@ jobs:
       - name: Format check
         run: pnpm format
 
-      - name: Typecheck
-        run: pnpm typecheck
-
+      # Must run before Typecheck: apps/web's tsconfig.json includes
+      # .next/types/**/*.ts, which only exists after `next build` generates it.
       - name: Build all workspaces
         run: pnpm -r --if-present build
+
+      - name: Typecheck
+        run: pnpm typecheck
 
       - name: Run all unit tests
         env:
