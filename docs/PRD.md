@@ -1,7 +1,7 @@
 # Product Requirements Document (PRD)
 
 **Product Name:** Evidence-to-Implementation-Ready Requirements Engine ("Solutions Studio")  
-**Document Version:** 1.2-MVP  
+**Document Version:** 1.3-MVP  
 **Status:** Ready for Engineering Review  
 **Target Architecture:** Enterprise Cloud / Private Azure Environment  
 **Target Users:** Business Solutions Developers, Business Analysts, Solutions Architects, Business SMEs
@@ -619,13 +619,17 @@ Phase 0: Technical De-Risking (completed/existing tracer work)
     ├── Prevent child access to parent DOM/storage
     └── Enforce restrictive CSP for outbound network access
 
-Phase 1: Vertical Slice 1 — Requirements Intelligence Core + Evaluation
-├── Settle domain ontology before extraction implementation
-│   ├── Source / immutable SourceRevision
-│   ├── Requirement / immutable RequirementRevision
+Phase 1: Vertical Slice 1 — Minimum Requirements Kernel + Evaluation
+├── Implement only the kernel needed to prove requirements compilation
+│   ├── immutable SourceRevision + content hash
+│   ├── immutable RequirementRevision
+│   ├── EvidenceReference
 │   ├── independent origin / reviewState / resolutionState
-│   ├── BusinessRequirement / PolicyConstraint / EngineeringDecision boundaries
+│   ├── generic CandidateFinding + auditable disposition
 │   └── immutable RequirementsBaseline manifest
+├── Implement atomic candidate-requirement extraction
+├── Implement provenance validation against exact SourceRevision IDs
+├── Implement human reconciliation and finding disposition
 ├── Build adversarial requirements-intelligence evaluation corpus
 │   ├── planted contradictions
 │   ├── missing actors / authorization
@@ -634,35 +638,47 @@ Phase 1: Vertical Slice 1 — Requirements Intelligence Core + Evaluation
 │   ├── unsupported assumptions
 │   ├── supersession / source-authority cases
 │   └── false-positive near-conflicts
-├── Implement atomic candidate-requirement extraction
-├── Implement structured candidate findings
-├── Implement provenance validation against exact SourceRevision IDs
-├── Implement human reconciliation and auditable finding disposition
 ├── Establish empirical evaluation baseline by finding category
-└── Create immutable verified requirements baselines
+├── Freeze an immutable verified requirements baseline
+└── Generate at least one consistent baseline projection using existing Phase 0 capability
 
-Phase 2: Vertical Slice 2 — Process & Requirements Cross-Validation
+Phase 1 intentionally does NOT require full implementation of richer PolicyConstraint behavior,
+EngineeringDecision workflows, downstream stale-item propagation, impact analysis, story readiness,
+or dependency orchestration. Those concepts remain part of the destination architecture and are
+implemented when later slices create concrete demand for them.
+
+Phase 1 exit criterion:
+Given a deliberately messy discovery package, the system can extract traceable requirement
+revisions, identify a useful share of planted defects without intolerable false positives, let a
+human reconcile the resulting requirements/findings, freeze an immutable baseline, and generate
+at least one internally consistent projection from that baseline. Mermaid/state projection is the
+preferred proof because Phase 0 already established the generation/validation seam.
+
+Phase 2: Vertical Slice 2 — Interactive Requirements Discovery Loop
 ├── Promote generation gateway and Mermaid validation from Phase 0
-├── Generate process/state/ERD views from a specific requirements baseline
-├── Surface diagram-discovered gaps as candidate findings
-└── Requirements review UI + deterministic coverage report
+├── Promote the isolated prototype runtime from Phase 0
+├── Build requirements review / reconciliation UI
+├── Generate process/state views from a specific requirements baseline
+├── Generate interactive prototype behavior from the same baseline
+├── Let SME review create candidate findings / requirement proposals
+├── Feed diagram/prototype discoveries back into reconciliation
+└── Create a new immutable baseline after accepted changes
 
-Phase 3: Vertical Slice 3 — Data Contracts, Stories & Readiness
+Phase 3: Vertical Slice 3 — Engineering Handoff, Stories & Readiness
+├── Introduce richer PolicyConstraint behavior where required by generated contracts
+├── Introduce EngineeringDecision records where schema/API generation creates technical choices
 ├── PGlite / SQL validation and OpenAPI structural validation
-├── Generate schema/API projections from business requirements + policy constraints
-├── Record legitimate engineering decisions separately
+├── Generate schema/API projections from the requirements baseline
 ├── Generate Gherkin stories mapped to exact requirement revisions + baseline
 ├── Implement deterministic Story Definition of Ready over structured state
 ├── Compute requirement-to-story coverage
 └── Produce machine-readable story dependency graph
 
-Phase 4: Vertical Slice 4 — Interactive Prototype & Governed Handoff
-├── Promote isolated prototype runtime from Phase 0
-├── Generate prototype behavior from a specific baseline
-├── Feed SME-discovered behavior back into review as proposals/findings
-├── SQLite / Azure Blob persistence
+Phase 4: Vertical Slice 4 — Governance, Export & Pilot Hardening
+├── Persist source/requirement revisions, baselines, findings, and artifact manifests
 ├── Microsoft Entra ID authentication integration
 ├── Azure DevOps / Jira / GitHub backlog export adapter
+├── Add downstream staleness / impact analysis only where operationally required
 └── Pilot on an active enterprise business workflow
 ```
 
