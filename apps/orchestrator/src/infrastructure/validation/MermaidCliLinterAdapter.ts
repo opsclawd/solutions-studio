@@ -25,7 +25,7 @@ export class MermaidCliLinterAdapter implements IMermaidLinterGateway {
       options?.executablePath ??
       process.env.MMDC_BIN_PATH ??
       path.resolve(process.cwd(), 'node_modules/.bin/mmdc');
-    this.timeoutMs = options?.timeoutMs ?? 20_000;
+    this.timeoutMs = options?.timeoutMs ?? 15_000;
 
     const configured = options?.puppeteerConfigPath ?? process.env.PUPPETEER_CONFIG_PATH;
     if (configured && existsSync(configured)) {
