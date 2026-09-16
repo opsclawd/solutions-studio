@@ -2,3 +2,7 @@ node_modules/
 dist/
 .pnpm-store/
 *.log
+.next/
+test-results/
+playwright-report/
+chrome-headless-shell/

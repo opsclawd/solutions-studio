@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "test": "pnpm --filter @solutions-studio/orchestrator test",
+    "test": "pnpm --filter @solutions-studio/orchestrator test && pnpm --filter @solutions-studio/web test",
+    "test:browser": "pnpm --filter @solutions-studio/web test:browser",
+    "dev:web": "pnpm --filter @solutions-studio/web dev",
     "test:integration": "pnpm --filter @solutions-studio/orchestrator test:integration",
     "tracer": "pnpm --filter @solutions-studio/orchestrator tracer"
   }

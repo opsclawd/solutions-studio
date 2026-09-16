@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    name: Build & Test Orchestrator
+    name: Build, Unit & Browser Test Suite
     runs-on: ubuntu-latest
 
     steps:
@@ -32,7 +32,19 @@ jobs:
       - name: Build orchestrator
         run: pnpm --filter @solutions-studio/orchestrator build
 
-      - name: Run unit tests
+      - name: Build web
+        run: pnpm --filter @solutions-studio/web build
+
+      - name: Run orchestrator unit tests
         env:
           PUPPETEER_CONFIG_PATH: ${{ github.workspace }}/.github/puppeteer-config.json
         run: pnpm --filter @solutions-studio/orchestrator test
+
+      - name: Run web unit tests
+        run: pnpm --filter @solutions-studio/web test
+
+      - name: Install Playwright Browsers
+        run: pnpm --filter @solutions-studio/web exec playwright install --with-deps chromium
+
+      - name: Run Playwright Browser Tests
+        run: pnpm --filter @solutions-studio/web test:browser
