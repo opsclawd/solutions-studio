@@ -10,13 +10,8 @@
     ],
     "tiers": [
       ["pnpm format:fix"],
-      [
-        "pnpm lint",
-        "pnpm typecheck",
-        "pnpm format",
-        "pnpm -r --if-present build",
-        "pnpm -r --if-present test"
-      ]
+      ["pnpm -r --if-present build"],
+      ["pnpm lint", "pnpm typecheck", "pnpm format", "pnpm -r --if-present test"]
     ],
     "timeout": 600
   }
