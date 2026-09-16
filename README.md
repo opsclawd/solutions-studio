@@ -123,7 +123,7 @@ The governing contract is: **implementation agents may make engineering decision
 
 The Requirements Intelligence Core ships with an adversarial evaluation harness, not only implementation code.
 
-Fixtures include planted contradictions, missing actors, state-transition gaps, authorization gaps, temporal/cardinality ambiguity, unsupported assumptions, superseded evidence, source-authority conflicts, and false-positive near-conflicts. Results are measured by category, including misses and false positives, so provider/model changes can be compared against the same versioned corpus.
+Fixtures include planted contradictions, missing actors, state-transition gaps, authorization gaps, temporal/cardinality ambiguity, unsupported assumptions, superseded evidence, source-authority conflicts, and false-positive near-conflicts. Results are measured by category, including misses and false positives, so provider/model changes can be compared against the same versioned corpus. Initial promotion thresholds remain empirical until the corpus establishes a defensible baseline.
 
 #### 7. Enterprise Safety Rails
 
@@ -157,12 +157,17 @@ The product should be evaluated primarily by the quality of work entering engine
   * Preserve the isolated prototype runtime boundary proven by Spike B.
 * **Phase 1: Minimum Requirements Kernel + Evaluation**
   * Implement only immutable source/requirement revisions, evidence references, independent requirement state dimensions, generic candidate findings, human reconciliation, and immutable baselines.
+  * Add the minimum local persistence required for those objects and evaluation fixtures using SQLite/local filesystem; persistence is part of proving the kernel, not a production storage program.
   * Ship the adversarial evaluation harness alongside the kernel and prove it can compile a deliberately messy discovery package into a traceable baseline plus at least one consistent projection.
-  * Defer richer policy behavior, engineering-decision workflows, staleness propagation, story readiness, and dependency orchestration until later slices need them.
+  * Keep defect-quality thresholds empirical until the corpus establishes a defensible baseline.
+  * Defer richer policy behavior, engineering-decision workflows, staleness propagation, story readiness, dependency orchestration, and production persistence concerns until later slices need them.
 * **Phase 2: Interactive Requirements Discovery Loop**
   * Reuse the proven Mermaid and sandbox runtimes to project the same baseline into process/state views and an interactive prototype.
   * Feed SME and artifact discoveries back into reconciliation as findings/proposals, then freeze a new baseline after accepted changes.
 * **Phase 3: Engineering Handoff, Stories & Readiness**
   * Add schemas/APIs, richer policy constraints and engineering decisions where required, Gherkin stories, Definition of Ready, coverage, and dependency metadata.
 * **Phase 4: Governance, Export & Pilot Hardening**
-  * Add persistence hardening, identity, backlog export, downstream impact analysis where operationally required, and pilot against an active enterprise workflow.
+  * Harden persistence for production: enterprise storage, retention, backup/recovery, concurrency, migrations, lifecycle/cleanup, and operational monitoring.
+  * Add identity, backlog export, downstream impact analysis where operationally required, and pilot against an active enterprise workflow.
+
+Implementation discipline: the PRD describes destination concepts, not a mandate to create a class or subsystem for every noun. Phase 1 implementation issues should include only what is required to satisfy the Phase 1 exit criterion.
