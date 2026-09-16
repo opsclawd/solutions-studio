@@ -1,7 +1,7 @@
 # Product Requirements Document (PRD)
 
 **Product Name:** Evidence-to-Implementation-Ready Requirements Engine ("Solutions Studio")  
-**Document Version:** 1.3-MVP  
+**Document Version:** 1.4-MVP  
 **Status:** Ready for Engineering Review  
 **Target Architecture:** Enterprise Cloud / Private Azure Environment  
 **Target Users:** Business Solutions Developers, Business Analysts, Solutions Architects, Business SMEs
@@ -483,6 +483,7 @@ Coverage proves relationship completeness for known baseline requirements. It do
 * **FR-1.5:** Each saved/imported source state used for provenance shall create an immutable `SourceRevision` with revision number and content hash.
 * **FR-1.6:** Evidence references shall bind to exact `SourceRevisionId` plus locator; mutable source IDs alone are insufficient for accepted provenance.
 * **FR-1.7:** Historical source revisions referenced by accepted baselines or exports shall remain addressable for audit.
+* **FR-1.8:** Phase 1 shall persist `SourceRevision`, `RequirementRevision`, `CandidateFinding`, `RequirementsBaseline`, reconciliation/audit records, and evaluation fixtures/results using the minimum local SQLite/filesystem storage required to prove the kernel across process restarts. Production storage hardening is not required in Phase 1.
 
 ### FR-2: Requirements Compilation & Reconciliation
 
@@ -590,6 +591,7 @@ Coverage proves relationship completeness for known baseline requirements. It do
 * **NFR-2.5 (Coverage Determinism):** Requirement-to-story coverage shall be computed from identifiers/relationships rather than LLM self-assessment.
 * **NFR-2.6 (Revision Integrity):** A baseline or export must never silently retarget to a newer source or requirement revision.
 * **NFR-2.7 (Evaluation Repeatability):** Requirements-intelligence evaluation fixtures, expected findings, and reported results must be versioned so model/provider changes can be compared against the same corpus.
+* **NFR-2.8 (Phase 1 Persistence):** The minimum requirements kernel must survive process restarts without losing immutable revisions, finding dispositions, baseline identity, reconciliation history, or evaluation results. Enterprise durability, backup/recovery, retention, concurrency, and migration requirements are deferred to production persistence hardening.
 
 ## 7. Recommended Technical Stack (MVP)
 
@@ -600,7 +602,7 @@ Coverage proves relationship completeness for known baseline requirements. It do
 | **Prototype Sandbox** | **Sandboxed iframe + `@babel/standalone`** | In-browser execution of constrained generated React TSX under the Phase 0 isolation contract. |
 | **Backend API** | **Node.js (TypeScript) with Fastify** | Type-sharing, asynchronous orchestration, and lightweight application services. |
 | **Validation Linters** | `@mermaid-js/mermaid-cli`, `zod`, Gherkin parser, `sqlfluff` / `@electric-sql/pglite` | Deterministic syntax/structure validation surrounding probabilistic generation. |
-| **Persistence (MVP)** | **Local File System / Azure Blob Storage + SQLite** | Immutable source/requirement revisions, baselines, resolutions, findings, artifacts, and export manifests with minimal operational overhead. |
+| **Persistence** | **Phase 1: SQLite + local filesystem. Phase 4: Azure Blob / approved enterprise storage and operational hardening.** | Phase 1 needs durable local state to prove immutable revisions, findings, baselines, reconciliation, and evaluation. Production retention, backup/recovery, concurrency, migrations, lifecycle, and operations are deferred until hardening. |
 | **Generation Runtime** | **Provider-agnostic CLI adapters; initial implementations: Antigravity (`agy`) and OpenCode (`opencode`)** | Preserves model/provider portability behind `IGenerationGateway`. |
 
 ## 8. Delivery Plan: Vertical Slice Roadmap
@@ -627,6 +629,11 @@ Phase 1: Vertical Slice 1 — Minimum Requirements Kernel + Evaluation
 │   ├── independent origin / reviewState / resolutionState
 │   ├── generic CandidateFinding + auditable disposition
 │   └── immutable RequirementsBaseline manifest
+├── Add minimal local persistence using SQLite/local filesystem
+│   ├── SourceRevision / RequirementRevision
+│   ├── CandidateFinding + disposition / reconciliation audit
+│   ├── RequirementsBaseline
+│   └── evaluation fixtures and results
 ├── Implement atomic candidate-requirement extraction
 ├── Implement provenance validation against exact SourceRevision IDs
 ├── Implement human reconciliation and finding disposition
@@ -644,15 +651,19 @@ Phase 1: Vertical Slice 1 — Minimum Requirements Kernel + Evaluation
 
 Phase 1 intentionally does NOT require full implementation of richer PolicyConstraint behavior,
 EngineeringDecision workflows, downstream stale-item propagation, impact analysis, story readiness,
-or dependency orchestration. Those concepts remain part of the destination architecture and are
-implemented when later slices create concrete demand for them.
+dependency orchestration, enterprise storage, retention, backup/recovery, concurrency, migrations,
+or other production persistence hardening. Those concepts remain part of the destination architecture
+and are implemented when later slices create concrete demand for them.
 
 Phase 1 exit criterion:
-Given a deliberately messy discovery package, the system can extract traceable requirement
-revisions, identify a useful share of planted defects without intolerable false positives, let a
-human reconcile the resulting requirements/findings, freeze an immutable baseline, and generate
-at least one internally consistent projection from that baseline. Mermaid/state projection is the
-preferred proof because Phase 0 already established the generation/validation seam.
+Given a deliberately messy discovery package, the system can persist and reload the kernel state,
+extract traceable requirement revisions, identify a useful share of planted defects without
+intolerable false positives, let a human reconcile the resulting requirements/findings, freeze an
+immutable baseline, and generate at least one internally consistent projection from that baseline.
+Mermaid/state projection is the preferred proof because Phase 0 already established the
+generation/validation seam. "Useful share" and "intolerable false positives" remain intentionally
+empirical until the versioned evaluation corpus establishes a defensible baseline; Phase 1 must not
+invent arbitrary precision/recall thresholds in advance.
 
 Phase 2: Vertical Slice 2 — Interactive Requirements Discovery Loop
 ├── Promote generation gateway and Mermaid validation from Phase 0
@@ -675,12 +686,20 @@ Phase 3: Vertical Slice 3 — Engineering Handoff, Stories & Readiness
 └── Produce machine-readable story dependency graph
 
 Phase 4: Vertical Slice 4 — Governance, Export & Pilot Hardening
-├── Persist source/requirement revisions, baselines, findings, and artifact manifests
+├── Harden persistence for production
+│   ├── approved enterprise storage / Azure Blob where appropriate
+│   ├── retention and lifecycle policy
+│   ├── backup / recovery
+│   ├── concurrency semantics
+│   ├── schema/data migrations
+│   └── operational monitoring and cleanup
 ├── Microsoft Entra ID authentication integration
 ├── Azure DevOps / Jira / GitHub backlog export adapter
 ├── Add downstream staleness / impact analysis only where operationally required
 └── Pilot on an active enterprise business workflow
 ```
+
+Implementation discipline: the PRD describes destination concepts, not a mandate to create a TypeScript class, repository, service, or subsystem for every noun. Phase 1 issues shall implement only what is required to satisfy the Phase 1 exit criterion. `PolicyConstraint`, `EngineeringDecision`, dependency orchestration, impact analysis, richer readiness behavior, and production persistence concerns remain deferred until their owning slices require them.
 
 ## 9. Success Metrics & ROI (KPIs)
 
