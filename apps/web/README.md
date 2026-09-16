@@ -21,10 +21,10 @@ apps/web/
   src/
     features/
       prototype-sandbox/
-        SandboxFrame.tsx            <-- Host React component managing iframe lifecycle, capability tokens, and timeouts
+        SandboxFrame.tsx            <-- Host React component managing iframe lifecycle, private MessageChannel, and timeouts
         SandboxCompiler.ts          <-- Client-side @babel/standalone transpiler with AST loop-guard & line/col extraction
-        SandboxProtocol.ts          <-- Capability-hardened typed message contracts, guards, and epoch tracking
-        SandboxRuntime.ts           <-- srcDoc HTML generator (CSP, React 18 UMD, Tailwind CSS, ErrorBoundary, Token)
+        SandboxProtocol.ts          <-- MessageChannel typed message contracts, guards, and epoch tracking
+        SandboxRuntime.ts           <-- srcDoc HTML generator (CSP, React 18 UMD, Tailwind CSS, ErrorBoundary, Native Port Binding)
         SandboxCsp.ts               <-- Strict CSP generator (connect-src 'none', form-action 'none', etc.)
         runtime-assets/
           react-bundles.ts          <-- Inlined React 18 UMD & ReactDOM UMD libraries
@@ -36,13 +36,13 @@ apps/web/
   test/
     fixtures/
       prototype-sandbox/            <-- Counter, Valve Inspection (PRD 450-850 PSI), Malformed TSX, Render Exception,
-                                        Infinite Loop, Async Hang, Security DOM/Storage/Multi-Vector Network
+                                        Infinite Loop, Async Hang, Security DOM/Storage/Multi-Vector Network/Anti-Spoofing/Prototype Poisoning
     unit/
       SandboxCompiler.test.ts       <-- Unit tests for TSX transpilation, error reporting & AST loop-timeout guard
       SandboxCsp.test.ts            <-- Unit tests for CSP directive builder
-      SandboxProtocol.test.ts       <-- Unit tests for capability token & payload validation
+      SandboxProtocol.test.ts       <-- Unit tests for protocol payload validation
     browser/
-      prototype-sandbox.spec.ts     <-- Playwright browser test suite (10/10 passing)
+      prototype-sandbox.spec.ts     <-- Playwright browser test suite (12/12 passing)
 ```
 
 ### Core Seam Invariants
@@ -50,7 +50,7 @@ apps/web/
 - **Host-Driven Transpilation & AST Loop Protection:** Babel transpilation occurs on the host application before touching the iframe. Syntax errors are caught early and presented as structured diagnostics (`line`, `column`, `message`). Crucially, a custom Babel AST plugin (`createLoopTimeoutPlugin`) inserts elapsed-time guards into all loops (`while`, `for`, `do-while`), throwing an `InfiniteLoopError` if a loop runs continuously for >1000ms.
 - **Strict Iframe Sandbox Boundary:** The iframe has `sandbox="allow-scripts"` and strictly **omits** `allow-same-origin`. As a result, the iframe origin evaluates to the opaque origin (`"null"`), rendering parent cookies, host `localStorage`, host `sessionStorage`, and parent DOM completely inaccessible at the browser engine level.
 - **Air-Gapped CSP & Multi-Vector Boundary:** The embedded `meta` CSP tag enforces `connect-src 'none'`, `img-src 'self' data:`, `script-src 'unsafe-inline' 'unsafe-eval'`, and `form-action 'none'`. All 6 outbound exfiltration vectors (`fetch`, `XMLHttpRequest`, `navigator.sendBeacon`, remote images, remote scripts, and top-level navigation) are blocked.
-- **Capability-Hardened PostMessage Protocol:** All messages carry mandatory `version`, `executionId`, and a per-execution `token` (cryptographic capability secret). Incoming messages are verified on the host against the active epoch's token, preventing untrusted component code running inside the iframe from spoofing harness status messages.
+- **Private MessagePort Protocol & Bound Native Intrinsics:** Authoritative lifecycle messages (`SANDBOX_RENDERED`, `SANDBOX_RUNTIME_ERROR`, `SANDBOX_READY`) are routed strictly over an ephemeral `MessagePort` transferred during the initial handshake. The iframe harness captures the native unpoisoned `window.MessagePort.prototype.postMessage` before untrusted user code executes and binds it directly to the private port (`sendToHost = nativePortPostMessage.bind(privatePort)`). Any attempt by untrusted code to mutate `MessagePort.prototype.postMessage` or spoof lifecycle messages via `window.parent.postMessage` is completely neutralized.
 - **Controlled Runtime Imports:** A minimal CommonJS `require` shim restricts imports exclusively to `react`, `react-dom`, and `react/jsx-runtime`. Any unauthorized import throws an immediate, descriptive error.
 - **Asynchronous Execution Epochs:** Each code change increments an `executionId` epoch. In-flight messages (`SANDBOX_READY`, `SANDBOX_RENDERED`, `SANDBOX_RUNTIME_ERROR`) from superseded iframe runs are automatically discarded to prevent race conditions from masking compile errors.
 - **Fault-Tolerant ErrorBoundary & Hang Recovery:** An embedded React `ErrorBoundary` and `RenderNotifier` mount hook intercept runtime exceptions and report them over `postMessage`. In addition, an execution timeout timer (`timeoutMs = 4000ms`) triggers automatic iframe teardown and reconstruction via `key={iframeKey}` for unresponsive asynchronous components.
@@ -85,17 +85,18 @@ apps/web/
 >    * *Security Caveat:* The AST loop guard is best-effort hardening against accidental/standard infinite loops in generated or authored code, not an adversarial security boundary against malicious code, because generated code could tamper with timing primitives such as `Date.now()` or `performance.now()`. The `while(true)` test proves the ordinary failure mode, but arbitrary-JavaScript starvation resistance in production environments requires out-of-process renderer isolation.
 > 2. **Host Timeout & Iframe Teardown:** For asynchronous hangs (e.g. unresolving promises, infinite recursive re-renders with delay, or hung event handlers), the host's `timeoutMs` timer (4000ms) fires, transitions state to `TIMEOUT`, clears `pendingCodeRef`, and tears down the iframe via `key={iframeKey}`.
 
-### 3. Private MessageChannel / MessagePort Architecture (Anti-Spoofing)
-**Decision: Private `MessageChannel` / `MessagePort` capability transfer; zero DOM script secrets; strict window postMessage filtering.**
+### 3. Private MessageChannel & Bound Native Intrinsics (Anti-Spoofing & Prototype Poisoning Defense)
+**Decision: Private `MessageChannel` / `MessagePort` capability transfer; bound native `MessagePort.prototype.postMessage` intrinsic; zero DOM script secrets; strict window postMessage filtering.**
 
 * **The Security Seam (Same-Document Token Disclosure):** In earlier iterations, an ephemeral capability token was interpolated into the harness `<script>`. While user code cannot access the harness closure directly, scripts executing in the same document could inspect `document.scripts[*].textContent`, extract the token, and forge lifecycle events such as `SANDBOX_RENDERED` or `SANDBOX_RUNTIME_ERROR` via `window.parent.postMessage(...)`.
+* **The Security Seam (Prototype Poisoning):** Even when `privatePort` is held in a private closure, generated component code running in the same JavaScript realm could mutate `MessagePort.prototype.postMessage = function(...) { ... }`. If the harness were to call `privatePort.postMessage(...)`, property lookup would dispatch to the attacker method with `this === privatePort`, exposing the private capability reference, allowing the attacker to intercept, suppress, or forge lifecycle traffic.
 * **The Architectural Resolution:**
   1. **Zero DOM Secrets:** The harness `srcDoc` contains zero secret tokens or nonces. Script tags cannot be scraped for credentials.
-  2. **Initial Handshake:** When the iframe document finishes parsing, the harness posts an initial `SANDBOX_READY` handshake message to the host via `window.parent.postMessage(...)`.
-  3. **Private Port Transfer:** The host instantiates a private `new MessageChannel()`, attaches `port1.onmessage` for authoritative lifecycle events, and transfers `port2` to the iframe harness alongside the `SANDBOX_EXECUTE` message via `postMessage(..., '*', [channel.port2])`.
-  4. **Closure Isolation & Window Detachment:** The iframe harness captures `event.ports[0]` into a private closure variable (`privatePort`) before any generated component code executes, and immediately unregisters its window message listener (`window.removeEventListener('message', handleWindowMessage)`).
-  5. **Authoritative Lifecycle Exclusivity:** All subsequent authoritative lifecycle events (`SANDBOX_RENDERED`, `SANDBOX_RUNTIME_ERROR`, `SANDBOX_READY`) are transmitted strictly over `privatePort.postMessage(...)`.
-  6. **Host-Side Window Filtering:** The host window listener *only* processes the initial `SANDBOX_READY` handshake. Any `SANDBOX_RENDERED` or `SANDBOX_RUNTIME_ERROR` messages received over `window.addEventListener('message')` are dropped immediately, rendering spoofing attempts by generated code completely ineffective.
+  2. **Native Intrinsic Capture:** Before untrusted user code executes, the iframe harness captures the native unpoisoned `window.MessagePort.prototype.postMessage` in trusted harness scope (`nativePortPostMessage = window.MessagePort.prototype.postMessage`).
+  3. **Initial Handshake:** When the iframe document finishes parsing, the harness posts an initial `SANDBOX_READY` handshake message to the host via `window.parent.postMessage(...)`.
+  4. **Private Port Transfer:** The host instantiates a private `new MessageChannel()`, attaches `port1.onmessage` for authoritative lifecycle events, and transfers `port2` to the iframe harness alongside the `SANDBOX_EXECUTE` message via `postMessage(..., '*', [channel.port2])`.
+  5. **Closure Isolation & Bound Intrinsic:** The iframe harness captures `event.ports[0]` into `privatePort` and binds `sendToHost = nativePortPostMessage.bind(privatePort)`. All authoritative lifecycle events (`SANDBOX_RENDERED`, `SANDBOX_RUNTIME_ERROR`, `SANDBOX_READY`) are transmitted strictly through `sendToHost(msg)`. Because `sendToHost` directly invokes the native intrinsic, `MessagePort.prototype.postMessage` property lookup is completely bypassed, ensuring the attacker cannot intercept `this` or observe messages.
+  6. **Window Detachment & Host-Side Filtering:** The iframe harness immediately unregisters its window message listener (`window.removeEventListener('message', handleWindowMessage)`). In addition, the host window listener *only* processes the initial `SANDBOX_READY` handshake and drops any `SANDBOX_RENDERED` or `SANDBOX_RUNTIME_ERROR` messages received over `window.addEventListener('message')`.
 
 ### 4. Tailwind CSS Air-Gapped Utility Inlining Strategy
 **Decision: Pre-compiled offline Tailwind stylesheet inlined directly into `srcDoc`.**
@@ -139,6 +140,7 @@ The storage boundary was verified using [`SecurityStorageTheftFixture`](file:///
 | **Loop Hang Protection** | Babel AST transform (`createLoopTimeoutPlugin`) | Injects synchronous loop guards that terminate loops exceeding 1000ms, preventing main-thread freezes (best-effort protection). |
 | **Async Hang Recovery** | Host timeout timer (`timeoutMs = 4000ms`) + `key={iframeKey}` | Automatically tears down and recreates unresponsive iframes on promise or render stalls. |
 | **Private MessagePort Channel** | Ephemeral `MessageChannel` transferred per epoch to harness closure | Zero DOM script secrets; lifecycle events accepted strictly via private port; window-level spoofed messages dropped. |
+| **Prototype Poisoning Defense** | Unpoisoned native `MessagePort.prototype.postMessage` bound to private port (`sendToHost`) | Monkey-patching `MessagePort.prototype.postMessage` cannot intercept `privatePort` instance or alter/observe lifecycle traffic. |
 | **Runtime Resilience** | React `ErrorBoundary` + unhandled window error trap | Render exceptions caught gracefully; host application never crashes. |
 
 ---
@@ -150,17 +152,17 @@ The storage boundary was verified using [`SecurityStorageTheftFixture`](file:///
 pnpm --filter @solutions-studio/web build
 ```
 
-### 2. Run Deterministic Unit Tests (15 tests)
+### 2. Run Deterministic Unit Tests (16 tests)
 ```bash
 pnpm --filter @solutions-studio/web test
 ```
 
-### 3. Run Automated Playwright Browser Tests (11 tests)
+### 3. Run Automated Playwright Browser Tests (12 tests)
 ```bash
 pnpm --filter @solutions-studio/web test:browser
 ```
 
-### 4. Run Monorepo Test Suite (40 unit tests)
+### 4. Run Monorepo Test Suite (41 unit tests)
 ```bash
 pnpm test
 ```
@@ -189,6 +191,8 @@ The Playwright browser suite (`apps/web/test/browser/prototype-sandbox.spec.ts`)
 | `8. Multi-vector network isolation` | CSP blocks `fetch`, `xhr`, `sendBeacon`, remote images, remote scripts, and top navigation | **PASS** |
 | `9. Synchronous loop termination` | Compiler AST loop-timeout plugin terminates `while(true)` after 1000ms without freezing host | **PASS** |
 | `10. Asynchronous hang recovery` | Host timeout timer (4000ms) detects stalled components, triggers teardown, and recovers on reload | **PASS** |
+| `11. Message spoofing defense` | Proves zero DOM script secrets and host drops spoofed `window.parent` lifecycle messages | **PASS** |
+| `12. Prototype poisoning immunity` | Overriding `MessagePort.prototype.postMessage` cannot intercept `privatePort` or alter lifecycle traffic | **PASS** |
 
 ---
 
@@ -200,8 +204,8 @@ The Playwright browser suite (`apps/web/test/browser/prototype-sandbox.spec.ts`)
 | **Isolated Execution** | Execution strictly within `sandbox="allow-scripts"` (origin `"null"`) | **PASS** |
 | **Air-Gapped Security** | Strict CSP (`connect-src 'none'`, `img-src 'self' data:`) and pre-bundled offline Tailwind CSS | **PASS** |
 | **Error Handling & Hang Recovery** | Structured compile error diagnostics, runtime ErrorBoundary, AST loop guard, and host timeout recovery | **PASS** |
-| **Capability Hardening** | Ephemeral capability tokens prevent untrusted code from spoofing harness protocol messages | **PASS** |
-| **Automated Test Coverage** | 100% pass rate across unit tests (15 web, 25 orchestrator) and real browser Playwright suite (10 tests) | **PASS** |
+| **MessagePort & Prototype Hardening** | Ephemeral `MessageChannel` capability transfer and bound native intrinsics prevent spoofing and prototype hijacking | **PASS** |
+| **Automated Test Coverage** | 100% pass rate across unit tests (16 web, 25 orchestrator) and real browser Playwright suite (12 tests) | **PASS** |
 | **CI Integration** | Playwright Chromium installation and browser tests execute in GitHub Actions CI | **PASS** |
 | **Architectural Zero-Relocation** | Code placed directly in target production locations (`apps/web/src/features/...`) | **PASS** |
 

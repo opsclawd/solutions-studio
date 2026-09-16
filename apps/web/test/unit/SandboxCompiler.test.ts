@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { compileTsx, validateImports } from '../../src/features/prototype-sandbox/SandboxCompiler';
+import { SECURITY_PROTOTYPE_POISONING_FIXTURE_CODE } from '../fixtures/prototype-sandbox';
 
 describe('SandboxCompiler', () => {
   it('successfully compiles valid TSX to JavaScript with React classic runtime', () => {
@@ -141,5 +142,10 @@ describe('SandboxCompiler', () => {
       runner(exportsObj);
       expect(exportsObj.sum()).toBe(4950);
     }
+  });
+
+  it('compiles SECURITY_PROTOTYPE_POISONING_FIXTURE_CODE cleanly', () => {
+    const result = compileTsx(SECURITY_PROTOTYPE_POISONING_FIXTURE_CODE);
+    expect(result.success).toBe(true);
   });
 });

@@ -216,4 +216,33 @@ test.describe('Prototype Sandbox Tracer (Phase 0 Spike B)', () => {
     await page.waitForTimeout(200);
     await expect(statusBadge).toHaveText('RENDERED');
   });
+
+  test('12. Enforces prototype poisoning immunity: overriding MessagePort.prototype.postMessage cannot intercept privatePort or alter lifecycle traffic', async ({ page }) => {
+    await page.selectOption('[data-testid="fixture-selector"]', 'security-prototype-poisoning');
+
+    const statusBadge = page.locator('[data-testid="sandbox-status-badge"]');
+    await expect(statusBadge).toHaveText('RENDERED', { timeout: 10000 });
+
+    const iframe = page.frameLocator('iframe[data-testid="sandbox-iframe"]');
+    await expect(iframe.getByTestId('prototype-poisoning-probe')).toBeVisible();
+
+    // 1. Verify poisoning was attempted by the component
+    await expect(iframe.getByTestId('poisoning-attempted')).toHaveText('true');
+
+    // 2. Verify intercepted lifecycle calls via poisoned prototype is 0 (the harness uses bound native intrinsic)
+    await expect(iframe.getByTestId('intercepted-calls-count')).toHaveText('0');
+    await expect(iframe.getByTestId('captured-port-detected')).toHaveText('false');
+    await expect(iframe.getByTestId('poisoning-probe-status')).toContainText('Prototype poisoning defeated');
+
+    // 3. Verify that the private MessagePort instance was NEVER exposed to attacker
+    const capturedPort = await iframe.locator('[data-testid="prototype-poisoning-probe"]').evaluate(() => {
+      return !!(window as any).__capturedPortInstance;
+    });
+    expect(capturedPort).toBe(false);
+
+    // 4. Verify host successfully received authentic SANDBOX_RENDERED event despite prototype mutation
+    await expect(statusBadge).toHaveText('RENDERED');
+    const renderTimeBadge = page.locator('[data-testid="render-time-badge"]');
+    await expect(renderTimeBadge).toBeVisible();
+  });
 });

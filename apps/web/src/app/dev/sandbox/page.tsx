@@ -13,6 +13,7 @@ import {
   SECURITY_STORAGE_THEFT_FIXTURE_CODE,
   SECURITY_NETWORK_EXFILTRATION_FIXTURE_CODE,
   SECURITY_MESSAGE_SPOOFING_FIXTURE_CODE,
+  SECURITY_PROTOTYPE_POISONING_FIXTURE_CODE,
 } from '../../../../test/fixtures/prototype-sandbox';
 
 const FIXTURES: Record<string, { name: string; description: string; code: string }> = {
@@ -65,6 +66,11 @@ const FIXTURES: Record<string, { name: string; description: string; code: string
     name: 'Security: Message Spoofing & Port Privacy',
     description: 'Proves zero DOM script secrets and host drops spoofed window.parent lifecycle messages',
     code: SECURITY_MESSAGE_SPOOFING_FIXTURE_CODE,
+  },
+  'security-prototype-poisoning': {
+    name: 'Security: Prototype Poisoning Defense',
+    description: 'Proves overriding MessagePort.prototype.postMessage cannot intercept privatePort or alter lifecycle events',
+    code: SECURITY_PROTOTYPE_POISONING_FIXTURE_CODE,
   },
 };
 

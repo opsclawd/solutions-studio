@@ -54,14 +54,20 @@ ${safeReactDOM}
   <script>
 (function() {
   'use strict';
+  // Capture unpoisoned native MessagePort.prototype.postMessage before any untrusted user code can execute
+  var nativePortPostMessage = (typeof window !== 'undefined' && window.MessagePort && window.MessagePort.prototype)
+    ? window.MessagePort.prototype.postMessage
+    : null;
+
   var PROTOCOL_VERSION = '${PROTOCOL_VERSION}';
   var SANDBOX_MESSAGE_SOURCE = '${SANDBOX_MESSAGE_SOURCE}';
   var currentExecutionId = ${options.executionId ?? 0};
   var privatePort = null;
+  var sendToHost = null;
 
   function sendClientMessage(msg) {
-    if (privatePort) {
-      privatePort.postMessage(msg);
+    if (sendToHost) {
+      sendToHost(msg);
     }
   }
 
@@ -259,6 +265,9 @@ ${safeReactDOM}
     if (data.type === 'SANDBOX_EXECUTE') {
       if (event.ports && event.ports[0]) {
         privatePort = event.ports[0];
+        if (nativePortPostMessage) {
+          sendToHost = nativePortPostMessage.bind(privatePort);
+        }
         privatePort.onmessage = handlePortMessage;
         if (typeof privatePort.start === 'function') {
           privatePort.start();
