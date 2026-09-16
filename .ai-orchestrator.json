@@ -1,6 +1,7 @@
 {
   "validation": {
     "commands": [
+      "pnpm format:fix",
       "pnpm lint",
       "pnpm typecheck",
       "pnpm format",
@@ -10,6 +11,7 @@
       "pnpm --filter @solutions-studio/web test"
     ],
     "tiers": [
+      ["pnpm format:fix"],
       [
         "pnpm lint",
         "pnpm typecheck",
