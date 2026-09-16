@@ -155,14 +155,14 @@ The product should be evaluated primarily by the quality of work entering engine
 * **Phase 0: Technical de-risking**
   * Preserve the provider-agnostic generation seam and deterministic Mermaid repair work.
   * Preserve the isolated prototype runtime boundary proven by Spike B.
-* **Phase 1: Requirements Intelligence Core + Evaluation**
-  * Settle immutable source/requirement revision semantics and authority ontology first.
-  * Build the adversarial evaluation corpus before trusting extraction/reconciliation behavior.
-  * Implement atomic candidate extraction, structured findings, human reconciliation, and immutable verified baselines.
-* **Phase 2: Artifact Projections & Cross-Validation**
-  * Generate process/state diagrams and coverage views from a specific baseline.
-  * Feed artifact-discovered inconsistencies back into requirements review.
-* **Phase 3: Data Contracts, Stories & Readiness**
-  * Generate schema/API projections, record engineering decisions separately, generate traceable Gherkin stories, and enforce Definition of Ready.
-* **Phase 4: Stakeholder Pilot & Governed Handoff**
-  * Promote the prototype runtime, add persistence/auth/export, and pilot against an active enterprise workflow.
+* **Phase 1: Minimum Requirements Kernel + Evaluation**
+  * Implement only immutable source/requirement revisions, evidence references, independent requirement state dimensions, generic candidate findings, human reconciliation, and immutable baselines.
+  * Ship the adversarial evaluation harness alongside the kernel and prove it can compile a deliberately messy discovery package into a traceable baseline plus at least one consistent projection.
+  * Defer richer policy behavior, engineering-decision workflows, staleness propagation, story readiness, and dependency orchestration until later slices need them.
+* **Phase 2: Interactive Requirements Discovery Loop**
+  * Reuse the proven Mermaid and sandbox runtimes to project the same baseline into process/state views and an interactive prototype.
+  * Feed SME and artifact discoveries back into reconciliation as findings/proposals, then freeze a new baseline after accepted changes.
+* **Phase 3: Engineering Handoff, Stories & Readiness**
+  * Add schemas/APIs, richer policy constraints and engineering decisions where required, Gherkin stories, Definition of Ready, coverage, and dependency metadata.
+* **Phase 4: Governance, Export & Pilot Hardening**
+  * Add persistence hardening, identity, backlog export, downstream impact analysis where operationally required, and pilot against an active enterprise workflow.
