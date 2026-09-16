@@ -1,0 +1,10 @@
+{
+  "name": "solutions-studio",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "test": "pnpm --filter @solutions-studio/orchestrator test",
+    "test:integration": "pnpm --filter @solutions-studio/orchestrator test:integration",
+    "tracer": "pnpm --filter @solutions-studio/orchestrator tracer"
+  }
+}
