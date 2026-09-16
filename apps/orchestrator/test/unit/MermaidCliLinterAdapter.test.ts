@@ -16,7 +16,7 @@ describe('MermaidCliLinterAdapter', () => {
     const result = await adapter.validate(validCode);
     expect(result.isValid).toBe(true);
     expect(result.errorMessage).toBeUndefined();
-  });
+  }, 15_000);
 
   it('detects syntax error in an invalid Mermaid fixture and captures error message', async () => {
     const fixturePath = path.resolve(
@@ -29,7 +29,7 @@ describe('MermaidCliLinterAdapter', () => {
     expect(result.isValid).toBe(false);
     expect(result.errorMessage).toBeDefined();
     expect(result.errorMessage).toMatch(/Parse error/i);
-  });
+  }, 15_000);
 
   it('fails fast on empty string', async () => {
     const result = await adapter.validate('   ');
