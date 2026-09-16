@@ -622,8 +622,14 @@ try {
   const originalPostMessage = MessagePort.prototype.postMessage;
   MessagePort.prototype.postMessage = function(...args) {
     const payload = args[0];
-    // If a Solutions Studio sandbox lifecycle message is routed through prototype postMessage, capture it
-    if (payload && typeof payload === 'object' && payload.source === 'SOLUTIONS_STUDIO_SANDBOX') {
+    // Intercept if the message is a sandbox lifecycle message (matching real protocol source 'solutions-studio-sandbox' or any SANDBOX_* lifecycle type)
+    const isLifecycleTraffic =
+      payload !== null &&
+      typeof payload === 'object' &&
+      (payload.source === 'solutions-studio-sandbox' ||
+        (typeof payload.type === 'string' && payload.type.startsWith('SANDBOX_')));
+
+    if (isLifecycleTraffic) {
       window.__capturedPortInstance = this;
       window.__capturedLifecyclePayload = payload;
       window.__interceptedLifecycleCalls = (window.__interceptedLifecycleCalls || 0) + 1;
