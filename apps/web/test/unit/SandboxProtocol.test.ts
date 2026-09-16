@@ -8,7 +8,6 @@ import {
 } from '../../src/features/prototype-sandbox/SandboxProtocol';
 
 describe('SandboxProtocol', () => {
-  const validToken = 'tok_test123';
   const validExecutionId = 1;
 
   it('correctly identifies valid client and host messages', () => {
@@ -17,7 +16,6 @@ describe('SandboxProtocol', () => {
       version: PROTOCOL_VERSION,
       type: 'SANDBOX_READY',
       executionId: validExecutionId,
-      token: validToken,
     };
     expect(isSandboxMessage(readyMsg)).toBe(true);
     expect(isSandboxClientMessage(readyMsg)).toBe(true);
@@ -28,7 +26,6 @@ describe('SandboxProtocol', () => {
       version: PROTOCOL_VERSION,
       type: 'SANDBOX_RENDERED',
       executionId: validExecutionId,
-      token: validToken,
       renderTimeMs: 42,
     };
     expect(isSandboxMessage(renderedMsg)).toBe(true);
@@ -40,28 +37,17 @@ describe('SandboxProtocol', () => {
       type: 'SANDBOX_EXECUTE',
       code: 'console.log(1)',
       executionId: validExecutionId,
-      token: validToken,
     };
     expect(isSandboxMessage(executeMsg)).toBe(true);
     expect(isSandboxClientMessage(executeMsg)).toBe(false);
     expect(isSandboxHostMessage(executeMsg)).toBe(true);
   });
 
-  it('rejects messages lacking mandatory executionId or capability token', () => {
-    const noToken = {
-      source: SANDBOX_MESSAGE_SOURCE,
-      version: PROTOCOL_VERSION,
-      type: 'SANDBOX_READY',
-      executionId: 1,
-    };
-    expect(isSandboxMessage(noToken)).toBe(false);
-    expect(isSandboxClientMessage(noToken)).toBe(false);
-
+  it('rejects messages lacking mandatory executionId', () => {
     const noExecutionId = {
       source: SANDBOX_MESSAGE_SOURCE,
       version: PROTOCOL_VERSION,
       type: 'SANDBOX_READY',
-      token: 'tok_xyz',
     };
     expect(isSandboxMessage(noExecutionId)).toBe(false);
     expect(isSandboxClientMessage(noExecutionId)).toBe(false);
@@ -74,7 +60,6 @@ describe('SandboxProtocol', () => {
       version: PROTOCOL_VERSION,
       type: 'SANDBOX_RENDERED',
       executionId: 1,
-      token: 'tok_1',
       renderTimeMs: 'fast', // invalid type
     };
     expect(isSandboxClientMessage(badRendered)).toBe(false);
@@ -85,7 +70,6 @@ describe('SandboxProtocol', () => {
       version: PROTOCOL_VERSION,
       type: 'SANDBOX_RUNTIME_ERROR',
       executionId: 1,
-      token: 'tok_1',
       error: 'string-instead-of-object',
     };
     expect(isSandboxClientMessage(badRuntimeError)).toBe(false);

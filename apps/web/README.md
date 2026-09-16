@@ -82,17 +82,20 @@ apps/web/
 >
 > **The Architectural Resolution:**
 > 1. **Compiler AST Loop Guard:** [`SandboxCompiler.ts`](file:///home/gary/.openclaw/workspace/solutions-studio/apps/web/src/features/prototype-sandbox/SandboxCompiler.ts) instruments all loop AST nodes (`WhileStatement`, `ForStatement`, `DoWhileStatement`, etc.) with a timestamp check (`Date.now() - start > 1000ms`). If a loop executes continuously past 1000ms, it throws an `InfiniteLoopError`, safely unwinding the synchronous call stack and allowing the React `ErrorBoundary` to report a structured runtime error without freezing the host.
+>    * *Security Caveat:* The AST loop guard is best-effort hardening against accidental/standard infinite loops in generated or authored code, not an adversarial security boundary against malicious code, because generated code could tamper with timing primitives such as `Date.now()` or `performance.now()`. The `while(true)` test proves the ordinary failure mode, but arbitrary-JavaScript starvation resistance in production environments requires out-of-process renderer isolation.
 > 2. **Host Timeout & Iframe Teardown:** For asynchronous hangs (e.g. unresolving promises, infinite recursive re-renders with delay, or hung event handlers), the host's `timeoutMs` timer (4000ms) fires, transitions state to `TIMEOUT`, clears `pendingCodeRef`, and tears down the iframe via `key={iframeKey}`.
 
-### 3. Capability-Hardened PostMessage Protocol
-**Decision: Strict payload type-guards, mandatory epoch IDs, and per-execution capability tokens.**
+### 3. Private MessageChannel / MessagePort Architecture (Anti-Spoofing)
+**Decision: Private `MessageChannel` / `MessagePort` capability transfer; zero DOM script secrets; strict window postMessage filtering.**
 
-* **The Security Seam:** Because generated code executes inside the same iframe window as the runtime harness, validating `event.source === iframe.contentWindow` proves the message came from the iframe, but does **not** distinguish harness messages from user code calling `window.parent.postMessage(...)`.
-* **The Solution:**
-  1. For each execution epoch, `SandboxFrame` generates a random capability token (`tokenRef.current = 'tok_' + ...`).
-  2. The token is injected into the iframe `srcDoc` within a private, self-executing closure scope (`var HARNESS_TOKEN = ...`).
-  3. The harness includes `token: HARNESS_TOKEN` and `executionId: currentExecutionId` on all valid messages (`SANDBOX_READY`, `SANDBOX_RENDERED`, `SANDBOX_RUNTIME_ERROR`).
-  4. The host strictly verifies `data.token === tokenRef.current` and `data.executionId === executionIdRef.current`, immediately rejecting any spoofed or obsolete messages.
+* **The Security Seam (Same-Document Token Disclosure):** In earlier iterations, an ephemeral capability token was interpolated into the harness `<script>`. While user code cannot access the harness closure directly, scripts executing in the same document could inspect `document.scripts[*].textContent`, extract the token, and forge lifecycle events such as `SANDBOX_RENDERED` or `SANDBOX_RUNTIME_ERROR` via `window.parent.postMessage(...)`.
+* **The Architectural Resolution:**
+  1. **Zero DOM Secrets:** The harness `srcDoc` contains zero secret tokens or nonces. Script tags cannot be scraped for credentials.
+  2. **Initial Handshake:** When the iframe document finishes parsing, the harness posts an initial `SANDBOX_READY` handshake message to the host via `window.parent.postMessage(...)`.
+  3. **Private Port Transfer:** The host instantiates a private `new MessageChannel()`, attaches `port1.onmessage` for authoritative lifecycle events, and transfers `port2` to the iframe harness alongside the `SANDBOX_EXECUTE` message via `postMessage(..., '*', [channel.port2])`.
+  4. **Closure Isolation & Window Detachment:** The iframe harness captures `event.ports[0]` into a private closure variable (`privatePort`) before any generated component code executes, and immediately unregisters its window message listener (`window.removeEventListener('message', handleWindowMessage)`).
+  5. **Authoritative Lifecycle Exclusivity:** All subsequent authoritative lifecycle events (`SANDBOX_RENDERED`, `SANDBOX_RUNTIME_ERROR`, `SANDBOX_READY`) are transmitted strictly over `privatePort.postMessage(...)`.
+  6. **Host-Side Window Filtering:** The host window listener *only* processes the initial `SANDBOX_READY` handshake. Any `SANDBOX_RENDERED` or `SANDBOX_RUNTIME_ERROR` messages received over `window.addEventListener('message')` are dropped immediately, rendering spoofing attempts by generated code completely ineffective.
 
 ### 4. Tailwind CSS Air-Gapped Utility Inlining Strategy
 **Decision: Pre-compiled offline Tailwind stylesheet inlined directly into `srcDoc`.**
@@ -122,7 +125,7 @@ The storage boundary was verified using [`SecurityStorageTheftFixture`](file:///
 
 ### 7. TSX Controllability vs. Declarative UI Schemas (PRD Alignment)
 * Direct TSX generation allows AI models to produce rich, interactive prototypes with custom React hooks, dynamic state transitions, and real-world business validation (such as the PRD safe pressure range `[450.0 - 850.0] PSI` check).
-* When paired with the multi-layer security boundary (Babel AST loop guard + host transpilation + opaque origin + air-gapped CSP + capability tokens + ErrorBoundary + timeout recovery), TSX generation achieves the safety and predictability of declarative schemas while preserving the complete expressiveness of React.
+* When paired with the multi-layer security boundary (Babel AST loop guard + host transpilation + opaque origin + air-gapped CSP + private MessagePort channel + ErrorBoundary + timeout recovery), TSX generation achieves the safety and predictability of declarative schemas while preserving the complete expressiveness of React.
 
 ---
 
@@ -133,9 +136,9 @@ The storage boundary was verified using [`SecurityStorageTheftFixture`](file:///
 | **Iframe Sandbox** | `sandbox="allow-scripts"` (strictly NO `allow-same-origin`, NO `allow-top-navigation`) | Origin is `"null"`. Parent DOM (`window.parent.document`), host cookies, `localStorage`, and `sessionStorage` access blocked by browser engine. Top navigation blocked. |
 | **Network CSP** | `connect-src 'none'; img-src 'self' data:; form-action 'none'` | Blocks outbound `fetch`, `XMLHttpRequest`, `navigator.sendBeacon`, remote images, remote scripts, and `<form>` submissions. |
 | **Execution Isolation** | Host Babel transpilation + module whitelist (`react`, `react-dom`) | Malformed syntax fails fast on host; unauthorized module imports (`axios`, `fs`, `lodash`) rejected immediately. |
-| **Loop Hang Protection** | Babel AST transform (`createLoopTimeoutPlugin`) | Injects synchronous loop guards that terminate loops exceeding 1000ms, preventing main-thread freezes. |
+| **Loop Hang Protection** | Babel AST transform (`createLoopTimeoutPlugin`) | Injects synchronous loop guards that terminate loops exceeding 1000ms, preventing main-thread freezes (best-effort protection). |
 | **Async Hang Recovery** | Host timeout timer (`timeoutMs = 4000ms`) + `key={iframeKey}` | Automatically tears down and recreates unresponsive iframes on promise or render stalls. |
-| **Capability Token** | Ephemeral per-epoch token (`sandboxToken`) in private harness closure | Verifies all `postMessage` calls, preventing untrusted code from spoofing harness protocol messages. |
+| **Private MessagePort Channel** | Ephemeral `MessageChannel` transferred per epoch to harness closure | Zero DOM script secrets; lifecycle events accepted strictly via private port; window-level spoofed messages dropped. |
 | **Runtime Resilience** | React `ErrorBoundary` + unhandled window error trap | Render exceptions caught gracefully; host application never crashes. |
 
 ---
@@ -152,7 +155,7 @@ pnpm --filter @solutions-studio/web build
 pnpm --filter @solutions-studio/web test
 ```
 
-### 3. Run Automated Playwright Browser Tests (10 tests)
+### 3. Run Automated Playwright Browser Tests (11 tests)
 ```bash
 pnpm --filter @solutions-studio/web test:browser
 ```

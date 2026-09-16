@@ -1,14 +1,14 @@
 /**
  * SandboxProtocol: Type-safe, capability-hardened messaging protocol between Host and Sandboxed Iframe.
  *
- * All messages pass via window.postMessage.
- * To ensure isolation and prevent message spoofing:
- * - The host verifies event.source === iframe.contentWindow
- * - Messages carry a mandatory source discriminator ('solutions-studio-sandbox')
- * - Messages carry a mandatory protocol version ('solutions-studio-sandbox-v1')
- * - Messages carry a mandatory executionId epoch counter
- * - Messages carry a private per-execution capability token (sandboxToken)
- * - Complete payload shapes are strictly validated per message type
+ * Architecture:
+ * - Initial Handshake: Sandboxed iframe signals ready via window.postMessage with 'SANDBOX_READY'.
+ * - Private Capability Channel: Host instantiates a private MessageChannel and transfers port2
+ *   with the 'SANDBOX_EXECUTE' command to the iframe harness closure before generated code runs.
+ * - Authoritative Lifecycle: Authoritative lifecycle events ('SANDBOX_RENDERED', 'SANDBOX_RUNTIME_ERROR', etc.)
+ *   must arrive strictly via the private MessagePort (port1.onmessage).
+ * - Anti-Spoofing: Any lifecycle messages sent via window.postMessage are dropped by the host.
+ *   Generated code in the DOM has no access to the harness MessagePort closure and cannot spoof events.
  */
 
 export const PROTOCOL_VERSION = 'solutions-studio-sandbox-v1' as const;
@@ -18,7 +18,7 @@ export interface SandboxBaseMessage {
   source: typeof SANDBOX_MESSAGE_SOURCE;
   version: typeof PROTOCOL_VERSION;
   executionId: number;
-  token: string;
+  channelId?: string;
 }
 
 // Host -> Sandbox Messages
@@ -89,7 +89,6 @@ export function isSandboxMessage(data: unknown): data is SandboxMessage {
     candidate.source === SANDBOX_MESSAGE_SOURCE &&
     candidate.version === PROTOCOL_VERSION &&
     typeof candidate.executionId === 'number' &&
-    typeof candidate.token === 'string' &&
     typeof candidate.type === 'string'
   );
 }

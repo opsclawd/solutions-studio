@@ -19,7 +19,7 @@ export interface RuntimeOptions {
   extraCss?: string;
   initialCode?: string;
   executionId?: number;
-  sandboxToken?: string;
+  channelId?: string;
 }
 
 export function buildSandboxHtml(options: RuntimeOptions = {}): string {
@@ -57,7 +57,13 @@ ${safeReactDOM}
   var PROTOCOL_VERSION = '${PROTOCOL_VERSION}';
   var SANDBOX_MESSAGE_SOURCE = '${SANDBOX_MESSAGE_SOURCE}';
   var currentExecutionId = ${options.executionId ?? 0};
-  var HARNESS_TOKEN = '${options.sandboxToken ?? ""}';
+  var privatePort = null;
+
+  function sendClientMessage(msg) {
+    if (privatePort) {
+      privatePort.postMessage(msg);
+    }
+  }
 
   if (window.React && !window.React.default) {
     window.React.default = window.React;
@@ -68,38 +74,32 @@ ${safeReactDOM}
 
   // Global uncaught error handler
   window.onerror = function(message, source, lineno, colno, error) {
-    try {
-      window.parent.postMessage({
-        source: SANDBOX_MESSAGE_SOURCE,
-        version: PROTOCOL_VERSION,
-        type: 'SANDBOX_RUNTIME_ERROR',
-        executionId: currentExecutionId,
-        token: HARNESS_TOKEN,
-        error: {
-          message: message ? String(message) : 'Uncaught window error',
-          stack: error && error.stack ? error.stack : undefined
-        }
-      }, '*');
-    } catch (_) {}
+    sendClientMessage({
+      source: SANDBOX_MESSAGE_SOURCE,
+      version: PROTOCOL_VERSION,
+      type: 'SANDBOX_RUNTIME_ERROR',
+      executionId: currentExecutionId,
+      error: {
+        message: message ? String(message) : 'Uncaught window error',
+        stack: error && error.stack ? error.stack : undefined
+      }
+    });
     return false;
   };
 
   // Global unhandled promise rejection handler
   window.onunhandledrejection = function(event) {
-    try {
-      var reason = event.reason;
-      window.parent.postMessage({
-        source: SANDBOX_MESSAGE_SOURCE,
-        version: PROTOCOL_VERSION,
-        type: 'SANDBOX_RUNTIME_ERROR',
-        executionId: currentExecutionId,
-        token: HARNESS_TOKEN,
-        error: {
-          message: reason ? (reason.message || String(reason)) : 'Unhandled Promise Rejection',
-          stack: reason && reason.stack ? reason.stack : undefined
-        }
-      }, '*');
-    } catch (_) {}
+    var reason = event.reason;
+    sendClientMessage({
+      source: SANDBOX_MESSAGE_SOURCE,
+      version: PROTOCOL_VERSION,
+      type: 'SANDBOX_RUNTIME_ERROR',
+      executionId: currentExecutionId,
+      error: {
+        message: reason ? (reason.message || String(reason)) : 'Unhandled Promise Rejection',
+        stack: reason && reason.stack ? reason.stack : undefined
+      }
+    });
   };
 
   // Top-level React ErrorBoundary component
@@ -116,20 +116,17 @@ ${safeReactDOM}
         return { hasError: true, error: error };
       }
       componentDidCatch(error, errorInfo) {
-        try {
-          window.parent.postMessage({
-            source: SANDBOX_MESSAGE_SOURCE,
-            version: PROTOCOL_VERSION,
-            type: 'SANDBOX_RUNTIME_ERROR',
-            executionId: currentExecutionId,
-            token: HARNESS_TOKEN,
-            error: {
-              message: error ? (error.message || String(error)) : 'Render Error',
-              stack: error && error.stack ? error.stack : undefined,
-              componentStack: errorInfo && errorInfo.componentStack ? errorInfo.componentStack : undefined
-            }
-          }, '*');
-        } catch (_) {}
+        sendClientMessage({
+          source: SANDBOX_MESSAGE_SOURCE,
+          version: PROTOCOL_VERSION,
+          type: 'SANDBOX_RUNTIME_ERROR',
+          executionId: currentExecutionId,
+          error: {
+            message: error ? (error.message || String(error)) : 'Render Error',
+            stack: error && error.stack ? error.stack : undefined,
+            componentStack: errorInfo && errorInfo.componentStack ? errorInfo.componentStack : undefined
+          }
+        });
       }
       render() {
         if (this.state.hasError) {
@@ -195,16 +192,13 @@ ${safeReactDOM}
 
       var onRenderedCallback = function() {
         var renderTimeMs = Math.round(performance.now() - startTime);
-        try {
-          window.parent.postMessage({
-            source: SANDBOX_MESSAGE_SOURCE,
-            version: PROTOCOL_VERSION,
-            type: 'SANDBOX_RENDERED',
-            renderTimeMs: renderTimeMs,
-            executionId: execId,
-            token: HARNESS_TOKEN
-          }, '*');
-        } catch (_) {}
+        sendClientMessage({
+          source: SANDBOX_MESSAGE_SOURCE,
+          version: PROTOCOL_VERSION,
+          type: 'SANDBOX_RENDERED',
+          renderTimeMs: renderTimeMs,
+          executionId: execId
+        });
       };
 
       var element = React.createElement(
@@ -220,34 +214,32 @@ ${safeReactDOM}
 
       currentRoot.render(element);
     } catch (err) {
-      window.parent.postMessage({
+      sendClientMessage({
         source: SANDBOX_MESSAGE_SOURCE,
         version: PROTOCOL_VERSION,
         type: 'SANDBOX_RUNTIME_ERROR',
         executionId: execId,
-        token: HARNESS_TOKEN,
         error: {
           message: err ? (err.message || String(err)) : 'Execution failed',
           stack: err && err.stack ? err.stack : undefined
         }
-      }, '*');
+      });
     }
   }
 
-  // Handle incoming messages from host
-  window.addEventListener('message', function(event) {
-    var data = event.data;
+  // Handle messages over the private MessagePort
+  function handlePortMessage(portEvent) {
+    var data = portEvent.data;
     if (!data || data.source !== SANDBOX_MESSAGE_SOURCE) return;
-    if (data.token !== HARNESS_TOKEN) return;
+    if (data.version !== PROTOCOL_VERSION) return;
 
     if (data.type === 'SANDBOX_PING') {
-      window.parent.postMessage({
+      sendClientMessage({
         source: SANDBOX_MESSAGE_SOURCE,
         version: PROTOCOL_VERSION,
         type: 'SANDBOX_READY',
-        executionId: currentExecutionId,
-        token: HARNESS_TOKEN
-      }, '*');
+        executionId: currentExecutionId
+      });
       return;
     }
 
@@ -256,12 +248,32 @@ ${safeReactDOM}
       if (container) container.innerHTML = '';
       return;
     }
+  }
+
+  // Initial window listener to receive SANDBOX_EXECUTE and extract the private MessagePort
+  function handleWindowMessage(event) {
+    var data = event.data;
+    if (!data || data.source !== SANDBOX_MESSAGE_SOURCE) return;
+    if (data.version !== PROTOCOL_VERSION) return;
 
     if (data.type === 'SANDBOX_EXECUTE') {
+      if (event.ports && event.ports[0]) {
+        privatePort = event.ports[0];
+        privatePort.onmessage = handlePortMessage;
+        if (typeof privatePort.start === 'function') {
+          privatePort.start();
+        }
+      }
+
+      // Immediately unregister window listener so no further window commands are processed
+      window.removeEventListener('message', handleWindowMessage);
+
       currentExecutionId = data.executionId;
       executeComponent(data.code, data.props, data.executionId);
     }
-  });
+  }
+
+  window.addEventListener('message', handleWindowMessage);
 
   // Signal readiness when document is ready
   function notifyReady() {
@@ -270,8 +282,7 @@ ${safeReactDOM}
         source: SANDBOX_MESSAGE_SOURCE,
         version: PROTOCOL_VERSION,
         type: 'SANDBOX_READY',
-        executionId: currentExecutionId,
-        token: HARNESS_TOKEN
+        executionId: currentExecutionId
       }, '*');
     } catch (_) {}
   }

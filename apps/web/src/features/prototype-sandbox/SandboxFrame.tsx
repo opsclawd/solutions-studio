@@ -82,7 +82,8 @@ export const SandboxFrame: React.FC<SandboxFrameProps> = ({
   const pendingCodeRef = useRef<string>('');
   const isInitialMountRef = useRef<boolean>(true);
   const executionIdRef = useRef<number>(0);
-  const tokenRef = useRef<string>('');
+  const activePortRef = useRef<MessagePort | null>(null);
+  const handshakeCompletedRef = useRef<boolean>(false);
 
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
@@ -105,15 +106,53 @@ export const SandboxFrame: React.FC<SandboxFrameProps> = ({
     }
   }, []);
 
+  const closeActivePort = useCallback(() => {
+    if (activePortRef.current) {
+      activePortRef.current.close();
+      activePortRef.current = null;
+    }
+  }, []);
+
   // Force recreation of the iframe DOM node on timeout or corruption
   const recreateIframe = useCallback(() => {
     clearTimeoutTimer();
+    closeActivePort();
+    handshakeCompletedRef.current = false;
     setIframeKey((prev) => prev + 1);
-  }, [clearTimeoutTimer]);
+  }, [clearTimeoutTimer, closeActivePort]);
 
-  // Handle incoming messages from the sandboxed iframe
+  // Handle authoritative lifecycle events over the private MessagePort
+  const handlePortMessage = useCallback((data: unknown) => {
+    if (!isSandboxClientMessage(data)) {
+      return;
+    }
+
+    if (data.executionId !== executionIdRef.current) {
+      return;
+    }
+
+    switch (data.type) {
+      case 'SANDBOX_RENDERED': {
+        clearTimeoutTimer();
+        setRenderTimeMs(data.renderTimeMs);
+        updateStatus('RENDERED');
+        onRenderedRef.current?.(data.renderTimeMs);
+        break;
+      }
+
+      case 'SANDBOX_RUNTIME_ERROR': {
+        clearTimeoutTimer();
+        setRuntimeError(data.error);
+        updateStatus('RUNTIME_ERROR');
+        onErrorRef.current?.({ type: 'RUNTIME_ERROR', details: data.error });
+        break;
+      }
+    }
+  }, [clearTimeoutTimer, updateStatus]);
+
+  // Handle incoming handshake messages from the sandboxed iframe
   useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
+    const handleWindowMessage = (event: MessageEvent) => {
       // 1. Enforce source boundary: message must originate from this specific iframe instance
       if (!iframeRef.current || event.source !== iframeRef.current.contentWindow) {
         return;
@@ -124,54 +163,53 @@ export const SandboxFrame: React.FC<SandboxFrameProps> = ({
         return;
       }
 
-      // 2. Enforce exact capability token and executionId epoch equality
-      if (data.executionId !== executionIdRef.current || data.token !== tokenRef.current) {
+      // 2. Window postMessage is strictly limited to the initial SANDBOX_READY signal.
+      // Any attempt by untrusted/generated code to spoof SANDBOX_RENDERED or SANDBOX_RUNTIME_ERROR
+      // via window.parent.postMessage is dropped here.
+      if (data.type !== 'SANDBOX_READY') {
         return;
       }
 
-      switch (data.type) {
-        case 'SANDBOX_READY': {
-          if (!pendingCodeRef.current) {
-            return;
-          }
-          updateStatus('READY');
-          if (iframeRef.current?.contentWindow) {
-            const executeMessage: SandboxExecuteMessage = {
-              source: SANDBOX_MESSAGE_SOURCE,
-              version: PROTOCOL_VERSION,
-              type: 'SANDBOX_EXECUTE',
-              code: pendingCodeRef.current,
-              executionId: executionIdRef.current,
-              token: tokenRef.current,
-            };
-            iframeRef.current.contentWindow.postMessage(executeMessage, '*');
-          }
-          break;
-        }
+      // 3. Ignore redundant ready events once the private port handshake is completed
+      if (handshakeCompletedRef.current) {
+        return;
+      }
 
-        case 'SANDBOX_RENDERED': {
-          clearTimeoutTimer();
-          setRenderTimeMs(data.renderTimeMs);
-          updateStatus('RENDERED');
-          onRenderedRef.current?.(data.renderTimeMs);
-          break;
-        }
+      if (!pendingCodeRef.current) {
+        return;
+      }
 
-        case 'SANDBOX_RUNTIME_ERROR': {
-          clearTimeoutTimer();
-          setRuntimeError(data.error);
-          updateStatus('RUNTIME_ERROR');
-          onErrorRef.current?.({ type: 'RUNTIME_ERROR', details: data.error });
-          break;
-        }
+      handshakeCompletedRef.current = true;
+      updateStatus('READY');
+
+      // 4. Create private MessageChannel for this execution epoch
+      closeActivePort();
+      const channel = new MessageChannel();
+      activePortRef.current = channel.port1;
+
+      channel.port1.onmessage = (portEvent: MessageEvent) => {
+        handlePortMessage(portEvent.data);
+      };
+
+      // 5. Transfer port2 to iframe harness along with SANDBOX_EXECUTE command
+      if (iframeRef.current?.contentWindow) {
+        const executeMessage: SandboxExecuteMessage = {
+          source: SANDBOX_MESSAGE_SOURCE,
+          version: PROTOCOL_VERSION,
+          type: 'SANDBOX_EXECUTE',
+          code: pendingCodeRef.current,
+          executionId: executionIdRef.current,
+        };
+        iframeRef.current.contentWindow.postMessage(executeMessage, '*', [channel.port2]);
       }
     };
 
-    window.addEventListener('message', handleMessage);
+    window.addEventListener('message', handleWindowMessage);
     return () => {
-      window.removeEventListener('message', handleMessage);
+      window.removeEventListener('message', handleWindowMessage);
+      closeActivePort();
     };
-  }, [clearTimeoutTimer, updateStatus]);
+  }, [clearTimeoutTimer, updateStatus, handlePortMessage, closeActivePort]);
 
   // Transpile and load code whenever code prop changes
   useEffect(() => {
@@ -183,20 +221,21 @@ export const SandboxFrame: React.FC<SandboxFrameProps> = ({
       setCompiledCode('');
       setSrcDoc('');
       pendingCodeRef.current = '';
-      tokenRef.current = '';
+      closeActivePort();
+      handshakeCompletedRef.current = false;
       clearTimeoutTimer();
       return;
     }
 
     clearTimeoutTimer();
+    closeActivePort();
+    handshakeCompletedRef.current = false;
     setCompileError(null);
     setRuntimeError(null);
     updateStatus('COMPILING');
 
-    // Track new execution epoch and unique capability token
+    // Increment execution epoch
     executionIdRef.current += 1;
-    const epochToken = 'tok_' + Math.random().toString(36).substring(2) + Date.now().toString(36);
-    tokenRef.current = epochToken;
 
     // 1. Transpile in host via Babel
     const result = compileTsx(trimmed);
@@ -215,11 +254,10 @@ export const SandboxFrame: React.FC<SandboxFrameProps> = ({
     pendingCodeRef.current = result.code;
     updateStatus('LOADING');
 
-    // 3. Prepare iframe srcDoc HTML with epoch ID & capability token, and recreate iframe on subsequent code updates
+    // 3. Prepare iframe srcDoc HTML with epoch ID
     const html = buildSandboxHtml({
       ...runtimeOptions,
       executionId: executionIdRef.current,
-      sandboxToken: tokenRef.current,
     });
     setSrcDoc(html);
 
@@ -233,6 +271,8 @@ export const SandboxFrame: React.FC<SandboxFrameProps> = ({
     timeoutTimerRef.current = setTimeout(() => {
       updateStatus('TIMEOUT');
       pendingCodeRef.current = '';
+      closeActivePort();
+      handshakeCompletedRef.current = false;
       const timeoutMessage = `Sandbox execution timed out after ${timeoutMs}ms. Possible infinite loop or unresponsive component.`;
       onErrorRef.current?.({ type: 'TIMEOUT', message: timeoutMessage });
       recreateIframe();
@@ -240,8 +280,9 @@ export const SandboxFrame: React.FC<SandboxFrameProps> = ({
 
     return () => {
       clearTimeoutTimer();
+      closeActivePort();
     };
-  }, [code, timeoutMs, runtimeOptions, updateStatus, clearTimeoutTimer, recreateIframe]);
+  }, [code, timeoutMs, runtimeOptions, updateStatus, clearTimeoutTimer, closeActivePort, recreateIframe]);
 
   return (
     <div className={`sandbox-frame-container flex flex-col w-full h-full bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm ${className}`}>
@@ -265,7 +306,7 @@ export const SandboxFrame: React.FC<SandboxFrameProps> = ({
               {status}
             </span>
             {renderTimeMs !== null && status === 'RENDERED' && (
-              <span className="text-gray-400">({renderTimeMs}ms)</span>
+              <span data-testid="render-time-badge" className="text-gray-400">({renderTimeMs}ms)</span>
             )}
           </div>
           <div className="flex items-center gap-2">

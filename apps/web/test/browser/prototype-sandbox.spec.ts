@@ -171,4 +171,49 @@ test.describe('Prototype Sandbox Tracer (Phase 0 Spike B)', () => {
     await expect(iframe.getByTestId('counter-title')).toHaveText('Interactive Counter');
     await expect(iframe.getByTestId('counter-value')).toHaveText('0');
   });
+
+  test('11. Enforces private MessagePort exclusivity: generated code cannot discover script secrets and host drops spoofed window.parent messages', async ({ page }) => {
+    await page.selectOption('[data-testid="fixture-selector"]', 'security-spoofing');
+
+    const statusBadge = page.locator('[data-testid="sandbox-status-badge"]');
+    await expect(statusBadge).toHaveText('RENDERED', { timeout: 10000 });
+
+    const iframe = page.frameLocator('iframe[data-testid="sandbox-iframe"]');
+    await expect(iframe.getByTestId('spoof-probe-container')).toBeVisible();
+
+    // 1. Verify zero tokens or secrets exist in DOM script tags
+    await expect(iframe.getByTestId('spoof-tokens-found')).toHaveText('0');
+
+    // 2. Verify spoofed window.parent.postMessages were dispatched by generated code
+    await expect(iframe.getByTestId('spoof-attempted')).toHaveText('true');
+    await expect(iframe.getByTestId('spoof-probe-status')).toContainText('MessagePort security probe active');
+
+    // 3. Verify host ignored spoofed SANDBOX_RUNTIME_ERROR ("FORGED_MALICIOUS_ERROR") and remained in RENDERED state
+    await expect(statusBadge).toHaveText('RENDERED');
+    await expect(page.locator('[data-testid="sandbox-runtime-error-boundary"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="error-message"]')).toHaveCount(0);
+
+    // 4. Verify host ignored spoofed SANDBOX_RENDERED (renderTimeMs: 999999) and accepted only authoritative port render time (< 5000ms)
+    const renderTimeBadge = page.locator('[data-testid="render-time-badge"]');
+    await expect(renderTimeBadge).toBeVisible();
+    const renderTimeText = await renderTimeBadge.textContent();
+    expect(renderTimeText).not.toContain('999999ms');
+
+    // 5. Direct host-level spoof attempt verification:
+    // Even if external/untrusted scripts post spoofed lifecycle messages directly to the host window,
+    // the host rejects them because authoritative lifecycle events must arrive strictly on the private MessagePort.
+    await page.evaluate(() => {
+      window.postMessage({
+        source: 'solutions-studio-sandbox',
+        version: 'solutions-studio-sandbox-v1',
+        type: 'SANDBOX_RUNTIME_ERROR',
+        executionId: 1,
+        error: { message: 'EXTERNAL_WINDOW_SPOOF_ATTEMPT' }
+      }, '*');
+    });
+
+    // Host status remains RENDERED, completely ignoring the window-level spoof attempt
+    await page.waitForTimeout(200);
+    await expect(statusBadge).toHaveText('RENDERED');
+  });
 });
