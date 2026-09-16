@@ -1,68 +1,173 @@
-# The Executive Pitch: Spec-to-Prototype Delivery Engine
+# The Executive Pitch: Evidence-to-Implementation-Ready Requirements Engine
 
-**Sub-title:** Accelerating SME Discovery, Eliminating Shadow IT, and Compressing Solution Design from Weeks to Hours.
+**Sub-title:** Accelerating SME discovery, validating intent before engineering, and producing implementation-ready backlog packages from traceable evidence.
 
 ### The 60-Second Executive Hook
 
-> *"Traditional requirements gathering is broken: business SMEs communicate in operational pain points, spreadsheets, and paper forms; IT responds with 60-page requirement documents that nobody reads; and projects stall or derail because misunderstandings aren't caught until after engineering has started.*
-> 
-> *We are building the ​**Solutions Delivery Engine**​—an internal, private 'NotebookLM for Solutions Delivery.' It ingests SME interviews, policies, and process workflows, and automatically synthesizes them into **live clickable wireframes, validated database schemas, visual process diagrams, and Gherkin user stories** on the fly. By replacing speculative documents with interactive prototypes within 48 hours, we surface edge cases immediately, establish clean architectural contracts, and ensure engineering never writes a single line of production code against ambiguous requirements."*
+> *Traditional requirements gathering is broken: business SMEs communicate in operational pain points, spreadsheets, policies, and paper forms; IT responds with text-heavy requirement documents that stakeholders struggle to validate; and missing rules are discovered only after engineering has started.*
+>
+> *Solutions Studio is an internal, private requirements compiler for solution delivery. It ingests curated SME interviews, SOPs, policies, legacy schemas, and spreadsheet-derived Markdown; captures immutable source revisions; compiles candidate requirements into a traceable canonical model; surfaces conflicts, missing boundaries, unresolved product decisions, and incomplete state transitions; and then projects an immutable verified baseline into clickable prototypes, process diagrams, schemas, API contracts, and implementation-ready user stories. Engineering receives work only after known blocking findings are resolved and the story passes deterministic readiness gates.*
+
+### Core Product Principle
+
+Solutions Studio is not an artifact generator with citations. It is a **requirements control plane**.
+
+The authoritative flow is:
+
+```text
+Raw evidence
+    ↓
+Normalized Markdown
+    ↓
+Immutable source revisions
+    ↓
+Candidate requirement extraction + findings
+    ↓
+Canonical requirement revisions
+    ↓
+Human reconciliation
+    ↓
+Immutable verified requirements baseline
+    │
+    ├── Interactive prototypes
+    ├── Process and state diagrams
+    ├── Data schemas and API contracts
+    └── User stories + acceptance criteria
+                ↓
+        Story readiness gate
+                ↓
+      Jira / Azure DevOps / GitHub
+                ↓
+            SDLC factory
+```
+
+Generated prototypes, schemas, diagrams, and stories are **projections of the requirements baseline**, not independent sources of business truth. If a generated artifact exposes a missing requirement, the finding must return to the requirements model and be explicitly resolved before it becomes authoritative.
 
 ### Key Capabilities & Features
 
-#### 1. Ingestion & Domain Distillation (Markdown-First Backbone)
+#### 1. Ingestion & Evidence Normalization
 
-* **The "Zero-Noise" Ingestion Rail:** Bypasses brittle multimodal PDF/OCR parsers and vector fragmentation. Interviews, SOPs, spreadsheets, and regulatory rules are converted into standardized, high-density Markdown templates.
-* **Full-Context Synthesis (No RAG Retrieval Loss):** By loading curated Markdown directly into high-capacity context windows, the system maintains 100% deterministic recall across the entire initiative—cross-referencing edge cases, operational roles, and business rules without hallucinated joins.
-* **Audit-Proof Source Attribution:** Every generated business rule, form constraint, or workflow step links directly to an inline citation (e.g., `[Source: Ops_Interview_Line2#04:15]`). If a rule wasn't stated by the SME or documented in policy, it is explicitly flagged as an unverified assumption.
+* **Markdown-First Ingestion:** Interviews, SOPs, policies, spreadsheets, and legacy-system observations are converted into standardized, high-density Markdown.
+* **Immutable Provenance:** Every evidence reference resolves to an immutable `SourceRevision` plus a locator. Editing a source creates a new revision rather than changing historical provenance.
+* **Full-Context Source Availability:** Curated Markdown can be loaded directly into high-capacity context windows, reducing retrieval-loss failure modes. Full-context loading does **not** imply perfect model recall.
 
-#### 2. The Artifact Generation Engine ("The Live Canvas")
+#### 2. Requirements Compilation & Reconciliation
 
-* **Interactive Wireframe & Form Sandbox:**
-  * Generates clean, sandboxed UI code (React + Tailwind or declarative JSON-Schema forms) live in an isolated preview pane.
-  * Allows BAs to sit with SMEs and say: *"Is this the approval flow you meant?"* The SME can click buttons, toggle states, and test validation live in the browser.
-* **Automated Visual Architecture (Mermaid.js & BPMN):**
-  * Converts unstructured interview transcripts into visual process swimlanes, sequence diagrams, and Entity-Relationship Diagrams (ERDs) on demand.
-  * Features a ​**closed-loop syntax auto-repair**​: if the model generates invalid diagram syntax, an internal AST parser catches the error and self-corrects the code before rendering it.
-* **Relational Data Contracts & Schemas:**
-  * Automatically scaffolds production-ready DDL (PostgreSQL / Azure SQL Server) complete with foreign key constraints, indexes, and immutable audit tables (`created_at`, `updated_by`, `status_history`).
-  * Generates OpenAPI 3.1 interface contracts for backend engineering handoff.
-* **Gherkin-Compliant User Stories & Acceptance Criteria:**
-  * Outputs standardized Agile stories formatted strictly in `Given-When-Then` BDD syntax, ready for QA automation.
-  * Runs automated **Ambiguity Audits** that flag subjective, untestable adjectives (e.g., "fast response", "intuitive layout") and forces quantitative boundaries.
-* **Implementation Sequencing & Gantt Timelines:**
-  * Scaffolds dependency maps and milestone execution timelines (in Mermaid Gantt format) highlighting technical blockers, third-party integration risks, and critical paths.
+Solutions Studio extracts candidate requirements across actors, permissions, business rules, lifecycle/state, data constraints, failure/recovery behavior, integrations, exceptions, and NFRs.
 
-#### 3. Enterprise Safety Rails ("Responsible AI Architecture")
+Requirement semantics use independent dimensions rather than one overloaded lifecycle enum:
 
-* **"Acceleration, Not Authority" Guardrails:** The LLM acts purely as an execution accelerator. All outputs must pass automated linting, schema validation (Zod/JSON Schema), and human-in-the-loop review by the BA and SME before acceptance.
-* **Air-Gapped Corporate Privacy:** Operates entirely within private cloud boundaries (e.g., private Azure OpenAI endpoints). Enterprise data, pipeline parameters, operational logs, and proprietary workflows are never transmitted to public models or used for model training.
+* **origin** — e.g. `EXPLICIT`, `INFERRED`, `ASSUMED`, `GENERATED_PROPOSAL`
+* **reviewState** — `PENDING`, `ACCEPTED`, `REJECTED`
+* **resolutionState** — `CLEAR`, `CONFLICTED`, `UNRESOLVED`, `SUPERSEDED`
 
-* **Architectural Defensibility (Decoupled by Design):** Unlike fragile AI wrappers, the Solutions Studio is engineered on Clean Architecture and Domain-Driven Design (DDD). The core business rules—what constitutes an ambiguous requirement, an ungrounded user story, or an invalid state transition—exist completely independent of AI models or UI frameworks. The LLM and linters operate as swappable infrastructure adapters behind strict interface ports. If Azure OpenAI is replaced, or an internal open-weights model is deployed on-premises, not a single line of domain business logic changes.
+An accepted assumption remains an assumption. An inferred requirement may also be conflicted. Requirement meaning is represented by immutable `RequirementRevision` records, and verified baselines contain exact revision IDs rather than mutable "latest" requirements.
 
-#### 4. Delivery Handoff (One-Click Export)
+The authority model also separates:
 
-* **Zero-Friction Backlog Sync:** Direct one-click export pushing structured user stories and acceptance criteria into Jira or Azure DevOps backlogs.
-* **Repository-Ready Specs:** Exports clean Markdown specs, data models, and Mermaid diagrams directly into Git repositories or Confluence/SharePoint knowledge bases.
+* **Business requirements** — product/business behavior established by SME or product authority.
+* **Enterprise/policy constraints** — architecture, security, compliance, identity, and governance rules established by the appropriate enterprise authority.
+* **Engineering decisions** — legitimate implementation choices with rationale and input references; they do not require fabricated SME provenance.
+
+#### 3. Probabilistic Discovery, Deterministic Enforcement
+
+AI assists with extracting candidate requirements and discovering possible contradictions, missing authorization, state gaps, temporal ambiguity, and other concerns. Those discovery steps are probabilistic and can produce both misses and false positives.
+
+Deterministic controls operate on the resulting structured state:
+
+* immutable revision identity and content hashes
+* provenance relationship validity
+* parser/schema validation
+* baseline membership rules
+* finding-disposition rules
+* requirement-to-story coverage
+* Story Definition of Ready
+* export policy enforcement
+
+A passing readiness gate means all **known** blocking conditions have been resolved. It does not claim that the model discovered every possible defect.
+
+#### 4. Artifact Generation & Cross-Validation
+
+Artifacts are generated from a specific verified baseline and used as alternate representations of the same specification.
+
+* **Interactive Prototype:** lets SMEs validate states, field rules, errors, and approvals. Newly discovered business behavior returns as a proposal/finding.
+* **Process / State / ERD Views:** expose unreachable states, missing terminal paths, undefined relationships, and workflow inconsistencies.
+* **Schemas & APIs:** combine accepted business requirements, applicable policy constraints, and explicit engineering decisions.
+* **Gherkin Stories:** map normative clauses to exact requirement revision IDs and the baseline used to compile them.
+* **Dependency Graphs:** support downstream sequencing without hiding unresolved product decisions.
+
+#### 5. Story Definition of Ready
+
+A story is not implementation-ready merely because it is well written or syntactically valid.
+
+The readiness gate requires, where applicable:
+
+* business outcome identified
+* actor and authorization boundary identified
+* scope and exclusions defined
+* acceptance criteria testable
+* happy path and relevant negative paths covered
+* state transitions represented
+* data constraints represented
+* failure and recovery behavior specified
+* applicable NFRs and policy constraints attached
+* dependencies identified
+* every normative clause mapped to accepted requirement revisions in the referenced baseline
+* no known unresolved blocking finding affects implementation
+* no unresolved ambiguity requires a product decision
+* assumptions required for implementation explicitly accepted and clear
+
+The governing contract is: **implementation agents may make engineering decisions; they should not be forced to make product decisions.**
+
+#### 6. Evaluation & Trust
+
+The Requirements Intelligence Core ships with an adversarial evaluation harness, not only implementation code.
+
+Fixtures include planted contradictions, missing actors, state-transition gaps, authorization gaps, temporal/cardinality ambiguity, unsupported assumptions, superseded evidence, source-authority conflicts, and false-positive near-conflicts. Results are measured by category, including misses and false positives, so provider/model changes can be compared against the same versioned corpus. Initial promotion thresholds remain empirical until the corpus establishes a defensible baseline.
+
+#### 7. Enterprise Safety Rails
+
+* **Acceleration, Not Authority:** The model extracts, proposes, transforms, and cross-checks. Human reviewers establish business authority and resolve material conflicts.
+* **Private Runtime Boundary:** Enterprise context may only be transmitted through approved generation adapters/providers for the deployment environment.
+* **Architectural Defensibility:** Requirements validity, revision semantics, authority boundaries, and readiness rules remain independent of any generation provider or UI framework.
+
+#### 8. Delivery Handoff
+
+* **Traceable Backlog Sync:** Export structured features, stories, acceptance criteria, baseline IDs, exact requirement revision references, policy constraints, readiness state, and dependency metadata into Jira, Azure DevOps, or GitHub.
+* **Repository-Ready Specifications:** Export Markdown specifications, requirement manifests, data contracts, diagrams, and readiness reports alongside code repositories.
+* **End-to-End Traceability Target:** Preserve the chain `source revision -> requirement revision -> baseline -> story -> issue -> implementation -> test -> PR` as downstream integrations mature.
 
 ### The Business Case & ROI
 
-| Metric                                             | Traditional BA Process                                         | With the Solutions Delivery Engine                                                 |
-| ---------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| **Discovery to First Interactive Prototype** | 3 to 6 weeks (BRD revisions, static slide mockups)             | **48 to 72 hours**(live, clickable form prototypes)                          |
-| **SME Alignment & Feedback Loop**            | Delayed; SMEs struggle to visualize abstract specs             | **Immediate;**SMEs react directly to working UI and flows                    |
-| **Downstream Engineering Rework**            | 20% to 35% of sprint velocity spent refactoring scope gaps     | **Near zero;**edge cases and schemas locked down before coding               |
-| **Shadow IT Remediation**                    | Business units build unvetted spreadsheets when IT is too slow | **Proactive enablement;**delivers governed, standard apps faster than macros |
+The product should be evaluated primarily by the quality of work entering engineering, not by the volume of generated artifacts.
 
-### The MVP Execution Plan (How We Build It Fast)
+| Metric | Traditional BA Process | With Solutions Studio |
+| --- | --- | --- |
+| **Discovery to validated baseline/prototype** | Multi-week document/review cycles | Target: material reduction for suitable workflows |
+| **Requirement provenance** | Manual and mutable | Exact immutable source/requirement revision references |
+| **Conflicts / open product decisions** | Frequently discovered during implementation or UAT | Surfaced and dispositioned before backlog export |
+| **Engineering scope churn** | Measured from project baseline | Target: material reduction in requirement-driven change after kickoff |
+| **Story readiness** | Reviewer-dependent | Deterministic readiness report over structured state plus human authority |
+| **Requirements-intelligence quality** | Usually unmeasured | Versioned adversarial corpus tracking misses and false positives by category |
 
-* **Phase 1 (Week 1–2): Markdown Core & Spec Engine**
-  * Establish standardized BA Markdown ingestion templates.
-  * Implement prompt pipelines for Gherkin user stories, SQL schemas, and Mermaid process flows.
-* **Phase 2 (Week 3–4): Interactive UI & Visual Sandbox**
-  * Build the split-pane web UI (Markdown context on the left, live Mermaid/React sandbox on the right).
-  * Implement automated AST/syntax linters with closed-loop error correction.
-* **Phase 3 (Week 5–6): Stakeholder Pilot & Export Gates**
-  * Run a pilot with an active business initiative (e.g., modernizing a complex manual intake or compliance form).
-  * Deploy one-click export into enterprise tracking tools (Azure DevOps / Jira).
+### MVP Execution Direction
 
+* **Phase 0: Technical de-risking**
+  * Preserve the provider-agnostic generation seam and deterministic Mermaid repair work.
+  * Preserve the isolated prototype runtime boundary proven by Spike B.
+* **Phase 1: Minimum Requirements Kernel + Evaluation**
+  * Implement only immutable source/requirement revisions, evidence references, independent requirement state dimensions, generic candidate findings, human reconciliation, and immutable baselines.
+  * Add the minimum local persistence required for those objects and evaluation fixtures using SQLite/local filesystem; persistence is part of proving the kernel, not a production storage program.
+  * Ship the adversarial evaluation harness alongside the kernel and prove it can compile a deliberately messy discovery package into a traceable baseline plus at least one consistent projection.
+  * Keep defect-quality thresholds empirical until the corpus establishes a defensible baseline.
+  * Defer richer policy behavior, engineering-decision workflows, staleness propagation, story readiness, dependency orchestration, and production persistence concerns until later slices need them.
+* **Phase 2: Interactive Requirements Discovery Loop**
+  * Reuse the proven Mermaid and sandbox runtimes to project the same baseline into process/state views and an interactive prototype.
+  * Feed SME and artifact discoveries back into reconciliation as findings/proposals, then freeze a new baseline after accepted changes.
+* **Phase 3: Engineering Handoff, Stories & Readiness**
+  * Add schemas/APIs, richer policy constraints and engineering decisions where required, Gherkin stories, Definition of Ready, coverage, and dependency metadata.
+* **Phase 4: Governance, Export & Pilot Hardening**
+  * Harden persistence for production: enterprise storage, retention, backup/recovery, concurrency, migrations, lifecycle/cleanup, and operational monitoring.
+  * Add identity, backlog export, downstream impact analysis where operationally required, and pilot against an active enterprise workflow.
+
+Implementation discipline: the PRD describes destination concepts, not a mandate to create a class or subsystem for every noun. Phase 1 implementation issues should include only what is required to satisfy the Phase 1 exit criterion.
