@@ -32,7 +32,13 @@ jobs:
       - name: Build orchestrator
         run: pnpm --filter @solutions-studio/orchestrator build
 
-      - name: Run unit tests
+      - name: Build web
+        run: pnpm --filter @solutions-studio/web build
+
+      - name: Run orchestrator unit tests
         env:
           PUPPETEER_CONFIG_PATH: ${{ github.workspace }}/.github/puppeteer-config.json
         run: pnpm --filter @solutions-studio/orchestrator test
+
+      - name: Run web unit tests
+        run: pnpm --filter @solutions-studio/web test
