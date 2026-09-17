@@ -42,6 +42,10 @@ import type {
   RequirementReconciliationRecord,
   ProjectionRecord
 } from '../../../application/ports/persistence/IRequirementsRepository.js';
+import {
+  StaleRevisionTargetError,
+  UnknownRequirementRevisionError
+} from '../../../application/use-cases/ReconciliationErrors.js';
 import { EvaluationRunRecordSchema } from '@solutions-studio/contracts';
 import type { FindingDisposition } from '@solutions-studio/domain';
 import { computeContentHash, deriveLocatorIndex } from '../markdown/deriveLocatorIndex.js';
@@ -122,6 +126,17 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
     }
   }
 
+  private async acquireLocks<T>(
+    entityIds: readonly string[],
+    action: () => Promise<T>
+  ): Promise<T> {
+    if (entityIds.length === 0) {
+      return action();
+    }
+    const [first, ...rest] = entityIds;
+    return this.acquireEntityLock(first, () => this.acquireLocks(rest, action));
+  }
+
   private async readRawFileIfExists(filePath: string): Promise<string | undefined> {
     try {
       return await fs.readFile(filePath, 'utf8');
@@ -136,23 +151,6 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
   async captureSourceRevision(input: CaptureSourceRevisionInput): Promise<SourceRevisionRecord> {
     assertSafeIdentifier(input.sourceId, 'sourceId');
     const contentHash = computeContentHash(input.markdownText);
-    const contentIndexPath = resolveStorePath(
-      this.baseDir,
-      'source-content-index',
-      `${input.sourceId}.json`
-    );
-    const contentMap = (await readJson<Record<string, string>>(contentIndexPath)) ?? {};
-
-    // Decision 6: check content hash across ALL historical revisions of this source
-    const existingRevisionId = contentMap[contentHash];
-    if (existingRevisionId) {
-      const existingRecord = await this.getSourceRevision(
-        createSourceRevisionId(existingRevisionId)
-      );
-      if (existingRecord) {
-        return existingRecord;
-      }
-    }
 
     const sourceIndexPath = resolveStorePath(
       this.baseDir,
@@ -171,6 +169,9 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
         createSourceRevisionId(sourceIndex.latestRevisionId)
       );
       if (latestRecord) {
+        if (latestRecord.revision.contentHash === contentHash) {
+          return latestRecord;
+        }
         nextRevisionNumber = latestRecord.revision.revision + 1;
         supersedesRevisionId = latestRecord.revision.id;
       } else {
@@ -210,13 +211,6 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
       revisionIds: [...sourceIndex.revisionIds, newRevisionId]
     };
     await writeJsonAtomic(sourceIndexPath, updatedSourceIndex);
-
-    // Update source content index atomically
-    const updatedContentMap: Record<string, string> = {
-      ...contentMap,
-      [contentHash]: newRevisionId
-    };
-    await writeJsonAtomic(contentIndexPath, updatedContentMap);
 
     return record;
   }
@@ -374,20 +368,13 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
 
   async saveCandidateFinding(finding: CandidateFinding): Promise<void> {
     assertSafeIdentifier(finding.id, 'findingId');
-    const filePath = resolveStorePath(this.baseDir, 'findings', `${finding.id}.json`);
-    const existing = await readJson<CandidateFinding>(filePath);
-    if (!existing) {
-      if (finding.disposition !== 'OPEN') {
-        throw new Error(
-          `Cannot create candidate finding directly with non-OPEN disposition: '${finding.disposition}'. Initial findings must be created with disposition 'OPEN'.`
-        );
-      }
-    } else if (existing.disposition !== finding.disposition) {
+    if (finding.disposition !== 'OPEN') {
       throw new Error(
-        `Direct disposition mutation of finding '${finding.id}' from '${existing.disposition}' to '${finding.disposition}' is forbidden. Findings must be transitioned through reconciliation.`
+        `Cannot create candidate finding directly with non-OPEN disposition: '${finding.disposition}'. Initial findings must be created with disposition 'OPEN'.`
       );
     }
-    await writeJsonAtomic(filePath, finding);
+    const filePath = resolveStorePath(this.baseDir, 'findings', `${finding.id}.json`);
+    await writeJsonExclusive(filePath, finding);
   }
 
   async getCandidateFinding(id: FindingId): Promise<CandidateFinding | undefined> {
@@ -657,6 +644,73 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
         );
       }
 
+      // Immutability checks: only disposition and rationale may change during transition
+      if (current.id !== finding.id) {
+        throw new Error(
+          `Transition finding id mismatch: expected '${current.id}', got '${finding.id}'`
+        );
+      }
+      if (current.type !== finding.type) {
+        throw new Error(
+          `Cannot mutate immutable finding type from '${current.type}' to '${finding.type}' during transition`
+        );
+      }
+      if (current.discoveredBy !== finding.discoveredBy) {
+        throw new Error(
+          `Cannot mutate immutable finding discoveredBy from '${current.discoveredBy}' to '${finding.discoveredBy}' during transition`
+        );
+      }
+      if (
+        current.affectedRequirementRevisions.length !==
+          finding.affectedRequirementRevisions.length ||
+        !current.affectedRequirementRevisions.every(
+          (val, idx) => val === finding.affectedRequirementRevisions[idx]
+        )
+      ) {
+        throw new Error(
+          `Cannot mutate immutable finding affectedRequirementRevisions during transition`
+        );
+      }
+      if (
+        current.evidence.length !== finding.evidence.length ||
+        !current.evidence.every((refA, idx) => {
+          const refB = finding.evidence[idx];
+          return (
+            refB !== undefined &&
+            refA.sourceRevisionId === refB.sourceRevisionId &&
+            refA.locator === refB.locator
+          );
+        })
+      ) {
+        throw new Error(`Cannot mutate immutable finding evidence during transition`);
+      }
+
+      if (record.entityType !== 'finding') {
+        throw new Error(
+          `Reconciliation record entityType must be 'finding', got '${record.entityType}'`
+        );
+      }
+      if (record.entityId !== finding.id) {
+        throw new Error(
+          `Reconciliation record entityId '${record.entityId}' does not match finding id '${finding.id}'`
+        );
+      }
+      if (record.previousDisposition !== current.disposition) {
+        throw new Error(
+          `Reconciliation record previousDisposition '${record.previousDisposition}' does not match current finding disposition '${current.disposition}'`
+        );
+      }
+      if (record.newDisposition !== finding.disposition) {
+        throw new Error(
+          `Reconciliation record newDisposition '${record.newDisposition}' does not match proposed finding disposition '${finding.disposition}'`
+        );
+      }
+      const normalizedRecordRationale = record.rationale.trim();
+      const normalizedFindingRationale = (finding.rationale ?? '').trim();
+      if (normalizedRecordRationale !== normalizedFindingRationale) {
+        throw new Error(`Reconciliation record rationale does not match finding rationale`);
+      }
+
       await this.validateFindingRecord(record, current);
 
       const findingFilePath = resolveStorePath(this.baseDir, 'findings', `${finding.id}.json`);
@@ -829,7 +883,51 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
     return Object.freeze(results);
   }
 
-  async saveRequirementsBaseline(baseline: RequirementsBaseline): Promise<void> {
+  async saveRequirementsBaselineConditional(
+    baseline: RequirementsBaseline,
+    expectedLatestRevisionIds: readonly RequirementRevisionId[]
+  ): Promise<void> {
+    assertSafeIdentifier(baseline.id, 'baselineId');
+
+    const reqMap = new Map<RequirementId, RequirementRevisionId>();
+    for (const rawRevId of expectedLatestRevisionIds) {
+      const expectedRevId = createRequirementRevisionId(rawRevId);
+      assertSafeIdentifier(expectedRevId, 'requirementRevisionId');
+      const rev = await this.getRequirementRevision(expectedRevId);
+      if (!rev) {
+        throw new UnknownRequirementRevisionError(expectedRevId);
+      }
+      const existing = reqMap.get(rev.requirementId);
+      if (existing && existing !== expectedRevId) {
+        throw new StaleRevisionTargetError(expectedRevId, existing);
+      }
+      reqMap.set(rev.requirementId, expectedRevId);
+    }
+
+    const sortedRequirementIds = Array.from(reqMap.keys()).sort();
+
+    return this.acquireLocks(sortedRequirementIds, async () => {
+      for (const reqId of sortedRequirementIds) {
+        const expectedRevId = reqMap.get(reqId)!;
+        const allRevisions = await this.listRequirementRevisions(reqId);
+        const latest = allRevisions.length > 0 ? allRevisions[allRevisions.length - 1] : undefined;
+        if (!latest || latest.id !== expectedRevId) {
+          throw new StaleRevisionTargetError(expectedRevId, latest?.id ?? 'none');
+        }
+      }
+
+      const filePath = resolveStorePath(this.baseDir, 'baselines', `${baseline.id}.json`);
+      await writeJsonExclusive(filePath, baseline);
+    });
+  }
+
+  async saveRequirementsBaseline(
+    baseline: RequirementsBaseline,
+    expectedLatestRevisionIds?: readonly RequirementRevisionId[]
+  ): Promise<void> {
+    if (expectedLatestRevisionIds !== undefined) {
+      return this.saveRequirementsBaselineConditional(baseline, expectedLatestRevisionIds);
+    }
     assertSafeIdentifier(baseline.id, 'baselineId');
     const filePath = resolveStorePath(this.baseDir, 'baselines', `${baseline.id}.json`);
     await writeJsonExclusive(filePath, baseline);

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   REQUIREMENT_CATEGORIES,
   REQUIREMENT_ORIGINS,
+  CANDIDATE_REQUIREMENT_ORIGINS,
   REQUIREMENT_REVIEW_STATES,
   REQUIREMENT_RESOLUTION_STATES,
   REQUIREMENT_RECONCILIATION_ACTIONS,
@@ -19,6 +20,7 @@ export const InstantDtoSchema = z.string().refine(isValidInstant, {
 export const SourceTypeSchema = z.enum(SOURCE_TYPES);
 export const RequirementCategorySchema = z.enum(REQUIREMENT_CATEGORIES);
 export const RequirementOriginSchema = z.enum(REQUIREMENT_ORIGINS);
+export const CandidateRequirementOriginSchema = z.enum(CANDIDATE_REQUIREMENT_ORIGINS);
 
 export const EvidenceLocatorDtoSchema = z.string().min(1);
 
@@ -85,7 +87,7 @@ export const CandidateRequirementDtoSchema = z.object({
   requirementKey: z.string().min(1),
   statement: z.string().min(1),
   category: RequirementCategorySchema,
-  origin: RequirementOriginSchema,
+  origin: CandidateRequirementOriginSchema,
   evidence: z.array(CandidateEvidenceRefDtoSchema),
   rationale: z.string().optional()
 });

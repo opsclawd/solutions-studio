@@ -11,6 +11,7 @@ import {
   CandidateFindingDtoSchema,
   CandidateEvidenceRefDtoSchema,
   CandidateRequirementDtoSchema,
+  CandidateRequirementOriginSchema,
   CandidateFindingResponseDtoSchema,
   CompiledRequirementsResponseDtoSchema,
   RequirementReconciliationActionSchema,
@@ -381,6 +382,65 @@ describe('Requirements Contract Schemas', () => {
           evidence: []
         })
       ).toThrow();
+    });
+
+    it('accepts only model-permitted origins and rejects REVIEWER_PROPOSAL from candidate generation', () => {
+      const allowedOrigins = ['EXPLICIT', 'INFERRED', 'ASSUMED', 'GENERATED_PROPOSAL'] as const;
+      for (const origin of allowedOrigins) {
+        const parsed = CandidateRequirementDtoSchema.parse({
+          requirementKey: 'REQ-OK',
+          statement: 'Valid statement',
+          category: 'business-rule',
+          origin,
+          evidence: []
+        });
+        expect(parsed.origin).toBe(origin);
+      }
+
+      // CandidateRequirementOriginSchema accepts permitted origins and rejects REVIEWER_PROPOSAL
+      expect(CandidateRequirementOriginSchema.parse('EXPLICIT')).toBe('EXPLICIT');
+      expect(() => CandidateRequirementOriginSchema.parse('REVIEWER_PROPOSAL')).toThrow();
+
+      // CandidateRequirementDtoSchema must reject human-only REVIEWER_PROPOSAL
+      expect(() =>
+        CandidateRequirementDtoSchema.parse({
+          requirementKey: 'REQ-FORBIDDEN',
+          statement: 'Model trying to claim reviewer authority',
+          category: 'business-rule',
+          origin: 'REVIEWER_PROPOSAL',
+          evidence: []
+        })
+      ).toThrow();
+
+      // CompiledRequirementsResponseDtoSchema must fail parsing when a requirement has REVIEWER_PROPOSAL
+      expect(() =>
+        CompiledRequirementsResponseDtoSchema.parse({
+          requirements: [
+            {
+              requirementKey: 'REQ-FORBIDDEN',
+              statement: 'Model claiming reviewer authority',
+              category: 'business-rule',
+              origin: 'REVIEWER_PROPOSAL',
+              evidence: []
+            }
+          ],
+          findings: []
+        })
+      ).toThrow();
+
+      // But persisted RequirementRevisionDtoSchema STILL accepts REVIEWER_PROPOSAL for human reconciliation
+      const persistedRev = RequirementRevisionDtoSchema.parse({
+        id: 'REQ-HUMAN-R1',
+        requirementId: 'REQ-HUMAN',
+        revision: 1,
+        statement: 'Human proposed requirement',
+        category: 'business-rule',
+        origin: 'REVIEWER_PROPOSAL',
+        reviewState: 'ACCEPTED',
+        resolutionState: 'CLEAR',
+        evidence: []
+      });
+      expect(persistedRev.origin).toBe('REVIEWER_PROPOSAL');
     });
 
     it('validates a valid CandidateFindingResponseDto', () => {

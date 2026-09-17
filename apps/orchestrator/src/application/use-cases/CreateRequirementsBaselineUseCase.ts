@@ -17,6 +17,7 @@ import {
 import type { IRequirementsRepository } from '../ports/persistence/IRequirementsRepository.js';
 import {
   BlockedByOpenFindingsError,
+  StaleRevisionTargetError,
   UnauditedRequirementRevisionError,
   UnauditedFindingDispositionError,
   UnknownRequirementRevisionError
@@ -61,6 +62,17 @@ export class CreateRequirementsBaselineUseCase {
       createdAt
     });
 
+    // Authority gate: verify that each proposed revision is the requirement's current latest revision
+    for (const rev of revisions) {
+      const allRevisions = await this.repository.listRequirementRevisions(rev.requirementId);
+      if (allRevisions.length > 0) {
+        const latest = allRevisions[allRevisions.length - 1];
+        if (latest.id !== rev.id) {
+          throw new StaleRevisionTargetError(rev.id, latest.id);
+        }
+      }
+    }
+
     const proposedIds = revisions.map((r) => r.id);
     const lineage = await resolveRevisionLineage(proposedIds, (id) =>
       this.repository.getRequirementRevision(id)
@@ -99,9 +111,12 @@ export class CreateRequirementsBaselineUseCase {
         const latest = history.length > 0 ? history[history.length - 1] : undefined;
         if (
           !latest ||
+          latest.entityType !== 'finding' ||
+          latest.entityId !== finding.id ||
           latest.newDisposition !== finding.disposition ||
           !latest.rationale ||
-          latest.rationale.trim().length === 0
+          latest.rationale.trim().length === 0 ||
+          latest.rationale.trim() !== (finding.rationale ?? '').trim()
         ) {
           throw new UnauditedFindingDispositionError(finding.id, finding.disposition);
         }
@@ -114,7 +129,7 @@ export class CreateRequirementsBaselineUseCase {
       throw new BlockedByOpenFindingsError(blockingMatches);
     }
 
-    await this.repository.saveRequirementsBaseline(baseline);
+    await this.repository.saveRequirementsBaselineConditional(baseline, proposedIds);
 
     return baseline;
   }

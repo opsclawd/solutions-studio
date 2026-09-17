@@ -146,7 +146,14 @@ export interface IRequirementsRepository {
     entityId: FindingId | RequirementId
   ): Promise<readonly ReconciliationRecord[]>;
   listAllReconciliationRecords(): Promise<readonly ReconciliationRecord[]>;
-  saveRequirementsBaseline(baseline: RequirementsBaseline): Promise<void>;
+  saveRequirementsBaseline(
+    baseline: RequirementsBaseline,
+    expectedLatestRevisionIds?: readonly RequirementRevisionId[]
+  ): Promise<void>;
+  saveRequirementsBaselineConditional(
+    baseline: RequirementsBaseline,
+    expectedLatestRevisionIds: readonly RequirementRevisionId[]
+  ): Promise<void>;
   getRequirementsBaseline(id: RequirementsBaselineId): Promise<RequirementsBaseline | undefined>;
   saveEvaluationRun(run: EvaluationRunRecord): Promise<void>;
   getEvaluationRun(id: string): Promise<EvaluationRunRecord | undefined>;

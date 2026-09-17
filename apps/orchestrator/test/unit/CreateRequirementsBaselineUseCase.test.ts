@@ -25,6 +25,7 @@ import { CreateRequirementsBaselineUseCase } from '../../src/application/use-cas
 import { ReconcileRequirementsUseCase } from '../../src/application/use-cases/ReconcileRequirementsUseCase.js';
 import {
   BlockedByOpenFindingsError,
+  StaleRevisionTargetError,
   UnknownRequirementRevisionError,
   UnauditedRequirementRevisionError,
   UnauditedFindingDispositionError
@@ -565,5 +566,344 @@ describe('CreateRequirementsBaselineUseCase', () => {
         createdBy: 'REV-01'
       })
     ).rejects.toThrow(UnauditedFindingDispositionError);
+  });
+
+  it('repro Bug 3: rejects creating baseline with a non-latest (stale) revision when requirement has subsequent revisions', async () => {
+    const reqId = createRequirementId('REQ-STALE-LINEAGE');
+    const r1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-STALE-LINEAGE-R1'),
+      requirementId: reqId,
+      revision: 1,
+      statement: 'Initial statement',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'PENDING',
+      resolutionState: 'UNRESOLVED'
+    });
+    await repo.saveRequirementRevision(r1);
+
+    // Accept R1 -> creates R2 (ACCEPTED, UNRESOLVED)
+    const r2 = await reconcileUseCase.acceptRequirement({
+      revisionId: r1.id,
+      rationale: 'Accepted initial draft'
+    });
+
+    // Resolve R2 -> creates R3 (ACCEPTED, CLEAR)
+    const r3 = await reconcileUseCase.resolveRequirement({
+      revisionId: r2.id,
+      rationale: 'Cleared all ambiguities'
+    });
+
+    // Meaning-changing revise R3 -> creates R4 (PENDING, UNRESOLVED)
+    const r4 = await reconcileUseCase.reviseRequirement({
+      revisionId: r3.id,
+      statement: 'Materially revised statement requiring re-review',
+      rationale: 'Requested scope change'
+    });
+
+    // Reject R4 -> creates R5 (REJECTED, UNRESOLVED)
+    const r5 = await reconcileUseCase.rejectRequirement({
+      revisionId: r4.id,
+      rationale: 'Scope change rejected by lead architect'
+    });
+
+    expect(r5.revision).toBe(5);
+    expect(r5.reviewState).toBe('REJECTED');
+
+    // Attempting to baseline R3 (which is ACCEPTED and CLEAR, but STALE because current latest is R5)
+    // must be rejected with StaleRevisionTargetError
+    let thrownError: unknown;
+    try {
+      await useCase.create({
+        id: createRequirementsBaselineId('BASE-STALE-TEST'),
+        requirementRevisionIds: [r3.id],
+        createdBy: 'REV-LEAD-01'
+      });
+    } catch (err) {
+      thrownError = err;
+    }
+
+    expect(thrownError).toBeInstanceOf(StaleRevisionTargetError);
+    const staleErr = thrownError as StaleRevisionTargetError;
+    expect(staleErr.revisionId).toBe(r3.id);
+    expect(staleErr.latestRevisionId).toBe(r5.id);
+
+    // Baseline was not saved
+    expect(
+      await repo.getRequirementsBaseline(createRequirementsBaselineId('BASE-STALE-TEST'))
+    ).toBeUndefined();
+  });
+
+  it('repro Bug 1: open findings cannot be silently rewritten to unblock a baseline', async () => {
+    const reqId = createRequirementId('REQ-FINDING-MUTATION');
+    const r1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-FINDING-MUTATION-R1'),
+      requirementId: reqId,
+      revision: 1,
+      statement: 'Safety valve specification',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR'
+    });
+    await repo.saveRequirementRevision(r1);
+    await recordAcceptance(r1);
+
+    // Create an OPEN contradiction finding affecting r1
+    const findingId = createFindingId('FIND-CONTRADICT-01');
+    const openFinding = createCandidateFinding({
+      id: findingId,
+      type: 'contradiction',
+      affectedRequirementRevisions: [r1.id],
+      discoveredBy: 'model',
+      disposition: 'OPEN',
+      rationale: 'Contradiction with standard safety policy'
+    });
+    await repo.saveCandidateFinding(openFinding);
+
+    // Baseline creation MUST fail because open finding blocks r1
+    await expect(
+      useCase.create({
+        id: createRequirementsBaselineId('BASE-BLOCKED-1'),
+        requirementRevisionIds: [r1.id],
+        createdBy: 'REV-01'
+      })
+    ).rejects.toThrow(BlockedByOpenFindingsError);
+
+    // Direct save rewrite attempt: try to overwrite finding with affectedRequirementRevisions: []
+    const strippedFinding = createCandidateFinding({
+      ...openFinding,
+      affectedRequirementRevisions: []
+    });
+    await expect(repo.saveCandidateFinding(strippedFinding)).rejects.toThrow(
+      ImmutableRecordConflictError
+    );
+
+    // Transition rewrite attempt: try to pass forged affectedRequirementRevisions: [] through transition
+    await expect(
+      repo.transitionCandidateFinding(
+        createCandidateFinding({
+          ...openFinding,
+          affectedRequirementRevisions: [],
+          disposition: 'RESOLVED',
+          rationale: 'Attempted forge'
+        }),
+        {
+          id: 'REC-FORGED-1',
+          entityType: 'finding',
+          entityId: findingId,
+          previousDisposition: 'OPEN',
+          newDisposition: 'RESOLVED',
+          rationale: 'Attempted forge',
+          recordedAt: now()
+        },
+        'OPEN'
+      )
+    ).rejects.toThrow(/Cannot mutate immutable finding affectedRequirementRevisions/i);
+
+    // Baseline creation MUST STILL fail with BlockedByOpenFindingsError
+    await expect(
+      useCase.create({
+        id: createRequirementsBaselineId('BASE-BLOCKED-1'),
+        requirementRevisionIds: [r1.id],
+        createdBy: 'REV-01'
+      })
+    ).rejects.toThrow(BlockedByOpenFindingsError);
+
+    // Finding remains OPEN, still affects r1, and has 0 reconciliation records
+    const onDiskFinding = await repo.getCandidateFinding(findingId);
+    expect(onDiskFinding).toBeDefined();
+    expect(onDiskFinding!.disposition).toBe('OPEN');
+    expect(onDiskFinding!.affectedRequirementRevisions).toEqual([r1.id]);
+
+    const reconciliationHistory = await repo.listReconciliationRecords('finding', findingId);
+    expect(reconciliationHistory).toHaveLength(0);
+  });
+
+  it('falsely attributed finding reconciliation record cannot unblock the affected requirement in baseline creation', async () => {
+    const reqId = createRequirementId('REQ-FALSE-ATTRIB-1');
+    const r1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-FALSE-ATTRIB-1-R1'),
+      requirementId: reqId,
+      revision: 1,
+      statement: 'Sensitive access controls requirement',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR'
+    });
+    await repo.saveRequirementRevision(r1);
+    await recordAcceptance(r1);
+
+    const findingId = createFindingId('FIND-BLOCKING-1');
+    const openFinding = createCandidateFinding({
+      id: findingId,
+      type: 'missing-authorization',
+      affectedRequirementRevisions: [r1.id],
+      discoveredBy: 'model',
+      disposition: 'OPEN',
+      rationale: 'Missing role-based check'
+    });
+    await repo.saveCandidateFinding(openFinding);
+
+    // Initial baseline fails because finding is OPEN
+    await expect(
+      useCase.create({
+        id: createRequirementsBaselineId('BASE-ATTRIB-BLOCKED-1'),
+        requirementRevisionIds: [r1.id],
+        createdBy: 'REV-01'
+      })
+    ).rejects.toThrow(BlockedByOpenFindingsError);
+
+    // Attempting to resolve via transitionCandidateFinding with a record claiming another entityId fails
+    const resolvedFinding = createCandidateFinding({
+      ...openFinding,
+      disposition: 'RESOLVED',
+      rationale: 'Legitimate resolution rationale'
+    });
+    const falselyAttributedRecord = {
+      id: 'REC-ATTRIB-FALSE-1',
+      entityType: 'finding' as const,
+      entityId: createFindingId('FIND-SOME-OTHER-ID'),
+      previousDisposition: 'OPEN' as const,
+      newDisposition: 'RESOLVED' as const,
+      rationale: 'Legitimate resolution rationale',
+      recordedAt: now()
+    };
+    await expect(
+      repo.transitionCandidateFinding(resolvedFinding, falselyAttributedRecord, 'OPEN')
+    ).rejects.toThrow(/entityId 'FIND-SOME-OTHER-ID' does not match finding id 'FIND-BLOCKING-1'/i);
+
+    // Now test governance gate: even if storage had a non-OPEN finding whose audit trail
+    // has a falsely attributed entityId, baseline creation MUST reject it
+    const findingFilePath = path.join(tempDir, 'findings', `${findingId}.json`);
+    await fs.writeFile(
+      findingFilePath,
+      JSON.stringify({
+        ...openFinding,
+        disposition: 'RESOLVED',
+        rationale: 'Legitimate resolution rationale'
+      }),
+      'utf8'
+    );
+    const auditFilePath = path.join(tempDir, 'reconciliation', 'finding', `${findingId}.jsonl`);
+    await fs.mkdir(path.dirname(auditFilePath), { recursive: true });
+    await fs.writeFile(auditFilePath, JSON.stringify(falselyAttributedRecord) + '\n', 'utf8');
+
+    // Baseline creation MUST fail with UnauditedFindingDispositionError
+    await expect(
+      useCase.create({
+        id: createRequirementsBaselineId('BASE-ATTRIB-BLOCKED-2'),
+        requirementRevisionIds: [r1.id],
+        createdBy: 'REV-01'
+      })
+    ).rejects.toThrow(UnauditedFindingDispositionError);
+
+    // And if the audit record has a mismatched rationale, baseline creation MUST ALSO reject it
+    const mismatchedRationaleRecord = {
+      id: 'REC-ATTRIB-FALSE-2',
+      entityType: 'finding' as const,
+      entityId: findingId,
+      previousDisposition: 'OPEN' as const,
+      newDisposition: 'RESOLVED' as const,
+      rationale: 'Different rationale that does not match persisted finding decision',
+      recordedAt: now()
+    };
+    await fs.writeFile(auditFilePath, JSON.stringify(mismatchedRationaleRecord) + '\n', 'utf8');
+
+    await expect(
+      useCase.create({
+        id: createRequirementsBaselineId('BASE-ATTRIB-BLOCKED-3'),
+        requirementRevisionIds: [r1.id],
+        createdBy: 'REV-01'
+      })
+    ).rejects.toThrow(UnauditedFindingDispositionError);
+
+    // Baseline was not saved in either case
+    expect(
+      await repo.getRequirementsBaseline(createRequirementsBaselineId('BASE-ATTRIB-BLOCKED-2'))
+    ).toBeUndefined();
+    expect(
+      await repo.getRequirementsBaseline(createRequirementsBaselineId('BASE-ATTRIB-BLOCKED-3'))
+    ).toBeUndefined();
+  });
+
+  it('controlled concurrency test: pauses baseline creation after initial reads, commits a successor, and proves conditional save rejects stale baseline', async () => {
+    const reqId = createRequirementId('REQ-CONCURRENT-1');
+    const r1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-CONCURRENT-1-R1'),
+      requirementId: reqId,
+      revision: 1,
+      statement: 'Initial requirement statement',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR'
+    });
+    await repo.saveRequirementRevision(r1);
+    await recordAcceptance(r1);
+
+    const baselineId = createRequirementsBaselineId('BASE-CONCURRENT-TEST');
+
+    let pauseResolve: () => void;
+    const pausePromise = new Promise<void>((resolve) => {
+      pauseResolve = resolve;
+    });
+    let resumeResolve: () => void;
+    const resumePromise = new Promise<void>((resolve) => {
+      resumeResolve = resolve;
+    });
+
+    const originalListCandidateFindings = repo.listCandidateFindings.bind(repo);
+    let paused = false;
+    repo.listCandidateFindings = async () => {
+      const findings = await originalListCandidateFindings();
+      if (!paused) {
+        paused = true;
+        pauseResolve();
+        await resumePromise;
+      }
+      return findings;
+    };
+
+    // Start baseline creation in background
+    const baselineCreationPromise = useCase.create({
+      id: baselineId,
+      requirementRevisionIds: [r1.id],
+      createdBy: 'REV-CONCURRENT-01'
+    });
+
+    // Wait until baseline creation has completed its initial reads and pauses
+    await pausePromise;
+
+    // While baseline creation is paused, a concurrent actor commits a successor revision (r2)
+    const r2 = await reconcileUseCase.reviseRequirement({
+      revisionId: r1.id,
+      statement: 'Revised statement while baseline creation is in-flight',
+      rationale: 'Concurrent architectural revision'
+    });
+
+    // Verify r2 is now the latest revision
+    const allRevisions = await repo.listRequirementRevisions(reqId);
+    expect(allRevisions[allRevisions.length - 1].id).toBe(r2.id);
+
+    // Resume baseline creation so it attempts conditional save
+    resumeResolve!();
+
+    // Baseline creation MUST reject because r1 is now stale
+    let thrownError: unknown;
+    try {
+      await baselineCreationPromise;
+    } catch (err) {
+      thrownError = err;
+    }
+
+    expect(thrownError).toBeInstanceOf(StaleRevisionTargetError);
+    const staleErr = thrownError as StaleRevisionTargetError;
+    expect(staleErr.revisionId).toBe(r1.id);
+    expect(staleErr.latestRevisionId).toBe(r2.id);
+
+    // Ensure stale baseline was NEVER persisted
+    expect(await repo.getRequirementsBaseline(baselineId)).toBeUndefined();
   });
 });
