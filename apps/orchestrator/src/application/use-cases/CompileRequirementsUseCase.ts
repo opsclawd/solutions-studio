@@ -16,7 +16,7 @@ import {
   createRequirementRevision,
   createCandidateFinding,
   REQUIREMENT_CATEGORIES,
-  REQUIREMENT_ORIGINS,
+  CANDIDATE_REQUIREMENT_ORIGINS,
   FINDING_TYPES,
   type SourceRevisionId,
   type RequirementRevisionId,
@@ -39,6 +39,7 @@ import {
   UnknownSourceRevisionError,
   UnresolvedLocatorError,
   InvalidEvidencelessOriginError,
+  UnresolvedRequirementKeyError,
   UnsafeIdentifierError,
   type CompilationError
 } from './CompileRequirementsErrors.js';
@@ -184,6 +185,8 @@ export class CompileRequirementsUseCase {
       );
     }
 
+    const allowedSourceRevisionIds = new Set<string>(records.map((r) => r.revision.id as string));
+
     const rawResponse = parseResult.data;
     const acceptedRequirementRevisions: RequirementRevisionId[] = [];
     const rejectedRequirements: RejectedRequirement[] = [];
@@ -192,7 +195,10 @@ export class CompileRequirementsUseCase {
     for (const reqDto of rawResponse.requirements) {
       const requirementKey = reqDto.requirementKey;
 
-      const evidenceValidation = await this.validateEvidence(reqDto.evidence);
+      const evidenceValidation = await this.validateEvidence(
+        reqDto.evidence,
+        allowedSourceRevisionIds
+      );
       if (!evidenceValidation.ok) {
         rejectedRequirements.push({
           requirementKey,
@@ -242,7 +248,10 @@ export class CompileRequirementsUseCase {
     for (const findingDto of rawResponse.findings) {
       const findingKey = findingDto.findingKey;
 
-      const evidenceValidation = await this.validateEvidence(findingDto.evidence);
+      const evidenceValidation = await this.validateEvidence(
+        findingDto.evidence,
+        allowedSourceRevisionIds
+      );
       if (!evidenceValidation.ok) {
         rejectedFindings.push({
           findingKey,
@@ -253,11 +262,26 @@ export class CompileRequirementsUseCase {
       }
 
       const affectedRequirementRevisions: RequirementRevisionId[] = [];
+      const unmappedRequirementKeys: string[] = [];
       for (const key of findingDto.relatedRequirementKeys) {
         const mappedRevId = requirementKeyMap.get(key);
         if (mappedRevId) {
           affectedRequirementRevisions.push(mappedRevId);
+        } else {
+          unmappedRequirementKeys.push(key);
         }
+      }
+
+      if (
+        findingDto.relatedRequirementKeys.length > 0 &&
+        affectedRequirementRevisions.length === 0
+      ) {
+        rejectedFindings.push({
+          findingKey,
+          error: new UnresolvedRequirementKeyError(findingKey, unmappedRequirementKeys),
+          candidate: findingDto
+        });
+        continue;
       }
 
       const findingUuid = randomUUID();
@@ -354,7 +378,7 @@ You must respond with ONLY a JSON object conforming to the following structure:
 
 ## Rules:
 1. Allowed categories: ${REQUIREMENT_CATEGORIES.join(', ')}.
-2. Allowed origins: ${REQUIREMENT_ORIGINS.join(', ')}.
+2. Allowed origins: ${CANDIDATE_REQUIREMENT_ORIGINS.join(', ')}.
 3. For EXPLICIT and INFERRED requirements, evidence MUST NOT be empty.
 4. For ASSUMED and GENERATED_PROPOSAL requirements, evidence may be empty.
 5. Every evidence reference must specify an existing sourceRevisionId and an exact locator matching one in the Available Locators list.
@@ -373,7 +397,8 @@ You must respond with ONLY a JSON object conforming to the following structure:
   }
 
   private async validateEvidence(
-    evidence: readonly CandidateEvidenceRefDto[]
+    evidence: readonly CandidateEvidenceRefDto[],
+    allowedSourceRevisionIds: ReadonlySet<string>
   ): Promise<{ ok: true; refs: EvidenceReference[] } | { ok: false; error: CompilationError }> {
     const validRefs: EvidenceReference[] = [];
 
@@ -388,6 +413,16 @@ You must respond with ONLY a JSON object conforming to the following structure:
         return {
           ok: false,
           error: new UnknownSourceRevisionError(ref.sourceRevisionId)
+        };
+      }
+
+      if (!allowedSourceRevisionIds.has(ref.sourceRevisionId)) {
+        return {
+          ok: false,
+          error: new UnknownSourceRevisionError(
+            ref.sourceRevisionId,
+            `Source revision '${ref.sourceRevisionId}' is outside the compile scope`
+          )
         };
       }
 

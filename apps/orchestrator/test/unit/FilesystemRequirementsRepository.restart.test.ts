@@ -277,18 +277,27 @@ describe('FilesystemRequirementsRepository — Process Restart & Reload Durabili
     const loadedEvalRun = await repoB.getEvaluationRun(runId);
     expect(loadedEvalRun).toEqual(evalRun);
 
-    // Step 11: Assert idempotent recapture of original (revision-1) content through repoB
-    // (Proves accepted historical revisions cannot silently retarget to newer content and do not mint R3)
+    // Step 11: Recapturing mdV1 content after mdV2 creates R3 with supersedes R2
+    // (Proves reverting to prior content creates a new successor revision in chronological capture order)
     const recapturedR1 = await repoB.captureSourceRevision({
       sourceId,
       sourceType: 'sop',
       markdownText: mdV1
     });
-    expect(recapturedR1.revision.id).toBe('TENANT-SPEC-001-R1');
-    expect(recapturedR1.revision.revision).toBe(1);
+    expect(recapturedR1.revision.id).toBe('TENANT-SPEC-001-R3');
+    expect(recapturedR1.revision.revision).toBe(3);
+    expect(recapturedR1.revision.supersedes).toBe('TENANT-SPEC-001-R2');
+
+    const latestSrcAfter = await repoB.getLatestSourceRevision(sourceId);
+    expect(latestSrcAfter?.revision.id).toBe('TENANT-SPEC-001-R3');
 
     const postRecaptureList = await repoB.listSourceRevisions(sourceId);
-    expect(postRecaptureList).toHaveLength(2); // Still only R1 and R2
+    expect(postRecaptureList).toHaveLength(3);
+    expect(postRecaptureList.map((r) => r.id)).toEqual([
+      'TENANT-SPEC-001-R1',
+      'TENANT-SPEC-001-R2',
+      'TENANT-SPEC-001-R3'
+    ]);
 
     // Cleanup
     await fs.rm(tempDir, { recursive: true, force: true });

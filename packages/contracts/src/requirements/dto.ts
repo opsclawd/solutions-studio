@@ -12,6 +12,7 @@ import type {
   SourceTypeSchema,
   RequirementCategorySchema,
   RequirementOriginSchema,
+  CandidateRequirementOriginSchema,
   CandidateEvidenceRefDtoSchema,
   CandidateRequirementDtoSchema,
   CandidateFindingResponseDtoSchema,
@@ -29,6 +30,8 @@ export type InstantDto = z.infer<typeof InstantDtoSchema>;
 export type SourceTypeDto = z.infer<typeof SourceTypeSchema>;
 export type RequirementCategoryDto = z.infer<typeof RequirementCategorySchema>;
 export type RequirementOriginDto = z.infer<typeof RequirementOriginSchema>;
+export type CandidateRequirementOriginDto = z.infer<typeof CandidateRequirementOriginSchema>;
+
 export type EvidenceLocatorDto = z.infer<typeof EvidenceLocatorDtoSchema>;
 export type EvidenceReferenceDto = z.infer<typeof EvidenceReferenceDtoSchema>;
 export type CandidateEvidenceRefDto = z.infer<typeof CandidateEvidenceRefDtoSchema>;

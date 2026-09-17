@@ -24,6 +24,10 @@ import {
   ImmutableRecordConflictError,
   type EvaluationRunRecord
 } from '../../src/application/ports/persistence/IRequirementsRepository.js';
+import {
+  StaleRevisionTargetError,
+  UnknownRequirementRevisionError
+} from '../../src/application/use-cases/ReconciliationErrors.js';
 import { computeContentHash } from '../../src/infrastructure/persistence/markdown/deriveLocatorIndex.js';
 import { writeJsonExclusive } from '../../src/infrastructure/persistence/filesystem/atomicFile.js';
 
@@ -127,7 +131,7 @@ describe('FilesystemRequirementsRepository', () => {
     expect(latest?.revision.id).toBe('SRC-003-R2');
   });
 
-  it('idempotently recaptures historical (non-latest) content without creating a new revision (Finding 3 fix)', async () => {
+  it('repro Bug 4: creates a new revision on revert to prior content (A -> B -> A), preserving latest pointer and chronological order', async () => {
     const md1 = `# Doc\n\nOriginal version 1 content.`;
     const md2 = `# Doc\n\nUpdated version 2 content.`;
     const sourceId = createSourceId('SRC-004');
@@ -150,21 +154,26 @@ describe('FilesystemRequirementsRepository', () => {
     const latestBefore = await repo.getLatestSourceRevision(sourceId);
     expect(latestBefore?.revision.id).toBe('SRC-004-R2');
 
-    // Re-capturing original md1 content must return R1, NOT mint a spurious R3
+    // Re-capturing original md1 content after md2 must create R3 with supersedes R2
     const recReimport1 = await repo.captureSourceRevision({
       sourceId,
       sourceType: 'sop',
       markdownText: md1
     });
 
-    expect(recReimport1.revision.id).toBe('SRC-004-R1');
-    expect(recReimport1.revision.revision).toBe(1);
+    expect(recReimport1.revision.id).toBe('SRC-004-R3');
+    expect(recReimport1.revision.revision).toBe(3);
+    expect(recReimport1.revision.supersedes).toBe('SRC-004-R2');
+
+    const latestAfter = await repo.getLatestSourceRevision(sourceId);
+    expect(latestAfter?.revision.id).toBe('SRC-004-R3');
 
     const filesOnDisk = await fs.readdir(path.join(tempDir, 'source-revisions'));
-    expect(filesOnDisk.sort()).toEqual(['SRC-004-R1.json', 'SRC-004-R2.json']);
+    expect(filesOnDisk.sort()).toEqual(['SRC-004-R1.json', 'SRC-004-R2.json', 'SRC-004-R3.json']);
 
     const listed = await repo.listSourceRevisions(sourceId);
-    expect(listed).toHaveLength(2);
+    expect(listed).toHaveLength(3);
+    expect(listed.map((r) => r.id)).toEqual(['SRC-004-R1', 'SRC-004-R2', 'SRC-004-R3']);
   });
 
   it('preserves addressability of historical revisions and locator indexes after newer revisions exist', async () => {
@@ -1288,7 +1297,24 @@ describe('FilesystemRequirementsRepository', () => {
           ...finding,
           disposition: 'RESOLVED'
         })
-      ).rejects.toThrow(/Direct disposition mutation/i);
+      ).rejects.toThrow(/Cannot create candidate finding directly with non-OPEN disposition/i);
+
+      // Verify duplicate save of existing finding is blocked with ImmutableRecordConflictError
+      await expect(repo.saveCandidateFinding(finding)).rejects.toThrow(
+        ImmutableRecordConflictError
+      );
+
+      // Verify direct overwrite attempt (e.g. clearing affectedRequirementRevisions) is blocked
+      await expect(
+        repo.saveCandidateFinding(
+          createCandidateFinding({
+            id: findingId,
+            type: 'missing-authorization',
+            discoveredBy: 'human',
+            affectedRequirementRevisions: []
+          })
+        )
+      ).rejects.toThrow(ImmutableRecordConflictError);
 
       // Verify atomic transition succeeds
       const updatedFinding = createCandidateFinding({
@@ -1344,6 +1370,288 @@ describe('FilesystemRequirementsRepository', () => {
       await expect(repo.transitionCandidateFinding(updated, record, 'RESOLVED')).rejects.toThrow(
         /Concurrency conflict/i
       );
+    });
+
+    it('transitionCandidateFinding rejects attempts to alter immutable finding fields (type, targets, evidence, discoveredBy)', async () => {
+      const findingId = createFindingId('FIND-IMMUTABLE-1');
+      const revId = createRequirementRevisionId('REQ-REV-1');
+      const finding = createCandidateFinding({
+        id: findingId,
+        type: 'contradiction',
+        affectedRequirementRevisions: [revId],
+        evidence: [
+          {
+            sourceRevisionId: createSourceRevisionId('SRC-1-R1'),
+            locator: createEvidenceLocator('section#1')
+          }
+        ],
+        discoveredBy: 'model'
+      });
+      await repo.saveCandidateFinding(finding);
+
+      const makeRecord = (recId: string) => ({
+        id: recId,
+        entityType: 'finding' as const,
+        entityId: findingId,
+        previousDisposition: 'OPEN' as const,
+        newDisposition: 'RESOLVED' as const,
+        rationale: 'Valid transition rationale',
+        recordedAt: createInstant('2026-09-16T12:00:00.000Z')
+      });
+
+      // 1. Attempt to change type
+      const forgedType = createCandidateFinding({
+        ...finding,
+        type: 'missing-authorization',
+        disposition: 'RESOLVED',
+        rationale: 'Changed type'
+      });
+      await expect(
+        repo.transitionCandidateFinding(forgedType, makeRecord('REC-IMM-1'), 'OPEN')
+      ).rejects.toThrow(/Cannot mutate immutable finding type/i);
+
+      // 2. Attempt to change affectedRequirementRevisions (clearing targets)
+      const forgedTargets = createCandidateFinding({
+        ...finding,
+        affectedRequirementRevisions: [],
+        disposition: 'RESOLVED',
+        rationale: 'Cleared targets'
+      });
+      await expect(
+        repo.transitionCandidateFinding(forgedTargets, makeRecord('REC-IMM-2'), 'OPEN')
+      ).rejects.toThrow(/Cannot mutate immutable finding affectedRequirementRevisions/i);
+
+      // 3. Attempt to change evidence
+      const forgedEvidence = createCandidateFinding({
+        ...finding,
+        evidence: [],
+        disposition: 'RESOLVED',
+        rationale: 'Cleared evidence'
+      });
+      await expect(
+        repo.transitionCandidateFinding(forgedEvidence, makeRecord('REC-IMM-3'), 'OPEN')
+      ).rejects.toThrow(/Cannot mutate immutable finding evidence/i);
+
+      // 4. Attempt to change discoveredBy
+      const forgedDiscoverer = createCandidateFinding({
+        ...finding,
+        discoveredBy: 'human',
+        disposition: 'RESOLVED',
+        rationale: 'Changed discoverer'
+      });
+      await expect(
+        repo.transitionCandidateFinding(forgedDiscoverer, makeRecord('REC-IMM-4'), 'OPEN')
+      ).rejects.toThrow(/Cannot mutate immutable finding discoveredBy/i);
+    });
+
+    it('transitionCandidateFinding rejects record/finding mismatches (entityId, previousDisposition, newDisposition, rationale, entityType), preserving finding state and audit history', async () => {
+      const findingId = createFindingId('FIND-MISMATCH-1');
+      const finding = createCandidateFinding({
+        id: findingId,
+        type: 'contradiction',
+        discoveredBy: 'model',
+        disposition: 'OPEN'
+      });
+      await repo.saveCandidateFinding(finding);
+
+      const validUpdated = createCandidateFinding({
+        ...finding,
+        disposition: 'RESOLVED',
+        rationale: 'Valid resolution rationale'
+      });
+
+      // 1. entityId mismatch
+      const wrongEntityRecord = {
+        id: 'REC-MIS-1',
+        entityType: 'finding' as const,
+        entityId: createFindingId('FIND-OTHER-99'),
+        previousDisposition: 'OPEN' as const,
+        newDisposition: 'RESOLVED' as const,
+        rationale: 'Valid resolution rationale',
+        recordedAt: createInstant('2026-09-16T12:00:00.000Z')
+      };
+      await expect(
+        repo.transitionCandidateFinding(validUpdated, wrongEntityRecord, 'OPEN')
+      ).rejects.toThrow(/entityId 'FIND-OTHER-99' does not match finding id 'FIND-MISMATCH-1'/i);
+
+      let onDisk = await repo.getCandidateFinding(findingId);
+      expect(onDisk?.disposition).toBe('OPEN');
+      let audit = await repo.listReconciliationRecords('finding', findingId);
+      expect(audit).toHaveLength(0);
+
+      // 2. previousDisposition mismatch
+      const wrongPrevRecord = {
+        id: 'REC-MIS-2',
+        entityType: 'finding' as const,
+        entityId: findingId,
+        previousDisposition: 'RESOLVED' as const,
+        newDisposition: 'DISMISSED_FALSE_POSITIVE' as const,
+        rationale: 'Valid resolution rationale',
+        recordedAt: createInstant('2026-09-16T12:00:00.000Z')
+      };
+      const validDismissed = createCandidateFinding({
+        ...finding,
+        disposition: 'DISMISSED_FALSE_POSITIVE',
+        rationale: 'Valid resolution rationale'
+      });
+      await expect(
+        repo.transitionCandidateFinding(validDismissed, wrongPrevRecord, 'OPEN')
+      ).rejects.toThrow(
+        /previousDisposition 'RESOLVED' does not match current finding disposition 'OPEN'/i
+      );
+
+      onDisk = await repo.getCandidateFinding(findingId);
+      expect(onDisk?.disposition).toBe('OPEN');
+      audit = await repo.listReconciliationRecords('finding', findingId);
+      expect(audit).toHaveLength(0);
+
+      // 3. newDisposition mismatch
+      const wrongNewDispRecord = {
+        id: 'REC-MIS-3',
+        entityType: 'finding' as const,
+        entityId: findingId,
+        previousDisposition: 'OPEN' as const,
+        newDisposition: 'DISMISSED_FALSE_POSITIVE' as const,
+        rationale: 'Valid resolution rationale',
+        recordedAt: createInstant('2026-09-16T12:00:00.000Z')
+      };
+      await expect(
+        repo.transitionCandidateFinding(validUpdated, wrongNewDispRecord, 'OPEN')
+      ).rejects.toThrow(
+        /newDisposition 'DISMISSED_FALSE_POSITIVE' does not match proposed finding disposition 'RESOLVED'/i
+      );
+
+      onDisk = await repo.getCandidateFinding(findingId);
+      expect(onDisk?.disposition).toBe('OPEN');
+      audit = await repo.listReconciliationRecords('finding', findingId);
+      expect(audit).toHaveLength(0);
+
+      // 4. rationale mismatch
+      const wrongRationaleRecord = {
+        id: 'REC-MIS-4',
+        entityType: 'finding' as const,
+        entityId: findingId,
+        previousDisposition: 'OPEN' as const,
+        newDisposition: 'RESOLVED' as const,
+        rationale: 'Completely different rationale',
+        recordedAt: createInstant('2026-09-16T12:00:00.000Z')
+      };
+      await expect(
+        repo.transitionCandidateFinding(validUpdated, wrongRationaleRecord, 'OPEN')
+      ).rejects.toThrow(/rationale does not match/i);
+
+      onDisk = await repo.getCandidateFinding(findingId);
+      expect(onDisk?.disposition).toBe('OPEN');
+      audit = await repo.listReconciliationRecords('finding', findingId);
+      expect(audit).toHaveLength(0);
+
+      // 5. entityType mismatch
+      const wrongEntityTypeRecord = {
+        id: 'REC-MIS-5',
+        entityType: 'requirement' as any,
+        entityId: findingId as any,
+        previousDisposition: 'OPEN' as const,
+        newDisposition: 'RESOLVED' as const,
+        rationale: 'Valid resolution rationale',
+        recordedAt: createInstant('2026-09-16T12:00:00.000Z')
+      };
+      await expect(
+        repo.transitionCandidateFinding(validUpdated, wrongEntityTypeRecord, 'OPEN')
+      ).rejects.toThrow(/entityType must be 'finding'/i);
+
+      onDisk = await repo.getCandidateFinding(findingId);
+      expect(onDisk?.disposition).toBe('OPEN');
+      audit = await repo.listReconciliationRecords('finding', findingId);
+      expect(audit).toHaveLength(0);
+    });
+
+    it('saveRequirementsBaselineConditional saves baseline when expected latest revisions match', async () => {
+      const reqId = createRequirementId('REQ-CAS-1');
+      const rev1 = createRequirementRevision({
+        id: createRequirementRevisionId('REQ-CAS-1-R1'),
+        requirementId: reqId,
+        revision: 1,
+        statement: 'Statement 1',
+        category: 'business-rule',
+        origin: 'ASSUMED',
+        reviewState: 'ACCEPTED',
+        resolutionState: 'CLEAR'
+      });
+      await repo.saveRequirementRevision(rev1);
+
+      const baselineId = createRequirementsBaselineId('BASE-CAS-1');
+      const baseline = createRequirementsBaseline({
+        id: baselineId,
+        requirements: [rev1],
+        createdBy: createReviewerId('REV-1'),
+        createdAt: createInstant('2026-09-16T12:00:00.000Z')
+      });
+
+      await repo.saveRequirementsBaselineConditional(baseline, [rev1.id]);
+
+      const reloaded = await repo.getRequirementsBaseline(baselineId);
+      expect(reloaded).toBeDefined();
+      expect(reloaded?.id).toBe(baselineId);
+      expect(reloaded?.requirementRevisions).toEqual([rev1.id]);
+    });
+
+    it('saveRequirementsBaselineConditional rejects with StaleRevisionTargetError when expected revision is stale', async () => {
+      const reqId = createRequirementId('REQ-CAS-2');
+      const rev1 = createRequirementRevision({
+        id: createRequirementRevisionId('REQ-CAS-2-R1'),
+        requirementId: reqId,
+        revision: 1,
+        statement: 'Statement 1',
+        category: 'business-rule',
+        origin: 'ASSUMED',
+        reviewState: 'ACCEPTED',
+        resolutionState: 'CLEAR'
+      });
+      await repo.saveRequirementRevision(rev1);
+
+      const rev2 = createRequirementRevision({
+        id: createRequirementRevisionId('REQ-CAS-2-R2'),
+        requirementId: reqId,
+        revision: 2,
+        statement: 'Statement 2',
+        category: 'business-rule',
+        origin: 'ASSUMED',
+        reviewState: 'ACCEPTED',
+        resolutionState: 'CLEAR',
+        supersedes: rev1.id
+      });
+      await repo.saveRequirementRevision(rev2);
+
+      const baselineId = createRequirementsBaselineId('BASE-CAS-2');
+      const baseline = createRequirementsBaseline({
+        id: baselineId,
+        requirements: [rev1],
+        createdBy: createReviewerId('REV-1'),
+        createdAt: createInstant('2026-09-16T12:00:00.000Z')
+      });
+
+      await expect(repo.saveRequirementsBaselineConditional(baseline, [rev1.id])).rejects.toThrow(
+        StaleRevisionTargetError
+      );
+
+      expect(await repo.getRequirementsBaseline(baselineId)).toBeUndefined();
+    });
+
+    it('saveRequirementsBaselineConditional rejects with UnknownRequirementRevisionError when expected revision does not exist', async () => {
+      const nonExistentRevId = createRequirementRevisionId('REQ-NONEXISTENT-R1');
+      const baselineId = createRequirementsBaselineId('BASE-CAS-3');
+      const baseline = {
+        id: baselineId,
+        requirementRevisions: [nonExistentRevId],
+        createdBy: createReviewerId('REV-1'),
+        createdAt: createInstant('2026-09-16T12:00:00.000Z')
+      };
+
+      await expect(
+        repo.saveRequirementsBaselineConditional(baseline, [nonExistentRevId])
+      ).rejects.toThrow(UnknownRequirementRevisionError);
+
+      expect(await repo.getRequirementsBaseline(baselineId)).toBeUndefined();
     });
 
     it('transitionRequirementRevision atomically creates successor and audit record', async () => {

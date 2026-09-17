@@ -11,7 +11,8 @@ import {
   MalformedGenerationOutputError,
   UnknownSourceRevisionError,
   UnresolvedLocatorError,
-  InvalidEvidencelessOriginError
+  InvalidEvidencelessOriginError,
+  UnresolvedRequirementKeyError
 } from '../../src/application/use-cases/CompileRequirementsErrors.js';
 import { NonZeroExitError } from '../../src/application/ports/generation/GenerationErrors.js';
 
@@ -390,7 +391,7 @@ All equipment must undergo secondary pressure inspection before deployment.
     expect(finding!.disposition).toBe('OPEN');
   });
 
-  it('9. retains findings even if their referenced requirements were rejected', async () => {
+  it('9. rejects findings with UnresolvedRequirementKeyError when declared relatedRequirementKeys fail to resolve (Bug 2 fix)', async () => {
     const record = await repo.captureSourceRevision({
       sourceId: createSourceId('SPEC-001'),
       sourceType: 'sop',
@@ -426,12 +427,266 @@ All equipment must undergo secondary pressure inspection before deployment.
     });
 
     expect(result.rejectedRequirements).toHaveLength(1);
+    expect(result.acceptedFindingIds).toHaveLength(0);
+    expect(result.rejectedFindings).toHaveLength(1);
+    expect(result.rejectedFindings[0].findingKey).toBe('FINDING-1');
+    expect(result.rejectedFindings[0].error).toBeInstanceOf(UnresolvedRequirementKeyError);
+    const unmappedErr = result.rejectedFindings[0].error as UnresolvedRequirementKeyError;
+    expect(unmappedErr.findingKey).toBe('FINDING-1');
+    expect(unmappedErr.unmappedRequirementKeys).toEqual(['REQ-BAD']);
+
+    // Finding was not saved into repository
+    expect(await repo.listCandidateFindings()).toHaveLength(0);
+  });
+
+  it('9b. retains intentionally unscoped findings (relatedRequirementKeys: []) as accepted OPEN findings', async () => {
+    const record = await repo.captureSourceRevision({
+      sourceId: createSourceId('SPEC-001'),
+      sourceType: 'sop',
+      markdownText: markdownContent
+    });
+
+    const validLocator = record.locatorIndex[0].locator;
+    const responseJson = JSON.stringify({
+      requirements: [],
+      findings: [
+        {
+          findingKey: 'FINDING-UNSCOPED',
+          type: 'missing-authorization',
+          relatedRequirementKeys: [],
+          evidence: [{ sourceRevisionId: record.revision.id, locator: validLocator }],
+          rationale: 'Intentionally unscoped global finding'
+        }
+      ]
+    });
+
+    fakeGateway.queueResponse(responseJson);
+
+    const result = await useCase.compile({
+      sourceRevisionIds: [record.revision.id]
+    });
+
     expect(result.acceptedFindingIds).toHaveLength(1);
+    expect(result.rejectedFindings).toHaveLength(0);
 
     const finding = await repo.getCandidateFinding(result.acceptedFindingIds[0]);
     expect(finding).toBeDefined();
-    // The rejected requirement key was dropped from affectedRequirementRevisions, but finding remains
     expect(finding!.affectedRequirementRevisions).toEqual([]);
+    expect(finding!.disposition).toBe('OPEN');
+  });
+
+  it('9c. accepts findings with mixed relatedRequirementKeys where at least one resolves, linking only resolved revisions', async () => {
+    const record = await repo.captureSourceRevision({
+      sourceId: createSourceId('SPEC-001'),
+      sourceType: 'sop',
+      markdownText: markdownContent
+    });
+
+    const validLocator = record.locatorIndex[0].locator;
+    const responseJson = JSON.stringify({
+      requirements: [
+        {
+          requirementKey: 'K1',
+          statement: 'Valid requirement',
+          category: 'business-rule',
+          origin: 'EXPLICIT',
+          evidence: [{ sourceRevisionId: record.revision.id, locator: validLocator }]
+        }
+      ],
+      findings: [
+        {
+          findingKey: 'FINDING-MIXED',
+          type: 'contradiction',
+          relatedRequirementKeys: ['K1', 'K2-UNKNOWN'],
+          evidence: [{ sourceRevisionId: record.revision.id, locator: validLocator }],
+          rationale: 'Contradiction between K1 and unknown key'
+        }
+      ]
+    });
+
+    fakeGateway.queueResponse(responseJson);
+
+    const result = await useCase.compile({
+      sourceRevisionIds: [record.revision.id]
+    });
+
+    expect(result.acceptedRequirementRevisions).toHaveLength(1);
+    expect(result.acceptedFindingIds).toHaveLength(1);
+    expect(result.rejectedFindings).toHaveLength(0);
+
+    const finding = await repo.getCandidateFinding(result.acceptedFindingIds[0]);
+    expect(finding).toBeDefined();
+    expect(finding!.affectedRequirementRevisions).toEqual([result.acceptedRequirementRevisions[0]]);
+  });
+
+  it('9d. repro Bug 2: unresolvable typo key rejects finding into rejectedFindings rather than silently producing orphan finding', async () => {
+    const record = await repo.captureSourceRevision({
+      sourceId: createSourceId('SPEC-001'),
+      sourceType: 'sop',
+      markdownText: markdownContent
+    });
+
+    const validLocator = record.locatorIndex[0].locator;
+    const responseJson = JSON.stringify({
+      requirements: [
+        {
+          requirementKey: 'k1',
+          statement: 'Requirement k1',
+          category: 'business-rule',
+          origin: 'EXPLICIT',
+          evidence: [{ sourceRevisionId: record.revision.id, locator: validLocator }]
+        }
+      ],
+      findings: [
+        {
+          findingKey: 'f1',
+          type: 'contradiction',
+          relatedRequirementKeys: ['K1-typo'],
+          evidence: [{ sourceRevisionId: record.revision.id, locator: validLocator }],
+          rationale: 'Contradiction referencing typo key'
+        }
+      ]
+    });
+
+    fakeGateway.queueResponse(responseJson);
+
+    const result = await useCase.compile({
+      sourceRevisionIds: [record.revision.id]
+    });
+
+    expect(result.acceptedRequirementRevisions).toHaveLength(1);
+    expect(result.acceptedFindingIds).toHaveLength(0);
+    expect(result.rejectedFindings).toHaveLength(1);
+    expect(result.rejectedFindings[0].findingKey).toBe('f1');
+    expect(result.rejectedFindings[0].error).toBeInstanceOf(UnresolvedRequirementKeyError);
+    expect(
+      (result.rejectedFindings[0].error as UnresolvedRequirementKeyError).unmappedRequirementKeys
+    ).toEqual(['K1-typo']);
+  });
+
+  it('repro Bug 5: evidence citing a source revision outside compile scope is rejected with UnknownSourceRevisionError', async () => {
+    const md1 = `# Doc\n\nVersion 1 text.`;
+    const md2 = `# Doc\n\nVersion 2 text with changes.`;
+    const sourceId = createSourceId('SPEC-SCOPE');
+
+    const rec1 = await repo.captureSourceRevision({
+      sourceId,
+      sourceType: 'sop',
+      markdownText: md1
+    });
+    const rec2 = await repo.captureSourceRevision({
+      sourceId,
+      sourceType: 'sop',
+      markdownText: md2
+    });
+
+    expect(rec1.revision.id).toBe('SPEC-SCOPE-R1');
+    expect(rec2.revision.id).toBe('SPEC-SCOPE-R2');
+
+    const loc1 = rec1.locatorIndex[0].locator;
+    const loc2 = rec2.locatorIndex[0].locator;
+
+    // Both rec1 and rec2 exist in the repository!
+    // But compile() is explicitly scoped ONLY to [rec2.revision.id]
+    const responseJson = JSON.stringify({
+      requirements: [
+        {
+          requirementKey: 'REQ-OUT-OF-SCOPE',
+          statement: 'Requirement citing superseded R1 outside compile scope',
+          category: 'business-rule',
+          origin: 'EXPLICIT',
+          evidence: [
+            {
+              sourceRevisionId: rec1.revision.id, // Exists in storage, but NOT in input.sourceRevisionIds!
+              locator: loc1
+            }
+          ]
+        },
+        {
+          requirementKey: 'REQ-IN-SCOPE',
+          statement: 'Requirement citing in-scope R2',
+          category: 'business-rule',
+          origin: 'EXPLICIT',
+          evidence: [
+            {
+              sourceRevisionId: rec2.revision.id,
+              locator: loc2
+            }
+          ]
+        }
+      ],
+      findings: [
+        {
+          findingKey: 'FINDING-OUT-OF-SCOPE',
+          type: 'contradiction',
+          relatedRequirementKeys: [],
+          evidence: [
+            {
+              sourceRevisionId: rec1.revision.id, // Out of scope
+              locator: loc1
+            }
+          ],
+          rationale: 'Finding citing out-of-scope revision'
+        }
+      ]
+    });
+
+    fakeGateway.queueResponse(responseJson);
+
+    const result = await useCase.compile({
+      sourceRevisionIds: [rec2.revision.id]
+    });
+
+    // REQ-OUT-OF-SCOPE is rejected
+    expect(result.rejectedRequirements).toHaveLength(1);
+    expect(result.rejectedRequirements[0].requirementKey).toBe('REQ-OUT-OF-SCOPE');
+    expect(result.rejectedRequirements[0].error).toBeInstanceOf(UnknownSourceRevisionError);
+    expect(
+      (result.rejectedRequirements[0].error as UnknownSourceRevisionError).sourceRevisionId
+    ).toBe(rec1.revision.id);
+
+    // REQ-IN-SCOPE is accepted
+    expect(result.acceptedRequirementRevisions).toHaveLength(1);
+
+    // FINDING-OUT-OF-SCOPE is rejected
+    expect(result.rejectedFindings).toHaveLength(1);
+    expect(result.rejectedFindings[0].findingKey).toBe('FINDING-OUT-OF-SCOPE');
+    expect(result.rejectedFindings[0].error).toBeInstanceOf(UnknownSourceRevisionError);
+    expect((result.rejectedFindings[0].error as UnknownSourceRevisionError).sourceRevisionId).toBe(
+      rec1.revision.id
+    );
+  });
+
+  it('repro Bug 6: compiler rejects model output claiming origin REVIEWER_PROPOSAL as MalformedGenerationOutputError', async () => {
+    const record = await repo.captureSourceRevision({
+      sourceId: createSourceId('SPEC-001'),
+      sourceType: 'sop',
+      markdownText: markdownContent
+    });
+
+    const validLocator = record.locatorIndex[0].locator;
+    const responseJson = JSON.stringify({
+      requirements: [
+        {
+          requirementKey: 'REQ-MODEL-CLAIM',
+          statement: 'Model attempting to claim human authority',
+          category: 'business-rule',
+          origin: 'REVIEWER_PROPOSAL',
+          evidence: [{ sourceRevisionId: record.revision.id, locator: validLocator }]
+        }
+      ],
+      findings: []
+    });
+
+    fakeGateway.queueResponse(responseJson);
+
+    await expect(
+      useCase.compile({
+        sourceRevisionIds: [record.revision.id]
+      })
+    ).rejects.toThrow(MalformedGenerationOutputError);
+
+    expect(await repo.listCandidateFindings()).toHaveLength(0);
   });
 
   it('10. throws EmptySourceRevisionIdsError synchronously when sourceRevisionIds is empty', async () => {
