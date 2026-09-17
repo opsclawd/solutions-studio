@@ -119,8 +119,11 @@ After all Phase 1 issues (#6–#12) have merged into the Release Batch branch an
    pnpm typecheck
    pnpm lint
    pnpm --filter @solutions-studio/orchestrator test
-   pnpm --filter @solutions-studio/orchestrator exit-gate
+   pnpm --filter @solutions-studio/orchestrator exit-gate --store ".validation-store"
    ```
+
+   > [!NOTE]
+   > Passing `--store ".validation-store"` preserves the reconciled requirements repository and verified baseline `BASE-CANONICAL-MESSY-001` on disk beneath `apps/orchestrator/.validation-store` for subsequent real-provider baseline projection. A normal `exit-gate` invocation without `--store` creates and removes an ephemeral temporary store.
 
 3. **Execute Real-Provider Candidate Evaluation (Synthetic Corpus Only):**
    Execute empirical evaluation against the configured real provider (`agy` or `opencode`) targeting the pinned candidate SHA:
@@ -146,14 +149,27 @@ After all Phase 1 issues (#6–#12) have merged into the Release Batch branch an
    > [!IMPORTANT]
    > The candidate SHA supplied via `--candidate-sha` represents `requested` provenance in the evaluation report unless independently verified by the operator. Live provider runs execute only against the versioned synthetic corpus; no production or customer data is transmitted.
 
-4. **Verify End-to-End Baseline Projection & Closed-Loop Repair:**
-   Execute the standalone tracer targeting the configured real provider to inspect diagram generation and <=2 repair behavior:
+4. **Generate Real-Provider Baseline Projection & Closed-Loop Repair:**
+   Execute baseline projection targeting the configured real provider against the verified baseline created in Step 2:
 
    ```bash
-   pnpm --filter @solutions-studio/orchestrator tracer --provider agy
+   pnpm --filter @solutions-studio/orchestrator project \
+     --baseline BASE-CANONICAL-MESSY-001 \
+     --artifact-type process-diagram \
+     --provider agy \
+     --store ".validation-store"
    # or
-   pnpm --filter @solutions-studio/orchestrator tracer --provider opencode
+   pnpm --filter @solutions-studio/orchestrator project \
+     --baseline BASE-CANONICAL-MESSY-001 \
+     --artifact-type process-diagram \
+     --provider opencode \
+     --store ".validation-store"
    ```
+
+   > [!NOTE]
+   > The baseline projection command executes `ProjectBaselineUseCase` against `BASE-CANONICAL-MESSY-001` using the real `MermaidCliLinterAdapter` and the configured provider.
+   > The command's output reports the projection ID, baseline ID, exact requirement revision IDs, repairs needed (`repairsNeeded`), attempt count, and SHA-256 content hash.
+   > The full projection record is persisted to `apps/orchestrator/.validation-store/projections/<projection-id>.json`.
 
 5. **Inspect Empirical Quality & Runtime Diagnostics:**
    - Reload the persisted run from `.evaluation-store` and verify parity with output reports.
@@ -162,6 +178,7 @@ After all Phase 1 issues (#6–#12) have merged into the Release Batch branch an
    - Inspect unclassified candidate observations emitted by the compiler.
    - Inspect measured provider and model runtime metadata per fixture.
    - Verify 0 execution failures across all 14 fixtures.
+   - Inspect the persisted baseline projection at `apps/orchestrator/.validation-store/projections/<projection-id>.json` and confirm provider provenance, revision coverage, and syntax validity.
 
 6. **Record Authoritative Human Disposition:**
    Copy `docs/phase-1-report-template.md` to `docs/reports/phase-1-${CANDIDATE_SHA}.md` and complete all sections.

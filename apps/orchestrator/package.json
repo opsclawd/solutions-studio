@@ -11,7 +11,8 @@
     "tracer": "tsx scripts/run-tracer.ts",
     "harness": "tsx scripts/run-reconciliation-harness.ts",
     "exit-gate": "tsx scripts/run-phase-1-exit-gate.ts",
-    "eval": "tsx scripts/run-evaluation.ts"
+    "eval": "tsx scripts/run-evaluation.ts",
+    "project": "tsx scripts/run-project-baseline.ts"
   },
   "dependencies": {
     "@mermaid-js/mermaid-cli": "^11.4.2",

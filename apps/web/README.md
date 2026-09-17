@@ -85,7 +85,7 @@ apps/web/
 >
 > **The Architectural Resolution:**
 >
-> 1. **Compiler AST Loop Guard:** [`SandboxCompiler.ts`](file:///home/gary/.openclaw/workspace/solutions-studio/apps/web/src/features/prototype-sandbox/SandboxCompiler.ts) instruments all loop AST nodes (`WhileStatement`, `ForStatement`, `DoWhileStatement`, etc.) with a timestamp check (`Date.now() - start > 1000ms`). If a loop executes continuously past 1000ms, it throws an `InfiniteLoopError`, safely unwinding the synchronous call stack and allowing the React `ErrorBoundary` to report a structured runtime error without freezing the host.
+> 1. **Compiler AST Loop Guard:** [`SandboxCompiler.ts`](src/features/prototype-sandbox/SandboxCompiler.ts) instruments all loop AST nodes (`WhileStatement`, `ForStatement`, `DoWhileStatement`, etc.) with a timestamp check (`Date.now() - start > 1000ms`). If a loop executes continuously past 1000ms, it throws an `InfiniteLoopError`, safely unwinding the synchronous call stack and allowing the React `ErrorBoundary` to report a structured runtime error without freezing the host.
 >    - _Security Caveat:_ The AST loop guard is best-effort hardening against accidental/standard infinite loops in generated or authored code, not an adversarial security boundary against malicious code, because generated code could tamper with timing primitives such as `Date.now()` or `performance.now()`. The `while(true)` test proves the ordinary failure mode, but arbitrary-JavaScript starvation resistance in production environments requires out-of-process renderer isolation.
 > 2. **Host Timeout & Iframe Teardown:** For asynchronous hangs (e.g. unresolving promises, infinite recursive re-renders with delay, or hung event handlers), the host's `timeoutMs` timer (4000ms) fires, transitions state to `TIMEOUT`, clears `pendingCodeRef`, and tears down the iframe via `key={iframeKey}`.
 
@@ -115,7 +115,7 @@ apps/web/
 
 **Decision: Enforce strict CSP (`connect-src 'none'`, `img-src 'self' data:`, `script-src 'unsafe-inline'`) and sandbox navigation restrictions across 6 attack vectors.**
 
-The browser boundary was empirically tested and proven using [`SecurityNetworkExfiltrationFixture`](file:///home/gary/.openclaw/workspace/solutions-studio/apps/web/test/fixtures/prototype-sandbox/security-network-exfiltration.fixture.tsx):
+The browser boundary was empirically tested and proven using [`SecurityNetworkExfiltrationFixture`](test/fixtures/prototype-sandbox/security-network-exfiltration.fixture.tsx):
 
 1. `fetch()`: Outbound request immediately rejected with `TypeError: Failed to fetch`.
 2. `XMLHttpRequest`: Outbound request immediately aborts and triggers `xhr.onerror`.
@@ -128,7 +128,7 @@ The browser boundary was empirically tested and proven using [`SecurityNetworkEx
 
 **Decision: Opaque origin (`"null"`) blocks all host storage surfaces.**
 
-The storage boundary was verified using [`SecurityStorageTheftFixture`](file:///home/gary/.openclaw/workspace/solutions-studio/apps/web/test/fixtures/prototype-sandbox/security-storage-theft.fixture.tsx):
+The storage boundary was verified using [`SecurityStorageTheftFixture`](test/fixtures/prototype-sandbox/security-storage-theft.fixture.tsx):
 
 - `window.parent.document.cookie`: Access throws `SecurityError`.
 - `window.parent.localStorage`: Access throws `SecurityError`.

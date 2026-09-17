@@ -9,6 +9,7 @@
     "test:integration": "pnpm --filter @solutions-studio/orchestrator test:integration",
     "dev:web": "pnpm --filter @solutions-studio/web dev",
     "tracer": "pnpm --filter @solutions-studio/orchestrator tracer",
+    "project": "pnpm --filter @solutions-studio/orchestrator project",
     "lint": "eslint .",
     "typecheck": "pnpm -r --if-present typecheck",
     "format": "prettier --check .",
