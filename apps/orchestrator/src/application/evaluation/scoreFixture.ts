@@ -255,7 +255,9 @@ export function scoreFixture(input: ScoreFixtureInput): FixtureScorerResultDto {
     'missing-failure-recovery': 'missing-failure-recovery',
     'temporal-ambiguity': 'temporal-ambiguity',
     'undefined-cardinality': 'undefined-cardinality',
-    'unsupported-assumption': 'unsupported-assumptions'
+    'unsupported-assumption': 'unsupported-assumptions',
+    'data-boundary-ambiguity': 'data-boundary-ambiguity',
+    'subjective-normative-language': 'subjective-normative-language'
   };
 
   function countEvidenceOverlap(

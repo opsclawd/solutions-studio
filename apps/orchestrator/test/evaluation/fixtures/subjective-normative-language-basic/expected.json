@@ -1,0 +1,71 @@
+{
+  "fixtureId": "subjective-normative-language-basic",
+  "version": "1.0.0",
+  "title": "Subjective and Normative Language in Service Standards",
+  "description": "Tests discovery of subjective or unmeasurable normative language ('reasonable response time', 'adequate communication', 'resolved appropriately') lacking objective acceptance criteria.",
+  "categories": ["subjective-normative-language"],
+  "canonicalMessyPackage": false,
+  "sources": [
+    {
+      "sourceRevisionId": "SERVICE-NORM-001-R1",
+      "sourceId": "SERVICE-NORM-001",
+      "sourceType": "sop",
+      "revision": 1,
+      "path": "source.md"
+    }
+  ],
+  "expectedRequirements": [
+    {
+      "requirementKey": "REQ-INTAKE-01",
+      "category": "business-rule",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "SERVICE-NORM-001-R1",
+          "locator": "system-incident-intake#1.1"
+        }
+      ],
+      "statementPattern": ".*Incoming customer support tickets are ingested automatically into the ticketing platform.*"
+    },
+    {
+      "requirementKey": "REQ-OUTAGE-COMM-01",
+      "category": "business-rule",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "SERVICE-NORM-001-R1",
+          "locator": "critical-outage-communication#3.1"
+        }
+      ],
+      "statementPattern": ".*Critical severity service interruptions require the incident coordinator to issue customer status updates within 15 minutes.*"
+    }
+  ],
+  "expectedFindings": [
+    {
+      "findingKey": "FINDING-SUBJECTIVE-01",
+      "category": "subjective-normative-language",
+      "type": "subjective-normative-language",
+      "evidence": [
+        {
+          "sourceRevisionId": "SERVICE-NORM-001-R1",
+          "locator": "tiered-escalation-standard#2.1"
+        }
+      ],
+      "relatedRequirementKeys": ["REQ-INTAKE-01"],
+      "rationale": "Service standard contains subjective and unmeasurable normative language ('reasonable response time', 'adequate communication', 'resolved appropriately') without objective metrics, SLA thresholds, or verification criteria."
+    }
+  ],
+  "expectedNonFindings": [
+    {
+      "description": "Critical outage communication requirement specifies an objective 15-minute response threshold and does not contain unmeasurable subjective language.",
+      "category": "subjective-normative-language",
+      "wouldBeType": "subjective-normative-language",
+      "evidence": [
+        {
+          "sourceRevisionId": "SERVICE-NORM-001-R1",
+          "locator": "critical-outage-communication#3.1"
+        }
+      ]
+    }
+  ]
+}

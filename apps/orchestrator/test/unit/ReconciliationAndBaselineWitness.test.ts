@@ -20,12 +20,12 @@ describe('Phase 1.7 — End-to-End Baseline Projection & Exit Gate Witness', () 
 
     // 2. Compilation assertions
     expect(result.compiledRequirementCount).toBe(13);
-    expect(result.compiledFindingCount).toBe(9);
+    expect(result.compiledFindingCount).toBe(11);
 
     // 3. Human reconciliation assertions
     expect(result.acceptedRequirementCount).toBe(11);
     expect(result.rejectedRequirementCount).toBe(2);
-    expect(result.dispositionedFindingCount).toBe(9);
+    expect(result.dispositionedFindingCount).toBe(11);
 
     // 4. Immutable baseline assertions
     expect(result.baseline.id).toBe('BASE-CANONICAL-MESSY-001');
@@ -55,8 +55,8 @@ describe('Phase 1.7 — End-to-End Baseline Projection & Exit Gate Witness', () 
     // 7. Evaluation runner report assertions
     expect(result.evaluationReport.corpusVersion).toBe('v1.0');
     expect(result.evaluationReport.corpusIdentity).toMatch(/^[a-f0-9]{64}$/);
-    expect(result.evaluationReport.aggregateScores.totalFixtures).toBe(14);
-    expect(result.evaluationReport.aggregateScores.completedFixtures).toBe(14);
+    expect(result.evaluationReport.aggregateScores.totalFixtures).toBe(16);
+    expect(result.evaluationReport.aggregateScores.completedFixtures).toBe(16);
     expect(result.evaluationReport.aggregateScores.failedFixtures).toBe(0);
 
     const canonicalResult = result.evaluationReport.fixtureResults.find(
@@ -101,8 +101,8 @@ describe('Phase 1.7 — End-to-End Baseline Projection & Exit Gate Witness', () 
       const rawJson = await fs.readFile(reportJsonPath, 'utf-8');
       const parsedJson = JSON.parse(rawJson);
       expect(parsedJson.corpusVersion).toBe('v1.0');
-      expect(parsedJson.aggregateScores.totalFixtures).toBe(14);
-      expect(parsedJson.aggregateScores.completedFixtures).toBe(14);
+      expect(parsedJson.aggregateScores.totalFixtures).toBe(16);
+      expect(parsedJson.aggregateScores.completedFixtures).toBe(16);
 
       // Assert Markdown file on disk
       const rawMd = await fs.readFile(reportMdPath, 'utf-8');

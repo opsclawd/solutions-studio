@@ -29,7 +29,7 @@ describe('EvaluationRunner and EvaluateRequirementsCompilerUseCase', () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  it('runs evaluation across all 14 corpus fixtures, persists run record, and writes reports', async () => {
+  it('runs evaluation across all 16 corpus fixtures, persists run record, and writes reports', async () => {
     const reportPath = path.join(tempDir, 'reports', 'evaluation-report.json');
     const markdownPath = path.join(tempDir, 'reports', 'evaluation-report.md');
 
@@ -43,12 +43,12 @@ describe('EvaluationRunner and EvaluateRequirementsCompilerUseCase', () => {
 
     expect(success).toBe(true);
     expect(runRecord.corpusVersion).toBe('v1.0');
-    expect(runRecord.fixtureResults.length).toBe(14);
+    expect(runRecord.fixtureResults.length).toBe(16);
     expect(report.candidateSha).toEqual({ status: 'available', value: 'test-sha-12345' });
-    expect(report.summary.totalFixtures).toBe(14);
-    expect(report.summary.passedFixtures).toBe(14);
+    expect(report.summary.totalFixtures).toBe(16);
+    expect(report.summary.passedFixtures).toBe(16);
     expect(report.summary.failedFixtures).toBe(0);
-    expect(report.summary.coveredCategories.length).toBe(10);
+    expect(report.summary.coveredCategories.length).toBe(12);
 
     // Verify canonical-messy-discovery-package source lineage mapping
     const messyResult = report.fixtureResults.find(
@@ -67,7 +67,7 @@ describe('EvaluationRunner and EvaluateRequirementsCompilerUseCase', () => {
       expect(messyR2Entry?.capturedOrdinal).toBe(2);
     }
 
-    // Verify all 10 defect categories have score counters in aggregate
+    // Verify all 12 defect categories have score counters in aggregate
     for (const [cat, counters] of Object.entries(report.aggregateScores.findingsByCategory)) {
       if (cat === 'false-positive-near-conflict') {
         // Negative-only defect category: tested via expected non-findings
@@ -83,7 +83,7 @@ describe('EvaluationRunner and EvaluateRequirementsCompilerUseCase', () => {
     const persisted = await repo.getEvaluationRun(runRecord.id);
     expect(persisted).toBeDefined();
     expect(persisted!.corpusVersion).toBe('v1.0');
-    expect(persisted!.fixtureResults.length).toBe(14);
+    expect(persisted!.fixtureResults.length).toBe(16);
     expect(persisted!.report.provenance.verified.persistenceVerified).toBe(true);
 
     // Verify report written to disk
@@ -91,7 +91,7 @@ describe('EvaluationRunner and EvaluateRequirementsCompilerUseCase', () => {
     const parsed = JSON.parse(reportFile);
     expect(parsed.corpusVersion).toBe('v1.0');
     expect(parsed.candidateSha).toEqual({ status: 'available', value: 'test-sha-12345' });
-    expect(parsed.aggregateScores.totalFixtures).toBe(14);
+    expect(parsed.aggregateScores.totalFixtures).toBe(16);
 
     // Verify human markdown report
     const mdFile = await fs.readFile(markdownPath, 'utf8');
@@ -117,7 +117,7 @@ describe('EvaluationRunner and EvaluateRequirementsCompilerUseCase', () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.report.aggregateScores.failedFixtures).toBe(14);
+    expect(result.report.aggregateScores.failedFixtures).toBe(16);
     expect(result.report.aggregateScores.completedFixtures).toBe(0);
 
     const firstFailed = result.report.fixtureResults[0];

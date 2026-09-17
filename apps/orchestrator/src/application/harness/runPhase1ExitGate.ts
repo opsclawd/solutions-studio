@@ -225,6 +225,20 @@ export const CANONICAL_FINDING_RECONCILIATION_PLAN: readonly FindingReconciliati
     rationale:
       'Unsupported assumption resolved: confirmed vendor burst SLA of 50,000 QPS with circuit-breaker protection',
     actorId: 'SRE-ARCH-01'
+  },
+  {
+    findingKey: 'FINDING-MESSY-BOUNDARY',
+    disposition: 'RESOLVED',
+    rationale:
+      'Boundary ambiguity resolved: dual-approval threshold clarified as inclusive of exactly $50k (">= $50k triggers CEO sign-off")',
+    actorId: 'CFO-DESIGNEE'
+  },
+  {
+    findingKey: 'FINDING-MESSY-SUBJECTIVE',
+    disposition: 'RESOLVED',
+    rationale:
+      'Subjective normative language resolved: archival maintenance "reasonable completion window" replaced with an explicit 4-hour SLA bound',
+    actorId: 'DBA-LEAD-01'
   }
 ];
 
@@ -729,7 +743,7 @@ export async function runPhase1ExitGate(
     }
 
     log(
-      `      Evaluation verified: 14/14 fixtures passed on corpus ${evalResult.report.corpusVersion} (${evalResult.report.corpusIdentity.slice(0, 12)}...).`
+      `      Evaluation verified: ${evalResult.report.aggregateScores.completedFixtures}/${evalResult.report.aggregateScores.totalFixtures} fixtures passed on corpus ${evalResult.report.corpusVersion} (${evalResult.report.corpusIdentity.slice(0, 12)}...).`
     );
 
     log('\n====================================================');

@@ -151,6 +151,22 @@ function createMockReport(
           precision: null,
           recall: null,
           f1Score: null
+        },
+        'data-boundary-ambiguity': {
+          truePositives: 0,
+          falsePositives: 0,
+          falseNegatives: 0,
+          precision: null,
+          recall: null,
+          f1Score: null
+        },
+        'subjective-normative-language': {
+          truePositives: 0,
+          falsePositives: 0,
+          falseNegatives: 0,
+          precision: null,
+          recall: null,
+          f1Score: null
         }
       },
       unclassifiedFindingsCount: 0
