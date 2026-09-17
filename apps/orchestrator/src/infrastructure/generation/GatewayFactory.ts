@@ -10,6 +10,7 @@ export interface GatewayConfig {
   opencodeBinPath?: string;
   timeoutMs?: number;
   cwd?: string;
+  model?: string;
 }
 
 export class GatewayFactory {
@@ -26,14 +27,16 @@ export class GatewayFactory {
         return new AntigravityCliAdapter({
           executablePath: config?.agyBinPath ?? process.env.AGY_BIN_PATH,
           defaultTimeoutMs: config?.timeoutMs,
-          cwd: config?.cwd
+          cwd: config?.cwd,
+          model: config?.model
         });
 
       case 'opencode':
         return new OpenCodeCliAdapter({
           executablePath: config?.opencodeBinPath ?? process.env.OPENCODE_BIN_PATH,
           defaultTimeoutMs: config?.timeoutMs,
-          cwd: config?.cwd
+          cwd: config?.cwd,
+          model: config?.model
         });
 
       case 'fixture-replay':

@@ -18,6 +18,7 @@ export interface CliArgs {
   timeoutMs?: number;
   agyBinPath?: string;
   opencodeBinPath?: string;
+  modelName?: string;
 }
 
 const KNOWN_OPTIONS = new Set([
@@ -29,7 +30,8 @@ const KNOWN_OPTIONS = new Set([
   '--candidate-sha',
   '--timeout',
   '--agy-bin',
-  '--opencode-bin'
+  '--opencode-bin',
+  '--model'
 ]);
 
 export function parseArgs(args: string[]): CliArgs {
@@ -49,6 +51,7 @@ export function parseArgs(args: string[]): CliArgs {
   let timeoutMs: number | undefined = undefined;
   let agyBinPath: string | undefined = process.env.AGY_BIN_PATH;
   let opencodeBinPath: string | undefined = process.env.OPENCODE_BIN_PATH;
+  let modelName: string | undefined = undefined;
 
   const seenOptions = new Set<string>();
 
@@ -107,6 +110,9 @@ export function parseArgs(args: string[]): CliArgs {
       case '--opencode-bin':
         opencodeBinPath = path.resolve(process.cwd(), value);
         break;
+      case '--model':
+        modelName = value;
+        break;
     }
   }
 
@@ -125,6 +131,12 @@ export function parseArgs(args: string[]): CliArgs {
     );
   }
 
+  if (seenOptions.has('--model') && provider !== 'agy' && provider !== 'opencode') {
+    throw new Error(
+      `Option '--model' is only valid when provider is 'agy' or 'opencode', got '${provider}'`
+    );
+  }
+
   return {
     provider,
     manifestPath,
@@ -134,7 +146,8 @@ export function parseArgs(args: string[]): CliArgs {
     candidateSha,
     timeoutMs,
     agyBinPath,
-    opencodeBinPath
+    opencodeBinPath,
+    modelName
   };
 }
 
@@ -153,6 +166,7 @@ export async function main() {
     timeoutMs: cliArgs.timeoutMs,
     agyBinPath: cliArgs.agyBinPath,
     opencodeBinPath: cliArgs.opencodeBinPath,
+    model: cliArgs.modelName,
     cwd: process.cwd()
   };
 

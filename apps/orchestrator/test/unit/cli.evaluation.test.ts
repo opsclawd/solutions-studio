@@ -163,5 +163,30 @@ describe('Evaluation CLI options and reload integration', () => {
         /Option '--opencode-bin' is only valid when provider is 'opencode'/
       );
     });
+
+    it('parses --model option for agy provider', () => {
+      const parsed = parseArgs(['--provider', 'agy', '--model', 'gemini-3.1-pro-high']);
+      expect(parsed.provider).toBe('agy');
+      expect(parsed.modelName).toBe('gemini-3.1-pro-high');
+    });
+
+    it('parses --model option for opencode provider', () => {
+      const parsed = parseArgs([
+        '--provider',
+        'opencode',
+        '--model',
+        'minimax-coding-plan/MiniMax-M3'
+      ]);
+      expect(parsed.provider).toBe('opencode');
+      expect(parsed.modelName).toBe('minimax-coding-plan/MiniMax-M3');
+    });
+
+    it('rejects --model option when provider is fixture-replay', () => {
+      expect(() =>
+        parseArgs(['--provider', 'fixture-replay', '--model', 'gemini-3.1-pro-high'])
+      ).toThrow(
+        /Option '--model' is only valid when provider is 'agy' or 'opencode', got 'fixture-replay'/
+      );
+    });
   });
 });

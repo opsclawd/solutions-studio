@@ -16,13 +16,16 @@ export interface OpenCodeCliAdapterOptions {
   executablePath?: string;
   defaultTimeoutMs?: number;
   cwd?: string;
+  model?: string;
 }
 
 interface OpenCodeEvent {
   type?: string;
+  model?: string;
   part?: {
     type?: string;
     text?: string;
+    model?: string;
     tokens?: {
       total?: number;
       input?: number;
@@ -42,11 +45,13 @@ export class OpenCodeCliAdapter implements IGenerationGateway {
   private readonly executablePath: string;
   private readonly defaultTimeoutMs: number;
   private readonly cwd?: string;
+  private readonly model?: string;
 
   constructor(options?: OpenCodeCliAdapterOptions) {
     this.executablePath = options?.executablePath ?? process.env.OPENCODE_BIN_PATH ?? 'opencode';
     this.defaultTimeoutMs = options?.defaultTimeoutMs ?? 90_000;
     this.cwd = options?.cwd;
+    this.model = options?.model;
   }
 
   async generate(request: GenerationRequest): Promise<GenerationResult> {
@@ -56,7 +61,11 @@ export class OpenCodeCliAdapter implements IGenerationGateway {
       'System: You are an automated artifact generation engine. Output ONLY the raw requested text without using any tools, running commands, or providing conversational commentary.';
     const promptText = `${systemInstruction}\n\n${request.prompt}`;
 
-    const args = ['run', '--format', 'json', '--pure', promptText];
+    const args = ['run', '--format', 'json', '--pure'];
+    if (this.model) {
+      args.push('-m', this.model);
+    }
+    args.push(promptText);
 
     return new Promise((resolve, reject) => {
       let stdoutData = '';
@@ -117,6 +126,7 @@ export class OpenCodeCliAdapter implements IGenerationGateway {
             text: extracted.text,
             metadata: {
               provider: 'opencode-cli',
+              model: extracted.model ?? this.model,
               tokens: extracted.tokens
             }
           });
@@ -138,6 +148,7 @@ export class OpenCodeCliAdapter implements IGenerationGateway {
 
   private parseOpenCodeOutput(rawOutput: string): {
     text: string;
+    model?: string;
     tokens?: {
       input?: number;
       output?: number;
@@ -148,6 +159,7 @@ export class OpenCodeCliAdapter implements IGenerationGateway {
     const lines = rawOutput.split('\n');
     let collectedText = '';
     let structuredEventsDetected = false;
+    let detectedModel: string | undefined;
     let totalTokens:
       | {
           input?: number;
@@ -166,6 +178,11 @@ export class OpenCodeCliAdapter implements IGenerationGateway {
       try {
         const parsed = JSON.parse(trimmed) as OpenCodeEvent;
         structuredEventsDetected = true;
+        if (parsed.model) {
+          detectedModel = parsed.model;
+        } else if (parsed.part?.model) {
+          detectedModel = parsed.part.model;
+        }
         if (parsed.type === 'text' && parsed.part?.text) {
           collectedText += parsed.part.text;
         }
@@ -194,6 +211,7 @@ export class OpenCodeCliAdapter implements IGenerationGateway {
       }
       return {
         text: cleaned,
+        model: detectedModel,
         tokens: totalTokens
       };
     }
