@@ -8,7 +8,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --dir test/unit",
     "test:integration": "vitest run --dir test/integration",
-    "tracer": "tsx scripts/run-tracer.ts"
+    "tracer": "tsx scripts/run-tracer.ts",
+    "harness": "tsx scripts/run-reconciliation-harness.ts",
+    "eval": "tsx scripts/run-evaluation.ts"
   },
   "dependencies": {
     "@mermaid-js/mermaid-cli": "^11.4.2",

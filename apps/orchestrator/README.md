@@ -160,3 +160,47 @@ pnpm --filter @solutions-studio/orchestrator tracer --provider opencode
 ### Exit Gate Verdict: **GO**
 
 The architectural seam is validated and stable. Phase 1 (Vertical Slice 1 — The Visual Process Canvas) can proceed directly using the existing generation gateway and Mermaid validation adapters.
+
+---
+
+## Candidate-SHA Real-Provider Validation Checklist
+
+For authoritative release validation and Phase 1 exit gating against a configured real provider (e.g. `agy` or `opencode`), execute the following checklist using only synthetic, non-sensitive fixtures:
+
+1. **Pin Candidate SHA:**
+   Ensure your working tree is clean and capture the exact candidate commit SHA:
+
+   ```bash
+   CANDIDATE_SHA=$(git rev-parse HEAD)
+   echo "Validating Candidate SHA: ${CANDIDATE_SHA}"
+   ```
+
+2. **Run Deterministic Synthetic Fixture Verification:**
+   Verify all unit tests, typecheck, linting, and witness harnesses complete without network or provider credentials:
+
+   ```bash
+   pnpm typecheck
+   pnpm lint
+   pnpm --filter @solutions-studio/orchestrator test
+   pnpm --filter @solutions-studio/orchestrator exec tsx scripts/run-reconciliation-harness.ts
+   pnpm --filter @solutions-studio/orchestrator eval
+   ```
+
+3. **Run Real-Provider Candidate Validation (Synthetic Fixtures Only):**
+   Execute the tracer targeting the configured real provider:
+
+   ```bash
+   # Validate diagram generation and closed-loop repair with real provider
+   pnpm --filter @solutions-studio/orchestrator tracer --provider agy
+   # or
+   pnpm --filter @solutions-studio/orchestrator tracer --provider opencode
+   ```
+
+4. **Record Empirical Evaluation Report:**
+   Copy `docs/phase-1-report-template.md` to `docs/reports/phase-1-${CANDIDATE_SHA}.md` and record:
+   - Pinned `CANDIDATE_SHA`
+   - Extraction quality and corpus coverage metrics
+   - False-positive hotspots
+   - Provider/model observations (latency, repair counts)
+   - Evidence-backed design changes
+   - Complete the exit decision gate (`[ ] GO / [ ] NO-GO / [ ] CONDITIONAL`) with reviewing authority signature.

@@ -267,6 +267,66 @@ describe('Requirement and RequirementRevision', () => {
       });
       expect(baseline2.requirementRevisions).toContain('R-142@r3');
     });
+
+    it('resets reviewState to PENDING and resolutionState to UNRESOLVED on affectedActors-only changes', () => {
+      const acceptedRev = createRequirementRevision({
+        id: createRequirementRevisionId('R-ACTOR@r1'),
+        requirementId: createRequirementId('R-ACTOR'),
+        revision: 1,
+        statement: 'Supervisor approval required',
+        category: 'business-rule',
+        origin: 'ASSUMED',
+        reviewState: 'ACCEPTED',
+        resolutionState: 'CLEAR',
+        affectedActors: [createActorId('Supervisor')]
+      });
+
+      const changedActors = reviseRequirement(acceptedRev, {
+        id: createRequirementRevisionId('R-ACTOR@r2'),
+        affectedActors: [createActorId('Supervisor'), createActorId('FieldLead')]
+      });
+
+      expect(changedActors.reviewState).toBe('PENDING');
+      expect(changedActors.resolutionState).toBe('UNRESOLVED');
+
+      // Unchanged actors preserves reviewState and resolutionState
+      const identicalActors = reviseRequirement(acceptedRev, {
+        id: createRequirementRevisionId('R-ACTOR@r3'),
+        affectedActors: [createActorId('Supervisor')]
+      });
+      expect(identicalActors.reviewState).toBe('ACCEPTED');
+      expect(identicalActors.resolutionState).toBe('CLEAR');
+    });
+
+    it('resets reviewState to PENDING and resolutionState to UNRESOLVED on dependencies-only changes', () => {
+      const acceptedRev = createRequirementRevision({
+        id: createRequirementRevisionId('R-DEP@r1'),
+        requirementId: createRequirementId('R-DEP'),
+        revision: 1,
+        statement: 'Process valve sequence',
+        category: 'business-rule',
+        origin: 'ASSUMED',
+        reviewState: 'ACCEPTED',
+        resolutionState: 'CLEAR',
+        dependencies: [createRequirementId('R-100')]
+      });
+
+      const changedDeps = reviseRequirement(acceptedRev, {
+        id: createRequirementRevisionId('R-DEP@r2'),
+        dependencies: [createRequirementId('R-100'), createRequirementId('R-200')]
+      });
+
+      expect(changedDeps.reviewState).toBe('PENDING');
+      expect(changedDeps.resolutionState).toBe('UNRESOLVED');
+
+      // Unchanged dependencies preserves reviewState and resolutionState
+      const identicalDeps = reviseRequirement(acceptedRev, {
+        id: createRequirementRevisionId('R-DEP@r3'),
+        dependencies: [createRequirementId('R-100')]
+      });
+      expect(identicalDeps.reviewState).toBe('ACCEPTED');
+      expect(identicalDeps.resolutionState).toBe('CLEAR');
+    });
   });
 
   describe('Validation rules', () => {

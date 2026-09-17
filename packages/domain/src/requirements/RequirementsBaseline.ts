@@ -7,7 +7,7 @@ import type {
 } from './ids.js';
 import { now } from './ids.js';
 import type { RequirementRevision } from './RequirementRevision.js';
-import { DomainError, InvalidBaselineMembershipError } from './errors.js';
+import { InvalidBaselineMembershipError, EmptyBaselineError } from './errors.js';
 
 export interface RequirementsBaseline {
   readonly id: RequirementsBaselineId;
@@ -83,7 +83,7 @@ export function createRequirementsBaseline(params: {
   createdBy: ReviewerId;
 }): RequirementsBaseline {
   if (!params.requirements || params.requirements.length === 0) {
-    throw new DomainError(
+    throw new EmptyBaselineError(
       'Cannot create requirements baseline: requirements list must not be empty'
     );
   }

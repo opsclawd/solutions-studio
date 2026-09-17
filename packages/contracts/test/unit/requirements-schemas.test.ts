@@ -12,7 +12,12 @@ import {
   CandidateEvidenceRefDtoSchema,
   CandidateRequirementDtoSchema,
   CandidateFindingResponseDtoSchema,
-  CompiledRequirementsResponseDtoSchema
+  CompiledRequirementsResponseDtoSchema,
+  RequirementReconciliationActionSchema,
+  RequirementReconciliationRecordDtoSchema,
+  FindingReconciliationRecordDtoSchema,
+  ReconciliationRecordDtoSchema,
+  CreateRequirementsBaselineRequestDtoSchema
 } from '../../src/requirements/index.js';
 
 describe('Requirements Contract Schemas', () => {
@@ -497,6 +502,249 @@ describe('Requirements Contract Schemas', () => {
       expect(() => CompiledRequirementsResponseDtoSchema.parse(duplicateFindingResponse)).toThrow(
         /Duplicate findingKey/
       );
+    });
+  });
+
+  describe('RequirementReconciliationActionSchema', () => {
+    it('accepts valid reconciliation actions', () => {
+      expect(RequirementReconciliationActionSchema.parse('ACCEPT')).toBe('ACCEPT');
+      expect(RequirementReconciliationActionSchema.parse('REJECT')).toBe('REJECT');
+      expect(RequirementReconciliationActionSchema.parse('REVISE')).toBe('REVISE');
+      expect(RequirementReconciliationActionSchema.parse('REOPEN')).toBe('REOPEN');
+      expect(RequirementReconciliationActionSchema.parse('RESOLVE')).toBe('RESOLVE');
+    });
+
+    it('rejects invalid action', () => {
+      expect(() => RequirementReconciliationActionSchema.parse('INVALID')).toThrow();
+    });
+  });
+
+  describe('RequirementReconciliationRecordDtoSchema', () => {
+    const baseValidRecord = {
+      id: 'REC-REQ-001',
+      entityType: 'requirement' as const,
+      entityId: 'REQ-100',
+      requirementRevisionId: 'REQ-100-R2',
+      action: 'ACCEPT' as const,
+      previousReviewState: 'PENDING' as const,
+      newReviewState: 'ACCEPTED' as const,
+      rationale: 'Human reviewer accepts candidate requirement',
+      actorId: 'REV-01',
+      recordedAt: '2026-09-16T12:00:00.000Z'
+    };
+
+    it('validates a valid record without resolution fields', () => {
+      const parsed = RequirementReconciliationRecordDtoSchema.parse(baseValidRecord);
+      expect(parsed).toEqual(baseValidRecord);
+    });
+
+    it('validates a valid first record where previousReviewState is undefined', () => {
+      const firstRecord = {
+        ...baseValidRecord,
+        previousReviewState: undefined
+      };
+      const parsed = RequirementReconciliationRecordDtoSchema.parse(firstRecord);
+      expect(parsed.previousReviewState).toBeUndefined();
+    });
+
+    it('validates paired resolution fields for RESOLVE', () => {
+      const resolveRecord = {
+        ...baseValidRecord,
+        action: 'RESOLVE' as const,
+        previousResolutionState: 'UNRESOLVED' as const,
+        newResolutionState: 'CLEAR' as const,
+        rationale: 'Addressed known ambiguity'
+      };
+      const parsed = RequirementReconciliationRecordDtoSchema.parse(resolveRecord);
+      expect(parsed.previousResolutionState).toBe('UNRESOLVED');
+      expect(parsed.newResolutionState).toBe('CLEAR');
+    });
+
+    it('rejects one-sided resolution fields (missing previousResolutionState)', () => {
+      const invalid = {
+        ...baseValidRecord,
+        newResolutionState: 'CLEAR' as const
+      };
+      expect(() => RequirementReconciliationRecordDtoSchema.parse(invalid)).toThrow(
+        /previousResolutionState is required/
+      );
+    });
+
+    it('rejects one-sided resolution fields (missing newResolutionState)', () => {
+      const invalid = {
+        ...baseValidRecord,
+        previousResolutionState: 'UNRESOLVED' as const
+      };
+      expect(() => RequirementReconciliationRecordDtoSchema.parse(invalid)).toThrow(
+        /newResolutionState is required/
+      );
+    });
+
+    it('rejects identical resolution states when action is not REVISE', () => {
+      const invalid = {
+        ...baseValidRecord,
+        action: 'ACCEPT' as const,
+        previousResolutionState: 'UNRESOLVED' as const,
+        newResolutionState: 'UNRESOLVED' as const
+      };
+      expect(() => RequirementReconciliationRecordDtoSchema.parse(invalid)).toThrow(
+        /Resolution states cannot be identical/
+      );
+    });
+
+    it('allows identical resolution states when action is REVISE fork', () => {
+      const reviseFork = {
+        ...baseValidRecord,
+        action: 'REVISE' as const,
+        previousResolutionState: 'UNRESOLVED' as const,
+        newResolutionState: 'UNRESOLVED' as const,
+        rationale: 'Explicit revision fork preserving unresolved state'
+      };
+      const parsed = RequirementReconciliationRecordDtoSchema.parse(reviseFork);
+      expect(parsed.action).toBe('REVISE');
+    });
+
+    it('rejects empty or whitespace-only rationale', () => {
+      expect(() =>
+        RequirementReconciliationRecordDtoSchema.parse({
+          ...baseValidRecord,
+          rationale: ''
+        })
+      ).toThrow();
+
+      expect(() =>
+        RequirementReconciliationRecordDtoSchema.parse({
+          ...baseValidRecord,
+          rationale: '   '
+        })
+      ).toThrow();
+    });
+  });
+
+  describe('FindingReconciliationRecordDtoSchema', () => {
+    const baseFindingRecord = {
+      id: 'REC-FIND-001',
+      entityType: 'finding' as const,
+      entityId: 'FINDING-1',
+      previousDisposition: 'OPEN' as const,
+      newDisposition: 'RESOLVED' as const,
+      rationale: 'Fixed in revision 2 by adding supervisor signoff',
+      actorId: 'REV-01',
+      recordedAt: '2026-09-16T12:00:00.000Z'
+    };
+
+    it('validates a valid finding reconciliation record', () => {
+      const parsed = FindingReconciliationRecordDtoSchema.parse(baseFindingRecord);
+      expect(parsed).toEqual(baseFindingRecord);
+    });
+
+    it('rejects transition where previousDisposition equals newDisposition', () => {
+      const invalid = {
+        ...baseFindingRecord,
+        previousDisposition: 'OPEN' as const,
+        newDisposition: 'OPEN' as const
+      };
+      expect(() => FindingReconciliationRecordDtoSchema.parse(invalid)).toThrow(
+        /Transition must change disposition/
+      );
+    });
+
+    it('rejects empty or whitespace-only rationale', () => {
+      expect(() =>
+        FindingReconciliationRecordDtoSchema.parse({
+          ...baseFindingRecord,
+          rationale: ''
+        })
+      ).toThrow();
+
+      expect(() =>
+        FindingReconciliationRecordDtoSchema.parse({
+          ...baseFindingRecord,
+          rationale: '   '
+        })
+      ).toThrow();
+    });
+  });
+
+  describe('ReconciliationRecordDtoSchema (discriminated union)', () => {
+    it('discriminates requirement records', () => {
+      const rec = {
+        id: 'REC-1',
+        entityType: 'requirement' as const,
+        entityId: 'REQ-1',
+        requirementRevisionId: 'REQ-1-R1',
+        action: 'ACCEPT' as const,
+        newReviewState: 'ACCEPTED' as const,
+        rationale: 'Accepted',
+        recordedAt: '2026-09-16T12:00:00.000Z'
+      };
+      const parsed = ReconciliationRecordDtoSchema.parse(rec);
+      expect(parsed.entityType).toBe('requirement');
+    });
+
+    it('discriminates finding records', () => {
+      const rec = {
+        id: 'REC-2',
+        entityType: 'finding' as const,
+        entityId: 'FIND-1',
+        previousDisposition: 'OPEN' as const,
+        newDisposition: 'ACCEPTED_RISK' as const,
+        rationale: 'Accepted low risk',
+        recordedAt: '2026-09-16T12:00:00.000Z'
+      };
+      const parsed = ReconciliationRecordDtoSchema.parse(rec);
+      expect(parsed.entityType).toBe('finding');
+    });
+
+    it('rejects unknown entityType', () => {
+      expect(() =>
+        ReconciliationRecordDtoSchema.parse({
+          id: 'REC-3',
+          entityType: 'unknown',
+          rationale: 'test'
+        })
+      ).toThrow();
+    });
+  });
+
+  describe('CreateRequirementsBaselineRequestDtoSchema', () => {
+    it('validates a complete baseline creation request', () => {
+      const valid = {
+        id: 'BASELINE-1',
+        requirementRevisions: ['REQ-1-R2', 'REQ-2-R1'],
+        createdBy: 'REV-01',
+        createdAt: '2026-09-16T12:00:00.000Z'
+      };
+      const parsed = CreateRequirementsBaselineRequestDtoSchema.parse(valid);
+      expect(parsed).toEqual(valid);
+    });
+
+    it('allows optional id and createdAt', () => {
+      const minimal = {
+        requirementRevisions: ['REQ-1-R2'],
+        createdBy: 'REV-01'
+      };
+      const parsed = CreateRequirementsBaselineRequestDtoSchema.parse(minimal);
+      expect(parsed.requirementRevisions).toEqual(['REQ-1-R2']);
+      expect(parsed.id).toBeUndefined();
+      expect(parsed.createdAt).toBeUndefined();
+    });
+
+    it('rejects empty requirementRevisions array', () => {
+      expect(() =>
+        CreateRequirementsBaselineRequestDtoSchema.parse({
+          requirementRevisions: [],
+          createdBy: 'REV-01'
+        })
+      ).toThrow();
+    });
+
+    it('rejects missing createdBy', () => {
+      expect(() =>
+        CreateRequirementsBaselineRequestDtoSchema.parse({
+          requirementRevisions: ['REQ-1-R1']
+        })
+      ).toThrow();
     });
   });
 });

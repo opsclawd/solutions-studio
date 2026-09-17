@@ -43,3 +43,11 @@ export class InvalidBaselineMembershipError extends DomainError {
     );
   }
 }
+
+export class EmptyBaselineError extends DomainError {
+  constructor(
+    message = 'Cannot create requirements baseline: requirements list must not be empty'
+  ) {
+    super(message);
+  }
+}

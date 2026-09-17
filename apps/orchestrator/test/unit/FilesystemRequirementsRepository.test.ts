@@ -406,7 +406,8 @@ describe('FilesystemRequirementsRepository', () => {
       revision: 1,
       statement: 'Initial requirement statement',
       category: 'business-rule',
-      origin: 'EXPLICIT'
+      origin: 'EXPLICIT',
+      reviewState: 'ACCEPTED'
     });
     const rev2 = createRequirementRevision({
       id: createRequirementRevisionId('REQ-003-R2'),
@@ -472,7 +473,8 @@ describe('FilesystemRequirementsRepository', () => {
       revision: 1,
       statement: 'Accepted without modification',
       category: 'business-rule',
-      origin: 'EXPLICIT'
+      origin: 'EXPLICIT',
+      reviewState: 'ACCEPTED'
     });
     await repo.saveRequirementRevision(rev);
 
@@ -723,7 +725,8 @@ describe('FilesystemRequirementsRepository', () => {
         revision: 1,
         statement: 'Statement 1',
         category: 'business-rule',
-        origin: 'EXPLICIT'
+        origin: 'EXPLICIT',
+        reviewState: 'ACCEPTED'
       });
       const rev2 = createRequirementRevision({
         id: createRequirementRevisionId('REQ-VAL-3-R2'),
@@ -772,7 +775,8 @@ describe('FilesystemRequirementsRepository', () => {
         revision: 1,
         statement: 'Statement 1',
         category: 'business-rule',
-        origin: 'EXPLICIT'
+        origin: 'EXPLICIT',
+        reviewState: 'ACCEPTED'
       });
       const rev2 = createRequirementRevision({
         id: createRequirementRevisionId('REQ-VAL-4-R2'),
@@ -949,6 +953,477 @@ describe('FilesystemRequirementsRepository', () => {
           recordedAt: createInstant('2026-09-16T11:00:00.000Z')
         })
       ).rejects.toThrow(/Transition continuity broken/i);
+    });
+
+    it('validates resolution transitions across RESOLVE, meaning-changing REVISE, and second RESOLVE', async () => {
+      const reqId = createRequirementId('REQ-RES-01');
+      const rev1 = createRequirementRevision({
+        id: createRequirementRevisionId('REQ-RES-01-R1'),
+        requirementId: reqId,
+        revision: 1,
+        statement: 'Statement 1',
+        category: 'business-rule',
+        origin: 'EXPLICIT',
+        reviewState: 'PENDING',
+        resolutionState: 'UNRESOLVED'
+      });
+      const rev2 = createRequirementRevision({
+        id: createRequirementRevisionId('REQ-RES-01-R2'),
+        requirementId: reqId,
+        revision: 2,
+        statement: 'Statement 1',
+        category: 'business-rule',
+        origin: 'EXPLICIT',
+        reviewState: 'ACCEPTED',
+        resolutionState: 'UNRESOLVED',
+        supersedes: rev1.id
+      });
+      const rev3 = createRequirementRevision({
+        id: createRequirementRevisionId('REQ-RES-01-R3'),
+        requirementId: reqId,
+        revision: 3,
+        statement: 'Statement 1',
+        category: 'business-rule',
+        origin: 'EXPLICIT',
+        reviewState: 'ACCEPTED',
+        resolutionState: 'CLEAR',
+        supersedes: rev2.id
+      });
+      const rev4 = createRequirementRevision({
+        id: createRequirementRevisionId('REQ-RES-01-R4'),
+        requirementId: reqId,
+        revision: 4,
+        statement: 'Meaning changed statement',
+        category: 'business-rule',
+        origin: 'EXPLICIT',
+        reviewState: 'PENDING',
+        resolutionState: 'UNRESOLVED',
+        supersedes: rev3.id
+      });
+      const rev5 = createRequirementRevision({
+        id: createRequirementRevisionId('REQ-RES-01-R5'),
+        requirementId: reqId,
+        revision: 5,
+        statement: 'Meaning changed statement',
+        category: 'business-rule',
+        origin: 'EXPLICIT',
+        reviewState: 'PENDING',
+        resolutionState: 'CLEAR',
+        supersedes: rev4.id
+      });
+
+      await repo.saveRequirementRevision(rev1);
+      await repo.saveRequirementRevision(rev2);
+      await repo.saveRequirementRevision(rev3);
+      await repo.saveRequirementRevision(rev4);
+      await repo.saveRequirementRevision(rev5);
+
+      // 1. ACCEPT (no resolution change)
+      await repo.appendReconciliationRecord({
+        id: 'REC-RES-1',
+        entityType: 'requirement',
+        entityId: reqId,
+        requirementRevisionId: rev2.id,
+        action: 'ACCEPT',
+        previousReviewState: undefined,
+        newReviewState: 'ACCEPTED',
+        rationale: 'Accept candidate',
+        recordedAt: createInstant('2026-09-16T10:00:00.000Z')
+      });
+
+      // 2. RESOLVE (UNRESOLVED -> CLEAR, reviewState remains ACCEPTED)
+      await repo.appendReconciliationRecord({
+        id: 'REC-RES-2',
+        entityType: 'requirement',
+        entityId: reqId,
+        requirementRevisionId: rev3.id,
+        action: 'RESOLVE',
+        previousReviewState: 'ACCEPTED',
+        newReviewState: 'ACCEPTED',
+        previousResolutionState: 'UNRESOLVED',
+        newResolutionState: 'CLEAR',
+        rationale: 'Resolved ambiguity',
+        recordedAt: createInstant('2026-09-16T10:10:00.000Z')
+      });
+
+      // 3. REVISE meaning (CLEAR -> UNRESOLVED, reviewState resets to PENDING)
+      await repo.appendReconciliationRecord({
+        id: 'REC-RES-3',
+        entityType: 'requirement',
+        entityId: reqId,
+        requirementRevisionId: rev4.id,
+        action: 'REVISE',
+        previousReviewState: 'ACCEPTED',
+        newReviewState: 'PENDING',
+        previousResolutionState: 'CLEAR',
+        newResolutionState: 'UNRESOLVED',
+        rationale: 'Meaning changed',
+        recordedAt: createInstant('2026-09-16T10:20:00.000Z')
+      });
+
+      // 4. Second RESOLVE (UNRESOLVED -> CLEAR, reviewState stays PENDING)
+      await repo.appendReconciliationRecord({
+        id: 'REC-RES-4',
+        entityType: 'requirement',
+        entityId: reqId,
+        requirementRevisionId: rev5.id,
+        action: 'RESOLVE',
+        previousReviewState: 'PENDING',
+        newReviewState: 'PENDING',
+        previousResolutionState: 'UNRESOLVED',
+        newResolutionState: 'CLEAR',
+        rationale: 'Resolved again',
+        recordedAt: createInstant('2026-09-16T10:30:00.000Z')
+      });
+
+      const history = await repo.listReconciliationRecords('requirement', reqId);
+      expect(history).toHaveLength(4);
+      expect(history[1].action).toBe('RESOLVE');
+      expect(history[1].previousResolutionState).toBe('UNRESOLVED');
+      expect(history[1].newResolutionState).toBe('CLEAR');
+      expect(history[2].previousResolutionState).toBe('CLEAR');
+      expect(history[2].newResolutionState).toBe('UNRESOLVED');
+      expect(history[3].previousResolutionState).toBe('UNRESOLVED');
+      expect(history[3].newResolutionState).toBe('CLEAR');
+    });
+
+    it('rejects one-sided resolution fields and resolution continuity failures', async () => {
+      const reqId = createRequirementId('REQ-RES-02');
+      const rev1 = createRequirementRevision({
+        id: createRequirementRevisionId('REQ-RES-02-R1'),
+        requirementId: reqId,
+        revision: 1,
+        statement: 'Statement 1',
+        category: 'business-rule',
+        origin: 'EXPLICIT',
+        reviewState: 'PENDING',
+        resolutionState: 'UNRESOLVED'
+      });
+      const rev2 = createRequirementRevision({
+        id: createRequirementRevisionId('REQ-RES-02-R2'),
+        requirementId: reqId,
+        revision: 2,
+        statement: 'Statement 1',
+        category: 'business-rule',
+        origin: 'EXPLICIT',
+        reviewState: 'ACCEPTED',
+        resolutionState: 'CLEAR',
+        supersedes: rev1.id
+      });
+      await repo.saveRequirementRevision(rev1);
+      await repo.saveRequirementRevision(rev2);
+
+      // One-sided: only newResolutionState
+      await expect(
+        repo.appendReconciliationRecord({
+          id: 'REC-BAD-RES-1',
+          entityType: 'requirement',
+          entityId: reqId,
+          requirementRevisionId: rev2.id,
+          action: 'RESOLVE',
+          previousReviewState: undefined,
+          newReviewState: 'ACCEPTED',
+          newResolutionState: 'CLEAR',
+          rationale: 'Missing previousResolutionState',
+          recordedAt: createInstant('2026-09-16T10:00:00.000Z')
+        } as any)
+      ).rejects.toThrow(/both previousResolutionState and newResolutionState/i);
+
+      // Broken initial resolution continuity: rev1 has UNRESOLVED, record claims CLEAR
+      await expect(
+        repo.appendReconciliationRecord({
+          id: 'REC-BAD-RES-2',
+          entityType: 'requirement',
+          entityId: reqId,
+          requirementRevisionId: rev2.id,
+          action: 'RESOLVE',
+          previousReviewState: undefined,
+          newReviewState: 'ACCEPTED',
+          previousResolutionState: 'CLEAR',
+          newResolutionState: 'CLEAR',
+          rationale: 'Mismatched initial resolution state',
+          recordedAt: createInstant('2026-09-16T10:00:00.000Z')
+        })
+      ).rejects.toThrow(/Resolution transition continuity broken/i);
+
+      // Valid first record
+      await repo.appendReconciliationRecord({
+        id: 'REC-GOOD-RES-1',
+        entityType: 'requirement',
+        entityId: reqId,
+        requirementRevisionId: rev2.id,
+        action: 'RESOLVE',
+        previousReviewState: undefined,
+        newReviewState: 'ACCEPTED',
+        previousResolutionState: 'UNRESOLVED',
+        newResolutionState: 'CLEAR',
+        rationale: 'Initial resolve',
+        recordedAt: createInstant('2026-09-16T10:00:00.000Z')
+      });
+
+      // Broken subsequent continuity: claims previous was UNRESOLVED instead of CLEAR
+      const rev3 = createRequirementRevision({
+        id: createRequirementRevisionId('REQ-RES-02-R3'),
+        requirementId: reqId,
+        revision: 3,
+        statement: 'Statement 2',
+        category: 'business-rule',
+        origin: 'EXPLICIT',
+        reviewState: 'PENDING',
+        resolutionState: 'CLEAR',
+        supersedes: rev2.id
+      });
+      await repo.saveRequirementRevision(rev3);
+
+      await expect(
+        repo.appendReconciliationRecord({
+          id: 'REC-BAD-RES-3',
+          entityType: 'requirement',
+          entityId: reqId,
+          requirementRevisionId: rev3.id,
+          action: 'RESOLVE',
+          previousReviewState: 'ACCEPTED',
+          newReviewState: 'PENDING',
+          previousResolutionState: 'UNRESOLVED', // should be CLEAR
+          newResolutionState: 'CLEAR',
+          rationale: 'Wrong previous resolution',
+          recordedAt: createInstant('2026-09-16T10:05:00.000Z')
+        })
+      ).rejects.toThrow(/Resolution transition continuity broken/i);
+
+      // Rejects record when neither review nor resolution changes for non-REVISE action
+      await expect(
+        repo.appendReconciliationRecord({
+          id: 'REC-NOOP-1',
+          entityType: 'requirement',
+          entityId: reqId,
+          requirementRevisionId: rev2.id,
+          action: 'ACCEPT',
+          previousReviewState: 'ACCEPTED',
+          newReviewState: 'ACCEPTED',
+          rationale: 'No review or resolution change',
+          recordedAt: createInstant('2026-09-16T10:10:00.000Z')
+        })
+      ).rejects.toThrow(/Transition must change reviewState or resolutionState/i);
+    });
+  });
+
+  describe('Atomic transitions and projection records', () => {
+    it('transitionCandidateFinding atomically updates finding and records audit record', async () => {
+      const findingId = createFindingId('FIND-ATOMIC-1');
+      const finding = createCandidateFinding({
+        id: findingId,
+        type: 'missing-authorization',
+        discoveredBy: 'human'
+      });
+      await repo.saveCandidateFinding(finding);
+
+      // Verify direct disposition change is blocked
+      await expect(
+        repo.saveCandidateFinding({
+          ...finding,
+          disposition: 'RESOLVED'
+        })
+      ).rejects.toThrow(/Direct disposition mutation/i);
+
+      // Verify atomic transition succeeds
+      const updatedFinding = createCandidateFinding({
+        ...finding,
+        disposition: 'RESOLVED',
+        rationale: 'Resolved by lead engineer'
+      });
+      const record = {
+        id: 'REC-F-ATOMIC-1',
+        entityType: 'finding' as const,
+        entityId: findingId,
+        previousDisposition: 'OPEN' as const,
+        newDisposition: 'RESOLVED' as const,
+        rationale: 'Resolved by lead engineer',
+        actorId: createActorId('ACT-LEAD'),
+        recordedAt: createInstant('2026-09-16T12:00:00.000Z')
+      };
+
+      await repo.transitionCandidateFinding(updatedFinding, record, 'OPEN');
+
+      const reloaded = await repo.getCandidateFinding(findingId);
+      expect(reloaded?.disposition).toBe('RESOLVED');
+
+      const audit = await repo.listReconciliationRecords('finding', findingId);
+      expect(audit).toHaveLength(1);
+      expect(audit[0].newDisposition).toBe('RESOLVED');
+    });
+
+    it('transitionCandidateFinding rejects CAS conflict when expectedCurrentDisposition does not match', async () => {
+      const findingId = createFindingId('FIND-ATOMIC-2');
+      const finding = createCandidateFinding({
+        id: findingId,
+        type: 'missing-authorization',
+        discoveredBy: 'human'
+      });
+      await repo.saveCandidateFinding(finding);
+
+      const updated = createCandidateFinding({
+        ...finding,
+        disposition: 'RESOLVED',
+        rationale: 'Conflict test rationale'
+      });
+      const record = {
+        id: 'REC-F-ATOMIC-2',
+        entityType: 'finding' as const,
+        entityId: findingId,
+        previousDisposition: 'OPEN' as const,
+        newDisposition: 'RESOLVED' as const,
+        rationale: 'Conflict test',
+        recordedAt: createInstant('2026-09-16T12:00:00.000Z')
+      };
+
+      await expect(repo.transitionCandidateFinding(updated, record, 'RESOLVED')).rejects.toThrow(
+        /Concurrency conflict/i
+      );
+    });
+
+    it('transitionRequirementRevision atomically creates successor and audit record', async () => {
+      const reqId = createRequirementId('REQ-ATOMIC-1');
+      const rev1 = createRequirementRevision({
+        id: createRequirementRevisionId('REQ-ATOMIC-1-R1'),
+        requirementId: reqId,
+        revision: 1,
+        statement: 'Statement R1',
+        category: 'business-rule',
+        origin: 'EXPLICIT',
+        reviewState: 'PENDING'
+      });
+      await repo.saveRequirementRevision(rev1);
+
+      const rev2 = createRequirementRevision({
+        id: createRequirementRevisionId('REQ-ATOMIC-1-R2'),
+        requirementId: reqId,
+        revision: 2,
+        statement: 'Statement R1',
+        category: 'business-rule',
+        origin: 'EXPLICIT',
+        reviewState: 'ACCEPTED',
+        supersedes: rev1.id
+      });
+      const record = {
+        id: 'REC-REQ-ATOMIC-1',
+        entityType: 'requirement' as const,
+        entityId: reqId,
+        requirementRevisionId: rev2.id,
+        action: 'ACCEPT' as const,
+        previousReviewState: undefined,
+        newReviewState: 'ACCEPTED' as const,
+        rationale: 'Accepted by SME',
+        actorId: createActorId('ACT-SME'),
+        recordedAt: createInstant('2026-09-16T12:00:00.000Z')
+      };
+
+      await repo.transitionRequirementRevision(rev2, record, rev1.id);
+
+      const reloadedRev2 = await repo.getRequirementRevision(rev2.id);
+      expect(reloadedRev2?.reviewState).toBe('ACCEPTED');
+
+      const revisions = await repo.listRequirementRevisions(reqId);
+      expect(revisions.map((r) => r.id)).toEqual([rev1.id, rev2.id]);
+
+      const audit = await repo.listReconciliationRecords('requirement', reqId);
+      expect(audit).toHaveLength(1);
+      expect(audit[0].action).toBe('ACCEPT');
+    });
+
+    it('transitionRequirementRevision rejects CAS conflict when expected current revision does not match', async () => {
+      const reqId = createRequirementId('REQ-ATOMIC-2');
+      const rev1 = createRequirementRevision({
+        id: createRequirementRevisionId('REQ-ATOMIC-2-R1'),
+        requirementId: reqId,
+        revision: 1,
+        statement: 'Statement R1',
+        category: 'business-rule',
+        origin: 'EXPLICIT',
+        reviewState: 'PENDING'
+      });
+      await repo.saveRequirementRevision(rev1);
+
+      const rev2 = createRequirementRevision({
+        id: createRequirementRevisionId('REQ-ATOMIC-2-R2'),
+        requirementId: reqId,
+        revision: 2,
+        statement: 'Statement R2',
+        category: 'business-rule',
+        origin: 'EXPLICIT',
+        reviewState: 'ACCEPTED',
+        supersedes: rev1.id
+      });
+      const record = {
+        id: 'REC-REQ-ATOMIC-2',
+        entityType: 'requirement' as const,
+        entityId: reqId,
+        requirementRevisionId: rev2.id,
+        action: 'ACCEPT' as const,
+        previousReviewState: undefined,
+        newReviewState: 'ACCEPTED' as const,
+        rationale: 'Conflict test',
+        recordedAt: createInstant('2026-09-16T12:00:00.000Z')
+      };
+
+      await expect(
+        repo.transitionRequirementRevision(
+          rev2,
+          record,
+          createRequirementRevisionId('REQ-ATOMIC-2-R99')
+        )
+      ).rejects.toThrow(/Concurrency conflict/i);
+    });
+
+    it('persists and reloads projection records with list queries', async () => {
+      const baseId = createRequirementsBaselineId('BASE-001');
+      const record = {
+        id: 'PROJ-TEST-001',
+        baselineId: baseId,
+        requirementRevisionIds: [createRequirementRevisionId('REQ-001-R1')],
+        artifactType: 'process-diagram' as const,
+        content: 'graph TD\n  A --> B',
+        metadata: {
+          baselineId: baseId,
+          requirementRevisionIds: ['REQ-001-R1'],
+          artifactType: 'process-diagram',
+          declaredProvenance: {
+            baselineId: baseId,
+            requirementRevisionIds: ['REQ-001-R1']
+          },
+          configuredExecution: {
+            provider: 'fake',
+            artifactType: 'process-diagram'
+          },
+          measuredVerification: {
+            repairsNeeded: 0,
+            attemptCount: 1,
+            contentHash: 'abc123hash',
+            verifiedAt: createInstant('2026-09-16T12:00:00.000Z')
+          }
+        },
+        createdAt: createInstant('2026-09-16T12:00:00.000Z')
+      };
+
+      await repo.saveProjectionRecord(record);
+
+      const reloaded = await repo.getProjectionRecord('PROJ-TEST-001');
+      expect(reloaded).toBeDefined();
+      expect(reloaded?.baselineId).toBe(baseId);
+      expect(reloaded?.content).toBe('graph TD\n  A --> B');
+      expect(reloaded?.metadata.measuredVerification.repairsNeeded).toBe(0);
+
+      const listAll = await repo.listProjectionRecords();
+      expect(listAll).toHaveLength(1);
+      expect(listAll[0].id).toBe('PROJ-TEST-001');
+
+      const listByBaseline = await repo.listProjectionRecords(baseId);
+      expect(listByBaseline).toHaveLength(1);
+
+      const listByOther = await repo.listProjectionRecords(
+        createRequirementsBaselineId('BASE-OTHER')
+      );
+      expect(listByOther).toHaveLength(0);
     });
   });
 });

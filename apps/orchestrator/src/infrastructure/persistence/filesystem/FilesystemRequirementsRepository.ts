@@ -17,6 +17,8 @@ import {
   now,
   FINDING_DISPOSITIONS,
   REQUIREMENT_REVIEW_STATES,
+  REQUIREMENT_RESOLUTION_STATES,
+  REQUIREMENT_RECONCILIATION_ACTIONS,
   type SourceId,
   type SourceRevisionId,
   type RequirementId,
@@ -37,8 +39,10 @@ import type {
   ReconciliationRecord,
   EvaluationRunRecord,
   FindingReconciliationRecord,
-  RequirementReconciliationRecord
+  RequirementReconciliationRecord,
+  ProjectionRecord
 } from '../../../application/ports/persistence/IRequirementsRepository.js';
+import type { FindingDisposition } from '@solutions-studio/domain';
 import { computeContentHash, deriveLocatorIndex } from '../markdown/deriveLocatorIndex.js';
 import {
   writeJsonExclusive,
@@ -93,9 +97,39 @@ function resolveStorePath(baseDir: string, subDir: string, filename: string): st
 
 export class FilesystemRequirementsRepository implements IRequirementsRepository {
   private readonly baseDir: string;
+  private readonly entityLocks = new Map<string, Promise<void>>();
 
   constructor(options: FilesystemRequirementsRepositoryOptions) {
     this.baseDir = options.baseDir;
+  }
+
+  private async acquireEntityLock<T>(entityId: string, action: () => Promise<T>): Promise<T> {
+    const currentLock = this.entityLocks.get(entityId) ?? Promise.resolve();
+    let release: () => void;
+    const nextLock = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.entityLocks.set(entityId, nextLock);
+    try {
+      await currentLock;
+      return await action();
+    } finally {
+      release!();
+      if (this.entityLocks.get(entityId) === nextLock) {
+        this.entityLocks.delete(entityId);
+      }
+    }
+  }
+
+  private async readRawFileIfExists(filePath: string): Promise<string | undefined> {
+    try {
+      return await fs.readFile(filePath, 'utf8');
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return undefined;
+      }
+      throw err;
+    }
   }
 
   async captureSourceRevision(input: CaptureSourceRevisionInput): Promise<SourceRevisionRecord> {
@@ -340,6 +374,18 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
   async saveCandidateFinding(finding: CandidateFinding): Promise<void> {
     assertSafeIdentifier(finding.id, 'findingId');
     const filePath = resolveStorePath(this.baseDir, 'findings', `${finding.id}.json`);
+    const existing = await readJson<CandidateFinding>(filePath);
+    if (!existing) {
+      if (finding.disposition !== 'OPEN') {
+        throw new Error(
+          `Cannot create candidate finding directly with non-OPEN disposition: '${finding.disposition}'. Initial findings must be created with disposition 'OPEN'.`
+        );
+      }
+    } else if (existing.disposition !== finding.disposition) {
+      throw new Error(
+        `Direct disposition mutation of finding '${finding.id}' from '${existing.disposition}' to '${finding.disposition}' is forbidden. Findings must be transitioned through reconciliation.`
+      );
+    }
     await writeJsonAtomic(filePath, finding);
   }
 
@@ -391,6 +437,159 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
     }
   }
 
+  private async validateFindingRecord(
+    record: FindingReconciliationRecord,
+    finding: CandidateFinding
+  ): Promise<void> {
+    if (!FINDING_DISPOSITIONS.includes(record.previousDisposition)) {
+      throw new Error(`Invalid previousDisposition: '${String(record.previousDisposition)}'`);
+    }
+    if (!FINDING_DISPOSITIONS.includes(record.newDisposition)) {
+      throw new Error(`Invalid newDisposition: '${String(record.newDisposition)}'`);
+    }
+    if (record.previousDisposition === record.newDisposition) {
+      throw new Error(
+        `Transition must change disposition: previous and new are both '${record.previousDisposition}'`
+      );
+    }
+
+    const history = await this.listReconciliationRecords('finding', record.entityId);
+    if (history.length > 0) {
+      const lastRecord = history[history.length - 1];
+      if (record.previousDisposition !== lastRecord.newDisposition) {
+        throw new Error(
+          `Transition continuity broken for finding '${record.entityId}': expected previousDisposition '${lastRecord.newDisposition}', got '${record.previousDisposition}'`
+        );
+      }
+    } else {
+      const matchesPrevious = finding.disposition === record.previousDisposition;
+      const matchesAlreadyUpdated =
+        record.previousDisposition === 'OPEN' && finding.disposition === record.newDisposition;
+      if (!matchesPrevious && !matchesAlreadyUpdated) {
+        throw new Error(
+          `Transition continuity broken for finding '${record.entityId}': finding disposition '${finding.disposition}' matches neither previousDisposition '${record.previousDisposition}' nor newDisposition '${record.newDisposition}'`
+        );
+      }
+    }
+  }
+
+  private async validateRequirementRecord(
+    record: RequirementReconciliationRecord,
+    rev: RequirementRevision
+  ): Promise<void> {
+    if (!REQUIREMENT_RECONCILIATION_ACTIONS.includes(record.action)) {
+      throw new Error(`Invalid action: '${String(record.action)}'`);
+    }
+
+    if (!REQUIREMENT_REVIEW_STATES.includes(record.newReviewState)) {
+      throw new Error(`Invalid newReviewState: '${String(record.newReviewState)}'`);
+    }
+    if (
+      record.previousReviewState !== undefined &&
+      !REQUIREMENT_REVIEW_STATES.includes(record.previousReviewState)
+    ) {
+      throw new Error(`Invalid previousReviewState: '${String(record.previousReviewState)}'`);
+    }
+
+    const hasPrevRes = record.previousResolutionState !== undefined;
+    const hasNewRes = record.newResolutionState !== undefined;
+    if (hasPrevRes !== hasNewRes) {
+      throw new Error(
+        'Reconciliation record must supply both previousResolutionState and newResolutionState, or neither'
+      );
+    }
+    if (
+      record.previousResolutionState !== undefined &&
+      !REQUIREMENT_RESOLUTION_STATES.includes(record.previousResolutionState)
+    ) {
+      throw new Error(
+        `Invalid previousResolutionState: '${String(record.previousResolutionState)}'`
+      );
+    }
+    if (
+      record.newResolutionState !== undefined &&
+      !REQUIREMENT_RESOLUTION_STATES.includes(record.newResolutionState)
+    ) {
+      throw new Error(`Invalid newResolutionState: '${String(record.newResolutionState)}'`);
+    }
+
+    const reviewChanged = record.previousReviewState !== record.newReviewState;
+    const resolutionChanged =
+      record.previousResolutionState !== undefined &&
+      record.newResolutionState !== undefined &&
+      record.previousResolutionState !== record.newResolutionState;
+
+    if (record.action !== 'REVISE' && !reviewChanged && !resolutionChanged) {
+      throw new Error(
+        `Transition must change reviewState or resolutionState for action '${record.action}'`
+      );
+    }
+
+    if (rev.requirementId !== record.entityId) {
+      throw new Error(
+        `Requirement revision '${record.requirementRevisionId}' belongs to requirement '${rev.requirementId}', not '${record.entityId}'`
+      );
+    }
+
+    // F-59f39ea7: Boundary invariant checks against referenced revision
+    if (record.newReviewState !== rev.reviewState) {
+      throw new Error(
+        `Reconciliation record newReviewState '${record.newReviewState}' does not match requirement revision reviewState '${rev.reviewState}'`
+      );
+    }
+    if (
+      record.newResolutionState !== undefined &&
+      record.newResolutionState !== rev.resolutionState
+    ) {
+      throw new Error(
+        `Reconciliation record newResolutionState '${record.newResolutionState}' does not match requirement revision resolutionState '${rev.resolutionState}'`
+      );
+    }
+
+    const history = await this.listReconciliationRecords('requirement', record.entityId);
+    if (history.length === 0) {
+      if (record.previousReviewState !== undefined) {
+        throw new Error(
+          `First reconciliation record for requirement '${record.entityId}' must have previousReviewState undefined, got '${record.previousReviewState}'`
+        );
+      }
+    } else {
+      if (record.previousReviewState === undefined) {
+        throw new Error(
+          `Subsequent reconciliation record for requirement '${record.entityId}' must have a defined previousReviewState`
+        );
+      }
+      const lastRecord = history[history.length - 1];
+      if (record.previousReviewState !== lastRecord.newReviewState) {
+        throw new Error(
+          `Transition continuity broken for requirement '${record.entityId}': expected previousReviewState '${lastRecord.newReviewState}', got '${record.previousReviewState}'`
+        );
+      }
+    }
+
+    // Check resolution continuity independently
+    if (record.newResolutionState !== undefined) {
+      const lastResolutionRecord = [...history]
+        .reverse()
+        .find((r) => r.newResolutionState !== undefined);
+      if (lastResolutionRecord) {
+        if (record.previousResolutionState !== lastResolutionRecord.newResolutionState) {
+          throw new Error(
+            `Resolution transition continuity broken for requirement '${record.entityId}': expected previousResolutionState '${lastResolutionRecord.newResolutionState}', got '${record.previousResolutionState}'`
+          );
+        }
+      } else {
+        // First resolution-bearing record for this requirement
+        const sourceRev = rev.supersedes ? await this.getRequirementRevision(rev.supersedes) : rev;
+        if (sourceRev && record.previousResolutionState !== sourceRev.resolutionState) {
+          throw new Error(
+            `Resolution transition continuity broken for requirement '${record.entityId}': expected initial previousResolutionState '${sourceRev.resolutionState}', got '${record.previousResolutionState}'`
+          );
+        }
+      }
+    }
+  }
+
   async appendReconciliationRecord(record: ReconciliationRecord): Promise<void> {
     if (typeof record.rationale !== 'string' || record.rationale.trim().length === 0) {
       throw new Error('Reconciliation record rationale must be a non-empty string');
@@ -399,44 +598,11 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
 
     if (record.entityType === 'finding') {
       assertSafeIdentifier(record.entityId, 'findingId');
-      if (!FINDING_DISPOSITIONS.includes(record.previousDisposition)) {
-        throw new Error(`Invalid previousDisposition: '${String(record.previousDisposition)}'`);
-      }
-      if (!FINDING_DISPOSITIONS.includes(record.newDisposition)) {
-        throw new Error(`Invalid newDisposition: '${String(record.newDisposition)}'`);
-      }
-      if (record.previousDisposition === record.newDisposition) {
-        throw new Error(
-          `Transition must change disposition: previous and new are both '${record.previousDisposition}'`
-        );
-      }
-
       const finding = await this.getCandidateFinding(record.entityId);
       if (!finding) {
         throw new Error(`Referenced finding '${record.entityId}' does not exist`);
       }
-
-      const history = await this.listReconciliationRecords('finding', record.entityId);
-      if (history.length > 0) {
-        const lastRecord = history[history.length - 1];
-        if (record.previousDisposition !== lastRecord.newDisposition) {
-          throw new Error(
-            `Transition continuity broken for finding '${record.entityId}': expected previousDisposition '${lastRecord.newDisposition}', got '${record.previousDisposition}'`
-          );
-        }
-      } else {
-        // For the first audit record, previousDisposition must match the entity's prior state.
-        // If the finding was already transitioned on disk (disposition === newDisposition), previousDisposition must be 'OPEN'.
-        // Otherwise, previousDisposition must equal finding.disposition.
-        if (
-          record.previousDisposition !== finding.disposition &&
-          !(record.newDisposition === finding.disposition && record.previousDisposition === 'OPEN')
-        ) {
-          throw new Error(
-            `Transition continuity broken for finding '${record.entityId}': previousDisposition '${record.previousDisposition}' does not match finding disposition '${finding.disposition}'`
-          );
-        }
-      }
+      await this.validateFindingRecord(record, finding);
 
       const filePath = resolveStorePath(
         this.baseDir,
@@ -448,58 +614,13 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
       assertSafeIdentifier(record.entityId, 'requirementId');
       assertSafeIdentifier(record.requirementRevisionId, 'requirementRevisionId');
 
-      const VALID_ACTIONS = ['ACCEPT', 'REJECT', 'REVISE', 'REOPEN'] as const;
-      if (!VALID_ACTIONS.includes(record.action)) {
-        throw new Error(`Invalid action: '${String(record.action)}'`);
-      }
-
-      if (!REQUIREMENT_REVIEW_STATES.includes(record.newReviewState)) {
-        throw new Error(`Invalid newReviewState: '${String(record.newReviewState)}'`);
-      }
-      if (
-        record.previousReviewState !== undefined &&
-        !REQUIREMENT_REVIEW_STATES.includes(record.previousReviewState)
-      ) {
-        throw new Error(`Invalid previousReviewState: '${String(record.previousReviewState)}'`);
-      }
-      if (record.previousReviewState === record.newReviewState) {
-        throw new Error(
-          `Transition must change reviewState: previous and new are both '${record.newReviewState}'`
-        );
-      }
-
       const rev = await this.getRequirementRevision(record.requirementRevisionId);
       if (!rev) {
         throw new Error(
           `Referenced requirement revision '${record.requirementRevisionId}' does not exist`
         );
       }
-      if (rev.requirementId !== record.entityId) {
-        throw new Error(
-          `Requirement revision '${record.requirementRevisionId}' belongs to requirement '${rev.requirementId}', not '${record.entityId}'`
-        );
-      }
-
-      const history = await this.listReconciliationRecords('requirement', record.entityId);
-      if (history.length === 0) {
-        if (record.previousReviewState !== undefined) {
-          throw new Error(
-            `First reconciliation record for requirement '${record.entityId}' must have previousReviewState undefined, got '${record.previousReviewState}'`
-          );
-        }
-      } else {
-        if (record.previousReviewState === undefined) {
-          throw new Error(
-            `Subsequent reconciliation record for requirement '${record.entityId}' must have a defined previousReviewState`
-          );
-        }
-        const lastRecord = history[history.length - 1];
-        if (record.previousReviewState !== lastRecord.newReviewState) {
-          throw new Error(
-            `Transition continuity broken for requirement '${record.entityId}': expected previousReviewState '${lastRecord.newReviewState}', got '${record.previousReviewState}'`
-          );
-        }
-      }
+      await this.validateRequirementRecord(record, rev);
 
       const filePath = resolveStorePath(
         this.baseDir,
@@ -510,6 +631,143 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
     } else {
       throw new Error(`Unsupported entityType: '${(record as { entityType: string }).entityType}'`);
     }
+  }
+
+  async transitionCandidateFinding(
+    finding: CandidateFinding,
+    record: FindingReconciliationRecord,
+    expectedCurrentDisposition?: FindingDisposition
+  ): Promise<void> {
+    assertSafeIdentifier(finding.id, 'findingId');
+    assertSafeIdentifier(record.id, 'reconciliationRecordId');
+    if (typeof record.rationale !== 'string' || record.rationale.trim().length === 0) {
+      throw new Error('Reconciliation record rationale must be a non-empty string');
+    }
+
+    return this.acquireEntityLock(finding.id, async () => {
+      const current = await this.getCandidateFinding(finding.id);
+      if (!current) {
+        throw new Error(`Referenced finding '${finding.id}' does not exist`);
+      }
+      const expectedDisp = expectedCurrentDisposition ?? record.previousDisposition;
+      if (current.disposition !== expectedDisp) {
+        throw new Error(
+          `Concurrency conflict for finding '${finding.id}': current disposition '${current.disposition}' does not match expected '${expectedDisp}'`
+        );
+      }
+
+      await this.validateFindingRecord(record, current);
+
+      const findingFilePath = resolveStorePath(this.baseDir, 'findings', `${finding.id}.json`);
+      const auditFilePath = resolveStorePath(
+        this.baseDir,
+        path.join('reconciliation', 'finding'),
+        `${finding.id}.jsonl`
+      );
+
+      const previousFindingData = await readJson<CandidateFinding>(findingFilePath);
+      const previousAuditContent = await this.readRawFileIfExists(auditFilePath);
+
+      let findingWritten = false;
+      let auditWritten = false;
+
+      try {
+        await writeJsonAtomic(findingFilePath, finding);
+        findingWritten = true;
+
+        await appendJsonLine(auditFilePath, record);
+        auditWritten = true;
+      } catch (err) {
+        if (findingWritten && previousFindingData) {
+          await writeJsonAtomic(findingFilePath, previousFindingData).catch(() => {});
+        }
+        if (auditWritten && previousAuditContent !== undefined) {
+          await fs.writeFile(auditFilePath, previousAuditContent, 'utf8').catch(() => {});
+        }
+        throw err;
+      }
+    });
+  }
+
+  async transitionRequirementRevision(
+    successor: RequirementRevision,
+    record: RequirementReconciliationRecord,
+    expectedCurrentRevisionId?: RequirementRevisionId
+  ): Promise<void> {
+    assertSafeIdentifier(successor.requirementId, 'requirementId');
+    assertSafeIdentifier(successor.id, 'requirementRevisionId');
+    assertSafeIdentifier(record.id, 'reconciliationRecordId');
+    if (typeof record.rationale !== 'string' || record.rationale.trim().length === 0) {
+      throw new Error('Reconciliation record rationale must be a non-empty string');
+    }
+
+    return this.acquireEntityLock(successor.requirementId, async () => {
+      const revisions = await this.listRequirementRevisions(successor.requirementId);
+      const latest = revisions.length > 0 ? revisions[revisions.length - 1] : undefined;
+      const expectedId = expectedCurrentRevisionId ?? successor.supersedes;
+      if (expectedId !== undefined) {
+        if (!latest || latest.id !== expectedId) {
+          throw new Error(
+            `Concurrency conflict for requirement '${successor.requirementId}': latest revision is '${latest?.id}', expected '${expectedId}'`
+          );
+        }
+      }
+
+      await this.validateRequirementRecord(record, successor);
+
+      const revFilePath = resolveStorePath(
+        this.baseDir,
+        'requirement-revisions',
+        `${successor.id}.json`
+      );
+      const indexPath = resolveStorePath(
+        this.baseDir,
+        'requirement-index',
+        `${successor.requirementId}.json`
+      );
+      const auditFilePath = resolveStorePath(
+        this.baseDir,
+        path.join('reconciliation', 'requirement'),
+        `${successor.requirementId}.jsonl`
+      );
+
+      const previousIndexData = await readJson<RequirementIndexData>(indexPath);
+      const previousAuditContent = await this.readRawFileIfExists(auditFilePath);
+
+      let revWritten = false;
+      let indexWritten = false;
+      let auditWritten = false;
+
+      try {
+        await writeJsonExclusive(revFilePath, successor);
+        revWritten = true;
+
+        const newRevisionIds = [...(previousIndexData?.revisionIds ?? []), successor.id];
+        await writeJsonAtomic(indexPath, {
+          latestRevisionId: successor.id,
+          revisionIds: newRevisionIds
+        });
+        indexWritten = true;
+
+        await appendJsonLine(auditFilePath, record);
+        auditWritten = true;
+      } catch (err) {
+        if (revWritten) {
+          await fs.rm(revFilePath, { force: true }).catch(() => {});
+        }
+        if (indexWritten) {
+          if (previousIndexData) {
+            await writeJsonAtomic(indexPath, previousIndexData).catch(() => {});
+          } else {
+            await fs.rm(indexPath, { force: true }).catch(() => {});
+          }
+        }
+        if (auditWritten && previousAuditContent !== undefined) {
+          await fs.writeFile(auditFilePath, previousAuditContent, 'utf8').catch(() => {});
+        }
+        throw err;
+      }
+    });
   }
 
   async listReconciliationRecords(
@@ -642,6 +900,46 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
         }
       }
       result.sort((a, b) => a.executedAt.localeCompare(b.executedAt));
+      return Object.freeze(result);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return Object.freeze([]);
+      }
+      throw err;
+    }
+  }
+
+  async saveProjectionRecord(projection: ProjectionRecord): Promise<void> {
+    assertSafeIdentifier(projection.id, 'projectionId');
+    assertSafeIdentifier(projection.baselineId, 'baselineId');
+    const filePath = resolveStorePath(this.baseDir, 'projections', `${projection.id}.json`);
+    await writeJsonExclusive(filePath, projection);
+  }
+
+  async getProjectionRecord(id: string): Promise<ProjectionRecord | undefined> {
+    assertSafeIdentifier(id, 'projectionId');
+    const filePath = resolveStorePath(this.baseDir, 'projections', `${id}.json`);
+    return readJson<ProjectionRecord>(filePath);
+  }
+
+  async listProjectionRecords(
+    baselineId?: RequirementsBaselineId
+  ): Promise<readonly ProjectionRecord[]> {
+    const dirPath = path.resolve(this.baseDir, 'projections');
+    try {
+      const files = await fs.readdir(dirPath);
+      const jsonFiles = files.filter((f) => f.endsWith('.json')).sort();
+      const result: ProjectionRecord[] = [];
+      for (const file of jsonFiles) {
+        const rawId = file.replace(/\.json$/, '');
+        assertSafeIdentifier(rawId, 'projectionId');
+        const proj = await this.getProjectionRecord(rawId);
+        if (proj) {
+          if (!baselineId || proj.baselineId === baselineId) {
+            result.push(proj);
+          }
+        }
+      }
       return Object.freeze(result);
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
