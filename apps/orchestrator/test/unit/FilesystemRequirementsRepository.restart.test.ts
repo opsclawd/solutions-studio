@@ -133,18 +133,79 @@ describe('FilesystemRequirementsRepository — Process Restart & Reload Durabili
     await repoA.saveRequirementsBaseline(baseline);
 
     // Evaluation run metadata/results
+    const fixtureResults = [
+      {
+        fixtureId: 'missing-authorization-basic',
+        status: 'failed' as const,
+        error: {
+          name: 'Error',
+          message: 'exact locator resolved',
+          phase: 'capture' as const
+        }
+      }
+    ];
+    const executedAt = createInstant('2026-09-16T15:05:00.000Z');
     const evalRun: EvaluationRunRecord = {
       id: runId,
       corpusVersion: 'v1.0',
-      executedAt: createInstant('2026-09-16T15:05:00.000Z'),
-      fixtureResults: [
-        {
-          fixtureId: 'missing-authorization-basic',
-          passed: true,
-          details: { assertion: 'exact locator resolved' }
+      executedAt,
+      fixtureResults,
+      report: {
+        reportSchemaVersion: '1.0.0',
+        runId,
+        executedAt,
+        corpusVersion: 'v1.0',
+        corpusIdentity: 'test-corpus-identity-sha256',
+        candidateSha: { status: 'available', value: 'cand-sha-123' },
+        fixtureOrder: ['missing-authorization-basic'],
+        fixtureResults,
+        aggregateScores: {
+          totalFixtures: 1,
+          completedFixtures: 0,
+          failedFixtures: 1,
+          requirementsByCategory: {},
+          findingsByCategory: {},
+          unclassifiedFindingsCount: 0
+        },
+        reportArtifacts: {
+          jsonReportPath: { status: 'available', value: 'reports/eval.json' },
+          jsonReportDigest: { status: 'available', value: 'digest-1' },
+          markdownReportPath: { status: 'unavailable', reason: 'None' },
+          markdownReportDigest: { status: 'unavailable', reason: 'None' }
+        },
+        provenance: {
+          requested: {
+            candidateSha: { status: 'available', value: 'cand-sha-123' },
+            providerMode: 'fixture-replay',
+            providerName: 'fixture-replay',
+            manifestPath: 'manifests/corpus.v1.json',
+            outputReportPath: { status: 'available', value: 'reports/eval.json' },
+            storeDir: { status: 'unavailable', reason: 'In-memory' }
+          },
+          declared: {
+            manifestVersion: 'v1.0',
+            manifestHash: 'manifest-hash-1',
+            canonicalizationVersion: 'v1',
+            corpusIdentity: 'test-corpus-identity-sha256',
+            fixtureOrder: ['missing-authorization-basic'],
+            fixtures: []
+          },
+          configured: {
+            compilerVersion: '1.0.0',
+            promptVersion: '1.0.0',
+            gatewayConfig: {},
+            nodeVersion: process.version,
+            platform: process.platform,
+            arch: process.arch
+          },
+          verified: {
+            schemaValidation: true,
+            corpusLineageValid: true,
+            persistenceVerified: true,
+            reportDigest: 'report-digest-1'
+          }
         }
-      ],
-      summary: { total: 1, passed: 1 }
+      }
     };
     await repoA.saveEvaluationRun(evalRun);
 

@@ -97,6 +97,18 @@ pnpm --filter @solutions-studio/orchestrator tracer --provider agy
 pnpm --filter @solutions-studio/orchestrator tracer --provider opencode
 ```
 
+### 5. Run Requirements Intelligence Evaluation Runner
+
+```bash
+# Deterministic local / CI execution (credential-free)
+pnpm --filter @solutions-studio/orchestrator eval
+
+# Real provider candidate validation (synthetic corpus only)
+pnpm --filter @solutions-studio/orchestrator eval --provider agy --candidate-sha "${CANDIDATE_SHA}"
+# or
+pnpm --filter @solutions-studio/orchestrator eval --provider opencode --candidate-sha "${CANDIDATE_SHA}"
+```
+
 ---
 
 ## CLI Execution Contracts & Observed Findings

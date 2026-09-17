@@ -334,22 +334,83 @@ describe('FilesystemRequirementsRepository', () => {
   });
 
   it('persists and reloads EvaluationRunRecord', async () => {
-    const run: EvaluationRunRecord = {
-      id: 'RUN-2026-09-16-01',
-      corpusVersion: 'v1.0',
-      executedAt: createInstant('2026-09-16T12:00:00.000Z'),
-      fixtureResults: [
-        {
-          fixtureId: 'missing-authorization-basic',
-          passed: true,
-          details: { checks: 5 }
-        },
-        {
-          fixtureId: 'canonical-messy-discovery-package',
-          passed: true
+    const fixtureResults = [
+      {
+        fixtureId: 'missing-authorization-basic',
+        status: 'failed' as const,
+        error: {
+          name: 'Error',
+          message: 'Sample test error',
+          phase: 'capture' as const
         }
-      ],
-      summary: { total: 2, passed: 2 }
+      }
+    ];
+
+    const runId = 'RUN-2026-09-16-01';
+    const executedAt = createInstant('2026-09-16T12:00:00.000Z');
+    const corpusVersion = 'v1.0';
+
+    const run: EvaluationRunRecord = {
+      id: runId,
+      corpusVersion,
+      executedAt,
+      fixtureResults,
+      report: {
+        reportSchemaVersion: '1.0.0',
+        runId,
+        executedAt,
+        corpusVersion,
+        corpusIdentity: 'test-corpus-identity-sha256',
+        candidateSha: { status: 'available', value: 'cand-sha-123' },
+        fixtureOrder: ['missing-authorization-basic'],
+        fixtureResults,
+        aggregateScores: {
+          totalFixtures: 1,
+          completedFixtures: 0,
+          failedFixtures: 1,
+          requirementsByCategory: {},
+          findingsByCategory: {},
+          unclassifiedFindingsCount: 0
+        },
+        reportArtifacts: {
+          jsonReportPath: { status: 'available', value: 'reports/eval.json' },
+          jsonReportDigest: { status: 'available', value: 'digest-1' },
+          markdownReportPath: { status: 'unavailable', reason: 'None' },
+          markdownReportDigest: { status: 'unavailable', reason: 'None' }
+        },
+        provenance: {
+          requested: {
+            candidateSha: { status: 'available', value: 'cand-sha-123' },
+            providerMode: 'fixture-replay',
+            providerName: 'fixture-replay',
+            manifestPath: 'manifests/corpus.v1.json',
+            outputReportPath: { status: 'available', value: 'reports/eval.json' },
+            storeDir: { status: 'unavailable', reason: 'In-memory' }
+          },
+          declared: {
+            manifestVersion: 'v1.0',
+            manifestHash: 'manifest-hash-1',
+            canonicalizationVersion: 'v1',
+            corpusIdentity: 'test-corpus-identity-sha256',
+            fixtureOrder: ['missing-authorization-basic'],
+            fixtures: []
+          },
+          configured: {
+            compilerVersion: '1.0.0',
+            promptVersion: '1.0.0',
+            gatewayConfig: {},
+            nodeVersion: process.version,
+            platform: process.platform,
+            arch: process.arch
+          },
+          verified: {
+            schemaValidation: true,
+            corpusLineageValid: true,
+            persistenceVerified: true,
+            reportDigest: 'report-digest-1'
+          }
+        }
+      }
     };
 
     await repo.saveEvaluationRun(run);
@@ -359,6 +420,9 @@ describe('FilesystemRequirementsRepository', () => {
 
     const list = await repo.listEvaluationRuns();
     expect(list).toEqual([run]);
+
+    // Enforce write-once immutability: overwriting existing run must reject with ImmutableRecordConflictError
+    await expect(repo.saveEvaluationRun(run)).rejects.toThrow(ImmutableRecordConflictError);
   });
 
   it('records and lists finding reconciliation records in append order', async () => {
@@ -653,7 +717,7 @@ describe('FilesystemRequirementsRepository', () => {
           corpusVersion: 'v1',
           executedAt: createInstant('2026-09-16T12:00:00.000Z'),
           fixtureResults: []
-        })
+        } as any)
       ).rejects.toThrow(/path separators or traversal/i);
 
       await expect(repo.getEvaluationRun('../../escaped-run')).rejects.toThrow(

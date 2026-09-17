@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto';
 import {
   CompiledRequirementsResponseDtoSchema,
   type CompiledRequirementsResponseDto,
-  type CandidateEvidenceRefDto
+  type CandidateEvidenceRefDto,
+  type CandidateRequirementDto,
+  type CandidateFindingResponseDto
 } from '@solutions-studio/contracts';
 import {
   createRequirementId,
@@ -40,6 +42,9 @@ import {
   UnsafeIdentifierError,
   type CompilationError
 } from './CompileRequirementsErrors.js';
+
+export const COMPILER_VERSION = '1.0.0' as const;
+export const PROMPT_VERSION = '1.0.0' as const;
 
 function isUnsafeSourceRevisionId(id: string): boolean {
   if (typeof id !== 'string' || id.trim().length === 0) {
@@ -94,11 +99,13 @@ export interface CompileRequirementsInput {
 export interface RejectedRequirement {
   readonly requirementKey: string;
   readonly error: CompilationError;
+  readonly candidate?: CandidateRequirementDto;
 }
 
 export interface RejectedFinding {
   readonly findingKey: string;
   readonly error: CompilationError;
+  readonly candidate?: CandidateFindingResponseDto;
 }
 
 export interface CompileRequirementsResult {
@@ -189,7 +196,8 @@ export class CompileRequirementsUseCase {
       if (!evidenceValidation.ok) {
         rejectedRequirements.push({
           requirementKey,
-          error: evidenceValidation.error
+          error: evidenceValidation.error,
+          candidate: reqDto
         });
         continue;
       }
@@ -200,7 +208,8 @@ export class CompileRequirementsUseCase {
       ) {
         rejectedRequirements.push({
           requirementKey,
-          error: new InvalidEvidencelessOriginError(requirementKey, reqDto.origin)
+          error: new InvalidEvidencelessOriginError(requirementKey, reqDto.origin),
+          candidate: reqDto
         });
         continue;
       }
@@ -237,7 +246,8 @@ export class CompileRequirementsUseCase {
       if (!evidenceValidation.ok) {
         rejectedFindings.push({
           findingKey,
-          error: evidenceValidation.error
+          error: evidenceValidation.error,
+          candidate: findingDto
         });
         continue;
       }

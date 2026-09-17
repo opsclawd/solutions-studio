@@ -2,7 +2,7 @@ import type { IGenerationGateway } from '../../application/ports/generation/IGen
 import { AntigravityCliAdapter } from './AntigravityCliAdapter.js';
 import { OpenCodeCliAdapter } from './OpenCodeCliAdapter.js';
 
-export type ProviderType = 'fake' | 'agy' | 'opencode';
+export type ProviderType = 'fake' | 'agy' | 'opencode' | 'fixture-replay';
 
 export interface GatewayConfig {
   provider?: ProviderType;
@@ -15,11 +15,11 @@ export interface GatewayConfig {
 export class GatewayFactory {
   static createGateway(
     config?: GatewayConfig,
-    fakeGatewayFallback?: IGenerationGateway
+    gatewayFallback?: IGenerationGateway
   ): IGenerationGateway {
     const provider = (config?.provider ??
       process.env.GENERATION_PROVIDER ??
-      'fake') as ProviderType;
+      'fixture-replay') as ProviderType;
 
     switch (provider) {
       case 'agy':
@@ -36,12 +36,13 @@ export class GatewayFactory {
           cwd: config?.cwd
         });
 
+      case 'fixture-replay':
       case 'fake':
-        if (fakeGatewayFallback) {
-          return fakeGatewayFallback;
+        if (gatewayFallback) {
+          return gatewayFallback;
         }
         throw new Error(
-          'Fake provider requested but no FakeGenerationGateway instance was provided to factory.'
+          `Provider '${provider}' requested but no gateway instance was provided to factory.`
         );
 
       default:

@@ -42,6 +42,7 @@ import type {
   RequirementReconciliationRecord,
   ProjectionRecord
 } from '../../../application/ports/persistence/IRequirementsRepository.js';
+import { EvaluationRunRecordSchema } from '@solutions-studio/contracts';
 import type { FindingDisposition } from '@solutions-studio/domain';
 import { computeContentHash, deriveLocatorIndex } from '../markdown/deriveLocatorIndex.js';
 import {
@@ -856,32 +857,26 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
 
   async saveEvaluationRun(run: EvaluationRunRecord): Promise<void> {
     assertSafeIdentifier(run.id, 'runId');
+    const validated = EvaluationRunRecordSchema.parse(run);
     const filePath = resolveStorePath(this.baseDir, 'evaluation-runs', `${run.id}.json`);
-    await writeJsonAtomic(filePath, run);
+    await writeJsonExclusive(filePath, validated);
   }
 
   async getEvaluationRun(id: string): Promise<EvaluationRunRecord | undefined> {
     assertSafeIdentifier(id, 'runId');
     const filePath = resolveStorePath(this.baseDir, 'evaluation-runs', `${id}.json`);
-    const raw = await readJson<EvaluationRunRecord>(filePath);
+    const raw = await readJson<unknown>(filePath);
     if (!raw) {
       return undefined;
     }
 
+    const validated = EvaluationRunRecordSchema.parse(raw);
     return Object.freeze({
-      id: raw.id,
-      corpusVersion: raw.corpusVersion,
-      executedAt: createInstant(raw.executedAt),
-      fixtureResults: Object.freeze(
-        raw.fixtureResults.map((fr) =>
-          Object.freeze({
-            fixtureId: fr.fixtureId,
-            passed: fr.passed,
-            ...(fr.details !== undefined ? { details: fr.details } : {})
-          })
-        )
-      ),
-      ...(raw.summary !== undefined ? { summary: raw.summary } : {})
+      id: validated.id,
+      corpusVersion: validated.corpusVersion,
+      executedAt: createInstant(validated.executedAt),
+      fixtureResults: Object.freeze(validated.fixtureResults),
+      report: Object.freeze(validated.report)
     });
   }
 

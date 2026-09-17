@@ -72,3 +72,16 @@ export class InvalidEvidencelessOriginError extends CompilationError {
     );
   }
 }
+
+export class UnresolvedRequirementKeyError extends CompilationError {
+  constructor(
+    public readonly findingKey: string,
+    public readonly unmappedRequirementKeys: readonly string[],
+    message?: string
+  ) {
+    super(
+      message ??
+        `Finding '${findingKey}' references unaccepted or unknown requirement key(s): ${unmappedRequirementKeys.join(', ')}`
+    );
+  }
+}

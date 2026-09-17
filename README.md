@@ -198,20 +198,39 @@ For authoritative release validation and Phase 1 exit gating against a configure
    ```
 
 3. **Run Real-Provider Candidate Validation (Synthetic Fixtures Only):**
-   Execute the tracer targeting the configured real provider:
+   Execute the tracer and evaluation runner targeting the configured real provider:
 
    ```bash
-   # Validate diagram generation and closed-loop repair with real provider
+   # Validate diagram generation and closed-loop repair with real provider (reusing existing <= 2 repair attempts)
    pnpm --filter @solutions-studio/orchestrator tracer --provider agy
    # or
    pnpm --filter @solutions-studio/orchestrator tracer --provider opencode
+
+   # Execute requirements intelligence evaluation runner over the synthetic corpus
+   pnpm --filter @solutions-studio/orchestrator eval \
+     --provider agy \
+     --candidate-sha "${CANDIDATE_SHA}" \
+     --store ".evaluation-store" \
+     --output "reports/evaluation-report-${CANDIDATE_SHA}.json" \
+     --output-markdown "reports/evaluation-report-${CANDIDATE_SHA}.md"
+   # or
+   pnpm --filter @solutions-studio/orchestrator eval \
+     --provider opencode \
+     --candidate-sha "${CANDIDATE_SHA}" \
+     --store ".evaluation-store" \
+     --output "reports/evaluation-report-${CANDIDATE_SHA}.json" \
+     --output-markdown "reports/evaluation-report-${CANDIDATE_SHA}.md"
    ```
+
+   > [!NOTE]
+   > The candidate SHA supplied is recorded as `requested` provenance unless independently verified by the operator.
+   > The evaluation produces both machine-readable JSON and human-readable Markdown reports.
 
 4. **Record Empirical Evaluation Report:**
    Copy `docs/phase-1-report-template.md` to `docs/reports/phase-1-${CANDIDATE_SHA}.md` and record:
    - Pinned `CANDIDATE_SHA`
-   - Extraction quality and corpus coverage metrics
-   - False-positive hotspots
-   - Provider/model observations (latency, repair counts)
+   - Extraction quality and corpus coverage metrics (TP/FP/FN per category)
+   - False-positive hotspots and unclassified observations
+   - Provider/model observations (latency, tokens, repair counts)
    - Evidence-backed design changes
-   - Complete the exit decision gate (`[ ] GO / [ ] NO-GO / [ ] CONDITIONAL`) with reviewing authority signature.
+   - Complete the exit decision gate (`[ ] GO / [ ] NO-GO / [ ] CONDITIONAL`) with reviewing authority signature (no arbitrary 90%/95% threshold is enforced).
