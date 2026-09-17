@@ -4,6 +4,7 @@ import {
   REQUIREMENT_ORIGINS,
   REQUIREMENT_REVIEW_STATES,
   REQUIREMENT_RESOLUTION_STATES,
+  REQUIREMENT_RECONCILIATION_ACTIONS,
   SOURCE_TYPES,
   FINDING_TYPES,
   FINDING_DISPOSITIONS,
@@ -131,3 +132,122 @@ export const CompiledRequirementsResponseDtoSchema = z
       }
     }
   });
+
+export const RequirementReconciliationActionSchema = z.enum(REQUIREMENT_RECONCILIATION_ACTIONS);
+
+export const RequirementReconciliationRecordDtoSchema = z
+  .object({
+    id: z.string().min(1),
+    entityType: z.literal('requirement'),
+    entityId: z.string().min(1),
+    requirementRevisionId: z.string().min(1),
+    action: RequirementReconciliationActionSchema,
+    previousReviewState: z.enum(REQUIREMENT_REVIEW_STATES).optional(),
+    newReviewState: z.enum(REQUIREMENT_REVIEW_STATES),
+    previousResolutionState: z.enum(REQUIREMENT_RESOLUTION_STATES).optional(),
+    newResolutionState: z.enum(REQUIREMENT_RESOLUTION_STATES).optional(),
+    rationale: z
+      .string()
+      .min(1)
+      .refine((s) => s.trim().length > 0, {
+        message: 'Rationale must be a non-empty string'
+      }),
+    actorId: z.string().min(1).optional(),
+    recordedAt: InstantDtoSchema
+  })
+  .superRefine((data, ctx) => {
+    const hasPrev = data.previousResolutionState !== undefined;
+    const hasNext = data.newResolutionState !== undefined;
+
+    if (hasPrev !== hasNext) {
+      if (hasNext && !hasPrev) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'previousResolutionState is required when newResolutionState is present',
+          path: ['previousResolutionState']
+        });
+      } else {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'newResolutionState is required when previousResolutionState is present',
+          path: ['newResolutionState']
+        });
+      }
+    } else if (hasPrev && hasNext) {
+      if (data.previousResolutionState === data.newResolutionState && data.action !== 'REVISE') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Resolution states cannot be identical for action '${data.action}'`,
+          path: ['newResolutionState']
+        });
+      }
+    }
+  });
+
+export const FindingReconciliationRecordDtoSchema = z
+  .object({
+    id: z.string().min(1),
+    entityType: z.literal('finding'),
+    entityId: z.string().min(1),
+    previousDisposition: z.enum(FINDING_DISPOSITIONS),
+    newDisposition: z.enum(FINDING_DISPOSITIONS),
+    rationale: z
+      .string()
+      .min(1)
+      .refine((s) => s.trim().length > 0, {
+        message: 'Rationale must be a non-empty string'
+      }),
+    actorId: z.string().min(1).optional(),
+    recordedAt: InstantDtoSchema
+  })
+  .superRefine((data, ctx) => {
+    if (data.previousDisposition === data.newDisposition) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Transition must change disposition: previous and new are both '${data.previousDisposition}'`,
+        path: ['newDisposition']
+      });
+    }
+  });
+
+export const ReconciliationRecordDtoSchema = z.union([
+  RequirementReconciliationRecordDtoSchema,
+  FindingReconciliationRecordDtoSchema
+]);
+
+export const CreateRequirementsBaselineRequestDtoSchema = z.object({
+  id: z.string().min(1).optional(),
+  requirementRevisions: z.array(z.string().min(1)).min(1),
+  createdBy: z.string().min(1),
+  createdAt: InstantDtoSchema.optional()
+});
+
+export const ProjectionMetadataDtoSchema = z.object({
+  baselineId: z.string().min(1),
+  requirementRevisionIds: z.array(z.string().min(1)).min(1),
+  artifactType: z.string().min(1),
+  declaredProvenance: z.object({
+    baselineId: z.string().min(1),
+    requirementRevisionIds: z.array(z.string().min(1)).min(1)
+  }),
+  configuredExecution: z.object({
+    provider: z.string().min(1),
+    artifactType: z.string().min(1)
+  }),
+  measuredVerification: z.object({
+    repairsNeeded: z.number().int().nonnegative(),
+    attemptCount: z.number().int().positive(),
+    contentHash: z.string().min(1),
+    verifiedAt: InstantDtoSchema
+  })
+});
+
+export const ProjectionRecordDtoSchema = z.object({
+  id: z.string().min(1),
+  baselineId: z.string().min(1),
+  requirementRevisionIds: z.array(z.string().min(1)).min(1),
+  artifactType: z.string().min(1),
+  content: z.string().min(1),
+  metadata: ProjectionMetadataDtoSchema,
+  createdAt: InstantDtoSchema
+});

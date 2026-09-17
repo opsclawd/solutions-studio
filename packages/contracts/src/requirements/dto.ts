@@ -15,7 +15,14 @@ import type {
   CandidateEvidenceRefDtoSchema,
   CandidateRequirementDtoSchema,
   CandidateFindingResponseDtoSchema,
-  CompiledRequirementsResponseDtoSchema
+  CompiledRequirementsResponseDtoSchema,
+  RequirementReconciliationActionSchema,
+  RequirementReconciliationRecordDtoSchema,
+  FindingReconciliationRecordDtoSchema,
+  ReconciliationRecordDtoSchema,
+  CreateRequirementsBaselineRequestDtoSchema,
+  ProjectionMetadataDtoSchema,
+  ProjectionRecordDtoSchema
 } from './schemas.js';
 
 export type InstantDto = z.infer<typeof InstantDtoSchema>;
@@ -34,3 +41,16 @@ export type CandidateFindingDto = z.infer<typeof CandidateFindingDtoSchema>;
 export type CandidateRequirementDto = z.infer<typeof CandidateRequirementDtoSchema>;
 export type CandidateFindingResponseDto = z.infer<typeof CandidateFindingResponseDtoSchema>;
 export type CompiledRequirementsResponseDto = z.infer<typeof CompiledRequirementsResponseDtoSchema>;
+export type RequirementReconciliationActionDto = z.infer<
+  typeof RequirementReconciliationActionSchema
+>;
+export type RequirementReconciliationRecordDto = z.infer<
+  typeof RequirementReconciliationRecordDtoSchema
+>;
+export type FindingReconciliationRecordDto = z.infer<typeof FindingReconciliationRecordDtoSchema>;
+export type ReconciliationRecordDto = z.infer<typeof ReconciliationRecordDtoSchema>;
+export type CreateRequirementsBaselineRequestDto = z.infer<
+  typeof CreateRequirementsBaselineRequestDtoSchema
+>;
+export type ProjectionMetadataDto = z.infer<typeof ProjectionMetadataDtoSchema>;
+export type ProjectionRecordDto = z.infer<typeof ProjectionRecordDtoSchema>;

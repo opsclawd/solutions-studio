@@ -101,6 +101,32 @@ export function createRequirementRevision(params: {
   });
 }
 
+function stringArraysEqual(a?: readonly string[], b?: readonly string[]): boolean {
+  if (a === undefined && b === undefined) return true;
+  if (a === undefined || b === undefined) return false;
+  if (a.length !== b.length) return false;
+  const sortedA = [...a].sort();
+  const sortedB = [...b].sort();
+  return sortedA.every((val, idx) => val === sortedB[idx]);
+}
+
+function evidenceEqual(
+  a?: readonly EvidenceReference[],
+  b?: readonly EvidenceReference[]
+): boolean {
+  if (a === undefined && b === undefined) return true;
+  if (a === undefined || b === undefined) return false;
+  if (a.length !== b.length) return false;
+  return a.every((refA, idx) => {
+    const refB = b[idx];
+    return (
+      refB !== undefined &&
+      refA.sourceRevisionId === refB.sourceRevisionId &&
+      refA.locator === refB.locator
+    );
+  });
+}
+
 export function reviseRequirement(
   previous: RequirementRevision,
   changes: {
@@ -126,10 +152,22 @@ export function reviseRequirement(
     changes.statement !== undefined && changes.statement.trim() !== previous.statement;
   const categoryChanged = changes.category !== undefined && changes.category !== previous.category;
   const originChanged = changes.origin !== undefined && changes.origin !== previous.origin;
-  const evidenceChanged = changes.evidence !== undefined;
+  const evidenceChanged =
+    changes.evidence !== undefined && !evidenceEqual(changes.evidence, previous.evidence);
+  const actorsChanged =
+    changes.affectedActors !== undefined &&
+    !stringArraysEqual(changes.affectedActors, previous.affectedActors);
+  const dependenciesChanged =
+    changes.dependencies !== undefined &&
+    !stringArraysEqual(changes.dependencies, previous.dependencies);
 
   const meaningOrProvenanceChanged =
-    statementChanged || categoryChanged || originChanged || evidenceChanged;
+    statementChanged ||
+    categoryChanged ||
+    originChanged ||
+    evidenceChanged ||
+    actorsChanged ||
+    dependenciesChanged;
 
   const reviewState =
     changes.reviewState ?? (meaningOrProvenanceChanged ? 'PENDING' : previous.reviewState);

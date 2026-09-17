@@ -75,7 +75,7 @@ describe('FilesystemRequirementsRepository — Process Restart & Reload Durabili
     await repoA.saveRequirementRevision(reqRev);
 
     // CandidateFinding affecting the requirement revision
-    const finding = createCandidateFinding({
+    const findingOpen = createCandidateFinding({
       id: findingId,
       type: 'missing-authorization',
       affectedRequirementRevisions: [reqRevId],
@@ -85,11 +85,15 @@ describe('FilesystemRequirementsRepository — Process Restart & Reload Durabili
           locator: createEvidenceLocator('permanent-purge#2.1')
         }
       ],
-      discoveredBy: 'model',
+      discoveredBy: 'model'
+    });
+    await repoA.saveCandidateFinding(findingOpen);
+
+    const findingResolved = createCandidateFinding({
+      ...findingOpen,
       disposition: 'RESOLVED',
       rationale: 'Explicit confirmation and administrator role added in review'
     });
-    await repoA.saveCandidateFinding(finding);
 
     // Finding reconciliation record
     const findingReconciliation = {
@@ -102,7 +106,7 @@ describe('FilesystemRequirementsRepository — Process Restart & Reload Durabili
       actorId: createActorId('ACT-LEAD-01'),
       recordedAt: createInstant('2026-09-16T14:30:00.000Z')
     };
-    await repoA.appendReconciliationRecord(findingReconciliation);
+    await repoA.transitionCandidateFinding(findingResolved, findingReconciliation, 'OPEN');
 
     // Requirement reconciliation record
     const reqReconciliation = {
@@ -190,7 +194,7 @@ describe('FilesystemRequirementsRepository — Process Restart & Reload Durabili
 
     // Step 7: Verify CandidateFinding reloaded unchanged
     const loadedFinding = await repoB.getCandidateFinding(findingId);
-    expect(loadedFinding).toEqual(finding);
+    expect(loadedFinding).toEqual(findingResolved);
     expect(loadedFinding?.affectedRequirementRevisions).toEqual([reqRevId]);
 
     // Step 8: Verify Reconciliation records reloaded in order

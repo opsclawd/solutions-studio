@@ -1,0 +1,177 @@
+{
+  "runId": "EVAL-0e1afbb2-eb11-45eb-b27a-fb8747a065a3",
+  "corpusVersion": "v1.0",
+  "candidateSha": "local-head",
+  "executedAt": "2026-09-17T01:13:54.988Z",
+  "summary": {
+    "totalFixtures": 14,
+    "passedFixtures": 14,
+    "failedFixtures": 0,
+    "totalCategories": 10,
+    "coveredCategories": [
+      "contradictory-approval-thresholds",
+      "false-positive-near-conflict",
+      "incomplete-state-transitions",
+      "missing-actors-authorization",
+      "missing-failure-recovery",
+      "source-authority-conflict",
+      "superseded-source-or-requirement",
+      "temporal-ambiguity",
+      "undefined-cardinality",
+      "unsupported-assumptions"
+    ]
+  },
+  "fixtureResults": [
+    {
+      "fixtureId": "approval-threshold-contradiction-basic",
+      "passed": true,
+      "details": {
+        "categories": ["contradictory-approval-thresholds"],
+        "canonicalMessyPackage": false,
+        "expectedRequirementsCount": 2,
+        "expectedFindingsCount": 1
+      }
+    },
+    {
+      "fixtureId": "approval-threshold-contradiction-cross-source",
+      "passed": true,
+      "details": {
+        "categories": ["contradictory-approval-thresholds"],
+        "canonicalMessyPackage": false,
+        "expectedRequirementsCount": 2,
+        "expectedFindingsCount": 1
+      }
+    },
+    {
+      "fixtureId": "missing-authorization-basic",
+      "passed": true,
+      "details": {
+        "categories": ["missing-actors-authorization"],
+        "canonicalMessyPackage": false,
+        "expectedRequirementsCount": 1,
+        "expectedFindingsCount": 1
+      }
+    },
+    {
+      "fixtureId": "missing-authorization-role-gap",
+      "passed": true,
+      "details": {
+        "categories": ["missing-actors-authorization"],
+        "canonicalMessyPackage": false,
+        "expectedRequirementsCount": 2,
+        "expectedFindingsCount": 1
+      }
+    },
+    {
+      "fixtureId": "incomplete-state-transition-basic",
+      "passed": true,
+      "details": {
+        "categories": ["incomplete-state-transitions"],
+        "canonicalMessyPackage": false,
+        "expectedRequirementsCount": 2,
+        "expectedFindingsCount": 1
+      }
+    },
+    {
+      "fixtureId": "missing-failure-recovery-basic",
+      "passed": true,
+      "details": {
+        "categories": ["missing-failure-recovery"],
+        "canonicalMessyPackage": false,
+        "expectedRequirementsCount": 1,
+        "expectedFindingsCount": 1
+      }
+    },
+    {
+      "fixtureId": "temporal-ambiguity-basic",
+      "passed": true,
+      "details": {
+        "categories": ["temporal-ambiguity"],
+        "canonicalMessyPackage": false,
+        "expectedRequirementsCount": 1,
+        "expectedFindingsCount": 1
+      }
+    },
+    {
+      "fixtureId": "undefined-cardinality-basic",
+      "passed": true,
+      "details": {
+        "categories": ["undefined-cardinality"],
+        "canonicalMessyPackage": false,
+        "expectedRequirementsCount": 1,
+        "expectedFindingsCount": 1
+      }
+    },
+    {
+      "fixtureId": "unsupported-assumption-basic",
+      "passed": true,
+      "details": {
+        "categories": ["unsupported-assumptions"],
+        "canonicalMessyPackage": false,
+        "expectedRequirementsCount": 1,
+        "expectedFindingsCount": 1
+      }
+    },
+    {
+      "fixtureId": "superseded-source-revision",
+      "passed": true,
+      "details": {
+        "categories": ["superseded-source-or-requirement"],
+        "canonicalMessyPackage": false,
+        "expectedRequirementsCount": 1,
+        "expectedFindingsCount": 1
+      }
+    },
+    {
+      "fixtureId": "source-authority-conflict",
+      "passed": true,
+      "details": {
+        "categories": ["source-authority-conflict"],
+        "canonicalMessyPackage": false,
+        "expectedRequirementsCount": 2,
+        "expectedFindingsCount": 1
+      }
+    },
+    {
+      "fixtureId": "false-positive-near-conflict-scoped-thresholds",
+      "passed": true,
+      "details": {
+        "categories": ["false-positive-near-conflict"],
+        "canonicalMessyPackage": false,
+        "expectedRequirementsCount": 2,
+        "expectedFindingsCount": 0
+      }
+    },
+    {
+      "fixtureId": "false-positive-near-conflict-paraphrase",
+      "passed": true,
+      "details": {
+        "categories": ["false-positive-near-conflict"],
+        "canonicalMessyPackage": false,
+        "expectedRequirementsCount": 2,
+        "expectedFindingsCount": 0
+      }
+    },
+    {
+      "fixtureId": "canonical-messy-discovery-package",
+      "passed": true,
+      "details": {
+        "categories": [
+          "contradictory-approval-thresholds",
+          "missing-actors-authorization",
+          "incomplete-state-transitions",
+          "missing-failure-recovery",
+          "temporal-ambiguity",
+          "undefined-cardinality",
+          "unsupported-assumptions",
+          "superseded-source-or-requirement",
+          "source-authority-conflict",
+          "false-positive-near-conflict"
+        ],
+        "canonicalMessyPackage": true,
+        "expectedRequirementsCount": 13,
+        "expectedFindingsCount": 9
+      }
+    }
+  ]
+}

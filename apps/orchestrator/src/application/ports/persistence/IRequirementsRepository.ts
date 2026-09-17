@@ -14,8 +14,11 @@ import type {
   RequirementsBaseline,
   SourceType,
   FindingDisposition,
-  RequirementReviewState
+  RequirementReviewState,
+  RequirementResolutionState,
+  RequirementReconciliationAction
 } from '@solutions-studio/domain';
+import type { ProjectionMetadataDto } from '@solutions-studio/contracts';
 
 export interface LocatorIndexEntry {
   readonly locator: EvidenceLocator;
@@ -58,9 +61,11 @@ export interface RequirementReconciliationRecord {
   readonly entityId: RequirementId;
   /** The specific revision this decision produced or acted on. */
   readonly requirementRevisionId: RequirementRevisionId;
-  readonly action: 'ACCEPT' | 'REJECT' | 'REVISE' | 'REOPEN';
+  readonly action: RequirementReconciliationAction;
   readonly previousReviewState: RequirementReviewState | undefined;
   readonly newReviewState: RequirementReviewState;
+  readonly previousResolutionState?: RequirementResolutionState;
+  readonly newResolutionState?: RequirementResolutionState;
   readonly rationale: string;
   readonly actorId?: ActorId;
   readonly recordedAt: Instant;
@@ -80,6 +85,16 @@ export interface EvaluationRunRecord {
   readonly executedAt: Instant;
   readonly fixtureResults: readonly EvaluationRunFixtureResult[];
   readonly summary?: unknown;
+}
+
+export interface ProjectionRecord {
+  readonly id: string;
+  readonly baselineId: RequirementsBaselineId;
+  readonly requirementRevisionIds: readonly RequirementRevisionId[];
+  readonly artifactType: string;
+  readonly content: string;
+  readonly metadata: ProjectionMetadataDto;
+  readonly createdAt: Instant;
 }
 
 export class ImmutableRecordConflictError extends Error {
@@ -104,9 +119,19 @@ export interface IRequirementsRepository {
   saveRequirementRevision(revision: RequirementRevision): Promise<void>;
   getRequirementRevision(id: RequirementRevisionId): Promise<RequirementRevision | undefined>;
   listRequirementRevisions(requirementId: RequirementId): Promise<readonly RequirementRevision[]>;
+  transitionRequirementRevision(
+    successor: RequirementRevision,
+    record: RequirementReconciliationRecord,
+    expectedCurrentRevisionId?: RequirementRevisionId
+  ): Promise<void>;
   saveCandidateFinding(finding: CandidateFinding): Promise<void>;
   getCandidateFinding(id: FindingId): Promise<CandidateFinding | undefined>;
   listCandidateFindings(): Promise<readonly CandidateFinding[]>;
+  transitionCandidateFinding(
+    finding: CandidateFinding,
+    record: FindingReconciliationRecord,
+    expectedCurrentDisposition?: FindingDisposition
+  ): Promise<void>;
   appendReconciliationRecord(record: ReconciliationRecord): Promise<void>;
   listReconciliationRecords(
     entityType: 'finding',
@@ -126,4 +151,7 @@ export interface IRequirementsRepository {
   saveEvaluationRun(run: EvaluationRunRecord): Promise<void>;
   getEvaluationRun(id: string): Promise<EvaluationRunRecord | undefined>;
   listEvaluationRuns(): Promise<readonly EvaluationRunRecord[]>;
+  saveProjectionRecord(projection: ProjectionRecord): Promise<void>;
+  getProjectionRecord(id: string): Promise<ProjectionRecord | undefined>;
+  listProjectionRecords(baselineId?: RequirementsBaselineId): Promise<readonly ProjectionRecord[]>;
 }
