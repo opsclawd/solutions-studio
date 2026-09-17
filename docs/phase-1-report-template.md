@@ -97,13 +97,15 @@ Concrete improvements, schema updates, or prompt refinements informed by corpus 
 ## 6. Phase 1 Exit Decision Gate
 
 > [!IMPORTANT]
-> The exit decision gate must remain blank and neutral until an authoritative human reviewer records empirical evaluation results from the candidate build.
+> The exit decision gate must remain blank and neutral until an authoritative human reviewer records empirical evaluation results from the candidate build. The autonomous implementation Run must not make this product/architecture promotion decision on the operator's behalf.
 
-### Recommendation Gate (Select Exactly One)
+### Human Disposition Gate (Select Exactly One)
 
-- [ ] **GO** — All extraction quality, reconciliation integrity, lineage blocking, and projection contracts satisfied with evidence.
-- [ ] **CONDITIONAL** — Proceed to Phase 2 with explicit tracked remediations documented below.
-- [ ] **NO-GO** — Quality or authority gate failure; requires revision and re-evaluation.
+- [ ] **GO** — Approve the exact candidate SHA and proceed to promotion. All extraction quality, reconciliation integrity, lineage blocking, and projection contracts satisfied with evidence across the versioned corpus.
+- [ ] **DESIGN CHANGE** — Reject the locked candidate SHA and append evidence-backed remediation issue(s) to the release batch before re-testing.
+
+> [!NOTE]
+> Recording **DESIGN CHANGE** rejects the candidate build. Phase 1 is `GO` only after manual Release Batch candidate validation of the exact locked SHA confirms that, for the deliberately messy discovery package, the system satisfies all six promotion criteria without adding ad-hoc ontology to force the check to pass.
 
 ### Justification & Reviewer Sign-off
 

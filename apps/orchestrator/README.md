@@ -169,15 +169,18 @@ pnpm --filter @solutions-studio/orchestrator eval --provider opencode --candidat
 | **Automated Test Coverage**       | 100% pass rate across unit suites and real CLI integration tests with synthetic fixtures                                        | **PASS** (25 unit, 3 integration) |
 | **Architectural Zero-Relocation** | Code is placed directly in target Phase 1 locations (`apps/orchestrator/src/...`)                                               | **PASS**                          |
 
-### Exit Gate Verdict: **GO**
+### Historical Phase 0 Spike Exit Verdict: **GO**
 
-The architectural seam is validated and stable. Phase 1 (Vertical Slice 1 — The Visual Process Canvas) can proceed directly using the existing generation gateway and Mermaid validation adapters.
+The Phase 0 generation and Mermaid validation seam was validated and de-risked. Phase 1 establishes the requirements kernel, immutable source and requirement revisions, deterministic human reconciliation, immutable baselines, and baseline projections.
+
+> [!IMPORTANT]
+> The Phase 0 verdict above applies only to the historical Phase 0 spike. Phase 1 candidate promotion requires authoritative human validation of the locked candidate commit SHA via the Release Batch candidate validation procedure.
 
 ---
 
-## Candidate-SHA Real-Provider Validation Checklist
+## Phase 1 Release Batch Candidate Validation Checklist
 
-For authoritative release validation and Phase 1 exit gating against a configured real provider (e.g. `agy` or `opencode`), execute the following checklist using only synthetic, non-sensitive fixtures:
+For authoritative release validation and Phase 1 exit gating against a configured real provider (e.g. `agy` or `opencode`), execute the canonical procedure documented in [`test/evaluation/README.md`](file:///home/gary/.openclaw/workspace/solutions-studio/.ai-worktrees/issue-12/apps/orchestrator/test/evaluation/README.md) using only synthetic, non-sensitive fixtures:
 
 1. **Pin Candidate SHA:**
    Ensure your working tree is clean and capture the exact candidate commit SHA:
@@ -188,31 +191,45 @@ For authoritative release validation and Phase 1 exit gating against a configure
    ```
 
 2. **Run Deterministic Synthetic Fixture Verification:**
-   Verify all unit tests, typecheck, linting, and witness harnesses complete without network or provider credentials:
+   Verify all unit tests, typecheck, linting, and the Phase 1 exit gate complete without network or provider credentials:
 
    ```bash
    pnpm typecheck
    pnpm lint
    pnpm --filter @solutions-studio/orchestrator test
-   pnpm --filter @solutions-studio/orchestrator exec tsx scripts/run-reconciliation-harness.ts
-   pnpm --filter @solutions-studio/orchestrator eval
+   pnpm --filter @solutions-studio/orchestrator exit-gate
    ```
 
 3. **Run Real-Provider Candidate Validation (Synthetic Fixtures Only):**
-   Execute the tracer targeting the configured real provider:
+   Execute the tracer and evaluation runner targeting the configured real provider:
 
    ```bash
    # Validate diagram generation and closed-loop repair with real provider
    pnpm --filter @solutions-studio/orchestrator tracer --provider agy
    # or
    pnpm --filter @solutions-studio/orchestrator tracer --provider opencode
+
+   # Execute requirements intelligence evaluation runner over the synthetic corpus
+   pnpm --filter @solutions-studio/orchestrator eval \
+     --provider agy \
+     --candidate-sha "${CANDIDATE_SHA}" \
+     --store ".evaluation-store" \
+     --output "reports/evaluation-report-${CANDIDATE_SHA}.json" \
+     --output-markdown "reports/evaluation-report-${CANDIDATE_SHA}.md"
+   # or
+   pnpm --filter @solutions-studio/orchestrator eval \
+     --provider opencode \
+     --candidate-sha "${CANDIDATE_SHA}" \
+     --store ".evaluation-store" \
+     --output "reports/evaluation-report-${CANDIDATE_SHA}.json" \
+     --output-markdown "reports/evaluation-report-${CANDIDATE_SHA}.md"
    ```
 
-4. **Record Empirical Evaluation Report:**
+4. **Record Authoritative Human Disposition:**
    Copy `docs/phase-1-report-template.md` to `docs/reports/phase-1-${CANDIDATE_SHA}.md` and record:
    - Pinned `CANDIDATE_SHA`
    - Extraction quality and corpus coverage metrics
-   - False-positive hotspots
+   - False-positive hotspots and unclassified observations
    - Provider/model observations (latency, repair counts)
    - Evidence-backed design changes
-   - Complete the exit decision gate (`[ ] GO / [ ] NO-GO / [ ] CONDITIONAL`) with reviewing authority signature.
+   - Record exactly ONE human disposition: `[ ] GO` or `[ ] DESIGN CHANGE` with reviewing authority signature.

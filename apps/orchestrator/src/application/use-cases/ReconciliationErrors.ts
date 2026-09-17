@@ -139,3 +139,12 @@ export class UnauditedFindingDispositionError extends ReconciliationError {
     );
   }
 }
+
+export class UnknownRequirementsBaselineError extends ReconciliationError {
+  constructor(
+    public readonly baselineId: string,
+    message?: string
+  ) {
+    super(message ?? `Unknown requirements baseline: '${baselineId}'`);
+  }
+}

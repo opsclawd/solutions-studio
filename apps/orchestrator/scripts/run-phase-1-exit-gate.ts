@@ -33,7 +33,7 @@ async function main() {
       process.exit(1);
     }
   } catch (err) {
-    console.error('\nFatal error running reconciliation & exit gate harness:', err);
+    console.error('\nFatal error running Phase 1 exit gate:', err);
     process.exit(1);
   }
 }

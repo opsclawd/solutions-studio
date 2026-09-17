@@ -10,6 +10,7 @@
     "test:integration": "vitest run --dir test/integration",
     "tracer": "tsx scripts/run-tracer.ts",
     "harness": "tsx scripts/run-reconciliation-harness.ts",
+    "exit-gate": "tsx scripts/run-phase-1-exit-gate.ts",
     "eval": "tsx scripts/run-evaluation.ts"
   },
   "dependencies": {

@@ -2,7 +2,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import {
   now,
   EmptyBaselineError,
-  type RequirementsBaseline,
+  createRequirementsBaselineId,
+  type RequirementsBaselineId,
   type RequirementRevision
 } from '@solutions-studio/domain';
 import type { ProjectionMetadataDto } from '@solutions-studio/contracts';
@@ -15,10 +16,13 @@ import type {
   GenerateArtifactOptions,
   RepairAttemptRecord
 } from './GenerateArtifactUseCase.js';
-import { UnknownRequirementRevisionError } from './ReconciliationErrors.js';
+import {
+  UnknownRequirementRevisionError,
+  UnknownRequirementsBaselineError
+} from './ReconciliationErrors.js';
 
 export interface ProjectBaselineInput {
-  readonly baseline: RequirementsBaseline;
+  readonly baselineId: RequirementsBaselineId | string;
   readonly artifactType: 'process-diagram' | 'state-diagram';
   readonly prompt?: string;
   readonly options?: GenerateArtifactOptions;
@@ -40,16 +44,18 @@ export class ProjectBaselineUseCase {
   ) {}
 
   async project(input: ProjectBaselineInput): Promise<BaselineProjectionResult> {
-    if (
-      !input.baseline ||
-      !input.baseline.requirementRevisions ||
-      input.baseline.requirementRevisions.length === 0
-    ) {
+    const baselineId = createRequirementsBaselineId(input.baselineId);
+    const baseline = await this.repository.getRequirementsBaseline(baselineId);
+    if (!baseline) {
+      throw new UnknownRequirementsBaselineError(input.baselineId);
+    }
+
+    if (!baseline.requirementRevisions || baseline.requirementRevisions.length === 0) {
       throw new EmptyBaselineError();
     }
 
     const revisions: RequirementRevision[] = [];
-    for (const revId of input.baseline.requirementRevisions) {
+    for (const revId of baseline.requirementRevisions) {
       const rev = await this.repository.getRequirementRevision(revId);
       if (!rev) {
         throw new UnknownRequirementRevisionError(revId);
@@ -58,7 +64,7 @@ export class ProjectBaselineUseCase {
     }
 
     const defaultPrompt =
-      `Generate a Mermaid ${input.artifactType} for requirements baseline ${input.baseline.id}:\n` +
+      `Generate a Mermaid ${input.artifactType} for requirements baseline ${baseline.id}:\n` +
       revisions.map((r) => `- [${r.id}] ${r.statement}`).join('\n');
 
     const prompt = input.prompt ?? defaultPrompt;
@@ -70,12 +76,12 @@ export class ProjectBaselineUseCase {
     const contentHash = createHash('sha256').update(generationResult.content).digest('hex');
 
     const metadata: ProjectionMetadataDto = {
-      baselineId: input.baseline.id,
-      requirementRevisionIds: [...input.baseline.requirementRevisions],
+      baselineId: baseline.id,
+      requirementRevisionIds: [...baseline.requirementRevisions],
       artifactType: input.artifactType,
       declaredProvenance: {
-        baselineId: input.baseline.id,
-        requirementRevisionIds: [...input.baseline.requirementRevisions]
+        baselineId: baseline.id,
+        requirementRevisionIds: [...baseline.requirementRevisions]
       },
       configuredExecution: {
         provider: this.providerName,
@@ -92,8 +98,8 @@ export class ProjectBaselineUseCase {
     const projectionId = input.id ?? `PROJ-${randomUUID()}`;
     const record: ProjectionRecord = {
       id: projectionId,
-      baselineId: input.baseline.id,
-      requirementRevisionIds: input.baseline.requirementRevisions,
+      baselineId: baseline.id,
+      requirementRevisionIds: baseline.requirementRevisions,
       artifactType: input.artifactType,
       content: generationResult.content,
       metadata,
