@@ -29,7 +29,7 @@ apps/orchestrator/test/evaluation/
 
 ## Defect Categories
 
-The corpus provides full coverage of the 10 required defect categories:
+The corpus provides full coverage of the 12 required defect categories:
 
 - `contradictory-approval-thresholds`
 - `missing-actors-authorization`
@@ -41,10 +41,12 @@ The corpus provides full coverage of the 10 required defect categories:
 - `superseded-source-or-requirement`
 - `source-authority-conflict`
 - `false-positive-near-conflict`
+- `data-boundary-ambiguity`
+- `subjective-normative-language`
 
 ## Canonical Messy Discovery Package
 
-`canonical-messy-discovery-package` serves as the Phase 1 end-to-end exit gate, planting examples of all 10 defect categories simultaneously across multiple sources and revisions.
+`canonical-messy-discovery-package` serves as the Phase 1 end-to-end exit gate, planting examples of all 12 defect categories simultaneously across multiple sources and revisions.
 
 ### Source Lineage Map & Provable Translation
 
@@ -177,7 +179,7 @@ After all Phase 1 issues (#6–#12) have merged into the Release Batch branch an
    - Inspect expected-non-finding hotspots (False Positives from near-conflict traps).
    - Inspect unclassified candidate observations emitted by the compiler.
    - Inspect measured provider and model runtime metadata per fixture.
-   - Verify 0 execution failures across all 14 fixtures.
+   - Verify 0 execution failures across all 16 fixtures.
    - Inspect the persisted baseline projection at `apps/orchestrator/.validation-store/projections/<projection-id>.json` and confirm provider provenance, revision coverage, and syntax validity.
 
 6. **Record Authoritative Human Disposition:**

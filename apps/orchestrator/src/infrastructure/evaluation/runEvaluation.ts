@@ -1,5 +1,5 @@
 import { now } from '@solutions-studio/domain';
-import type { EvaluationReportDto } from '@solutions-studio/contracts';
+import { type EvaluationReportDto, FIXTURE_CATEGORIES } from '@solutions-studio/contracts';
 import { FilesystemRequirementsRepository } from '../persistence/filesystem/FilesystemRequirementsRepository.js';
 import {
   GatewayFactory,
@@ -103,7 +103,7 @@ export async function runEvaluation(options?: RunEvaluationOptions): Promise<Run
     totalFixtures: result.report.aggregateScores.totalFixtures,
     passedFixtures: result.report.aggregateScores.completedFixtures,
     failedFixtures: result.report.aggregateScores.failedFixtures,
-    totalCategories: 10,
+    totalCategories: FIXTURE_CATEGORIES.length,
     coveredCategories: Array.from(coveredCategories).sort()
   };
 

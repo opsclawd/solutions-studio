@@ -227,7 +227,7 @@ Additional content block.`;
     expect(run1).toEqual(run2);
   });
 
-  it('full fixture corpus regression: all 14 evaluation fixtures match 100% of expected locators', () => {
+  it('full fixture corpus regression: all 16 evaluation fixtures match 100% of expected locators', () => {
     const fixturesDir = path.resolve(__dirname, '../evaluation/fixtures');
     const fixtureEntries = fs.readdirSync(fixturesDir, { withFileTypes: true });
 

@@ -81,6 +81,18 @@
       "canonicalMessyPackage": false
     },
     {
+      "fixtureId": "data-boundary-ambiguity-basic",
+      "path": "fixtures/data-boundary-ambiguity-basic",
+      "categories": ["data-boundary-ambiguity"],
+      "canonicalMessyPackage": false
+    },
+    {
+      "fixtureId": "subjective-normative-language-basic",
+      "path": "fixtures/subjective-normative-language-basic",
+      "categories": ["subjective-normative-language"],
+      "canonicalMessyPackage": false
+    },
+    {
       "fixtureId": "canonical-messy-discovery-package",
       "path": "fixtures/canonical-messy-discovery-package",
       "categories": [
@@ -93,7 +105,9 @@
         "unsupported-assumptions",
         "superseded-source-or-requirement",
         "source-authority-conflict",
-        "false-positive-near-conflict"
+        "false-positive-near-conflict",
+        "data-boundary-ambiguity",
+        "subjective-normative-language"
       ],
       "canonicalMessyPackage": true
     }

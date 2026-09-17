@@ -579,4 +579,211 @@ describe('scoreFixture (pure structural scoring)', () => {
     expect(score.findingsByCategory['contradictory-approval-thresholds']!.falseNegatives).toBe(1);
     expect(score.findingsByCategory['contradictory-approval-thresholds']!.precision).toBe(0);
   });
+
+  it('scores data-boundary-ambiguity and subjective-normative-language as scoreable categories (True Positives)', () => {
+    const groundTruth: NormalizedGroundTruth = {
+      expectedRequirements: [
+        {
+          requirementKey: 'REQ-01',
+          category: 'business-rule',
+          origin: 'EXPLICIT',
+          evidence: [{ sourceRevisionId: 'SRC-01-R1', locator: 'sec-1#1.1' }],
+          declaredEvidence: [{ sourceRevisionId: 'SRC-01-R1', locator: 'sec-1#1.1' }],
+          normalizedEvidence: [{ sourceRevisionId: 'SRC-01-R1', locator: 'sec-1#1.1' }]
+        }
+      ],
+      expectedFindings: [
+        {
+          findingKey: 'FIND-BOUND-01',
+          category: 'data-boundary-ambiguity',
+          type: 'data-boundary-ambiguity',
+          evidence: [{ sourceRevisionId: 'SRC-01-R1', locator: 'sec-2#2.1' }],
+          declaredEvidence: [{ sourceRevisionId: 'SRC-01-R1', locator: 'sec-2#2.1' }],
+          normalizedEvidence: [{ sourceRevisionId: 'SRC-01-R1', locator: 'sec-2#2.1' }],
+          relatedRequirementKeys: ['REQ-01']
+        },
+        {
+          findingKey: 'FIND-SUBJ-01',
+          category: 'subjective-normative-language',
+          type: 'subjective-normative-language',
+          evidence: [{ sourceRevisionId: 'SRC-01-R1', locator: 'sec-3#3.1' }],
+          declaredEvidence: [{ sourceRevisionId: 'SRC-01-R1', locator: 'sec-3#3.1' }],
+          normalizedEvidence: [{ sourceRevisionId: 'SRC-01-R1', locator: 'sec-3#3.1' }],
+          relatedRequirementKeys: ['REQ-01']
+        }
+      ],
+      expectedNonFindings: []
+    };
+
+    const req1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-OBS-01-R1'),
+      requirementId: createRequirementId('REQ-OBS-01'),
+      revision: 1,
+      statement: 'Req 1',
+      category: 'business-rule',
+      origin: 'EXPLICIT',
+      reviewState: 'PENDING',
+      resolutionState: 'UNRESOLVED',
+      evidence: [baseEvidenceRef]
+    });
+
+    const boundObsFinding = createCandidateFinding({
+      id: createFindingId('FIND-OBS-BOUND-01'),
+      type: 'data-boundary-ambiguity',
+      affectedRequirementRevisions: [req1.id],
+      evidence: [
+        createEvidenceReference(
+          createSourceRevisionId('SRC-01-R1'),
+          createEvidenceLocator('sec-2#2.1')
+        )
+      ],
+      discoveredBy: 'model',
+      disposition: 'OPEN'
+    });
+
+    const subjObsFinding = createCandidateFinding({
+      id: createFindingId('FIND-OBS-SUBJ-01'),
+      type: 'subjective-normative-language',
+      affectedRequirementRevisions: [req1.id],
+      evidence: [
+        createEvidenceReference(
+          createSourceRevisionId('SRC-01-R1'),
+          createEvidenceLocator('sec-3#3.1')
+        )
+      ],
+      discoveredBy: 'model',
+      disposition: 'OPEN'
+    });
+
+    const score = scoreFixture({
+      groundTruth,
+      observedRequirements: [req1],
+      observedFindings: [boundObsFinding, subjObsFinding]
+    });
+
+    expect(score.unclassifiedFindingsCount).toBe(0);
+    expect(score.matchedFindings).toHaveLength(2);
+
+    const boundScore = score.findingsByCategory['data-boundary-ambiguity']!;
+    expect(boundScore.truePositives).toBe(1);
+    expect(boundScore.falsePositives).toBe(0);
+    expect(boundScore.falseNegatives).toBe(0);
+    expect(boundScore.precision).toBe(1);
+
+    const subjScore = score.findingsByCategory['subjective-normative-language']!;
+    expect(subjScore.truePositives).toBe(1);
+    expect(subjScore.falsePositives).toBe(0);
+    expect(subjScore.falseNegatives).toBe(0);
+    expect(subjScore.precision).toBe(1);
+  });
+
+  it('scores expectedNonFindings for data-boundary-ambiguity and subjective-normative-language without unclassified fall-through', () => {
+    const groundTruth: NormalizedGroundTruth = {
+      expectedRequirements: [],
+      expectedFindings: [],
+      expectedNonFindings: [
+        {
+          description: 'Resolved inclusive boundary',
+          category: 'data-boundary-ambiguity',
+          wouldBeType: 'data-boundary-ambiguity',
+          evidence: [{ sourceRevisionId: 'SRC-01-R1', locator: 'sec-2#2.2' }],
+          declaredEvidence: [{ sourceRevisionId: 'SRC-01-R1', locator: 'sec-2#2.2' }],
+          normalizedEvidence: [{ sourceRevisionId: 'SRC-01-R1', locator: 'sec-2#2.2' }]
+        },
+        {
+          description: 'Explicit quantitative response threshold',
+          category: 'subjective-normative-language',
+          wouldBeType: 'subjective-normative-language',
+          evidence: [{ sourceRevisionId: 'SRC-01-R1', locator: 'sec-3#3.2' }],
+          declaredEvidence: [{ sourceRevisionId: 'SRC-01-R1', locator: 'sec-3#3.2' }],
+          normalizedEvidence: [{ sourceRevisionId: 'SRC-01-R1', locator: 'sec-3#3.2' }]
+        }
+      ]
+    };
+
+    const boundObsFinding = createCandidateFinding({
+      id: createFindingId('FIND-OBS-BOUND-02'),
+      type: 'data-boundary-ambiguity',
+      affectedRequirementRevisions: [],
+      evidence: [
+        createEvidenceReference(
+          createSourceRevisionId('SRC-01-R1'),
+          createEvidenceLocator('sec-2#2.2')
+        )
+      ],
+      discoveredBy: 'model',
+      disposition: 'OPEN'
+    });
+
+    const subjObsFinding = createCandidateFinding({
+      id: createFindingId('FIND-OBS-SUBJ-02'),
+      type: 'subjective-normative-language',
+      affectedRequirementRevisions: [],
+      evidence: [
+        createEvidenceReference(
+          createSourceRevisionId('SRC-01-R1'),
+          createEvidenceLocator('sec-3#3.2')
+        )
+      ],
+      discoveredBy: 'model',
+      disposition: 'OPEN'
+    });
+
+    const score = scoreFixture({
+      groundTruth,
+      observedRequirements: [],
+      observedFindings: [boundObsFinding, subjObsFinding]
+    });
+
+    expect(score.unclassifiedFindingsCount).toBe(0);
+    expect(score.matchedFindings).toHaveLength(0);
+    expect(score.mismatchedFindings).toHaveLength(2);
+
+    const boundMismatch = score.mismatchedFindings.find(
+      (m) => m.category === 'data-boundary-ambiguity'
+    );
+    expect(boundMismatch?.type).toBe('matched-expected-non-finding');
+
+    const subjMismatch = score.mismatchedFindings.find(
+      (m) => m.category === 'subjective-normative-language'
+    );
+    expect(subjMismatch?.type).toBe('matched-expected-non-finding');
+
+    expect(score.findingsByCategory['data-boundary-ambiguity']!.falsePositives).toBe(1);
+    expect(score.findingsByCategory['subjective-normative-language']!.falsePositives).toBe(1);
+  });
+
+  it('maps unmatched observed findings of these types to their categories via TYPE_TO_CATEGORY_MAP fallback', () => {
+    const groundTruth: NormalizedGroundTruth = {
+      expectedRequirements: [],
+      expectedFindings: [],
+      expectedNonFindings: []
+    };
+
+    const boundObsFinding = createCandidateFinding({
+      id: createFindingId('FIND-OBS-BOUND-03'),
+      type: 'data-boundary-ambiguity',
+      affectedRequirementRevisions: [],
+      evidence: [
+        createEvidenceReference(
+          createSourceRevisionId('SRC-01-R1'),
+          createEvidenceLocator('unknown-section#9.9')
+        )
+      ],
+      discoveredBy: 'model',
+      disposition: 'OPEN'
+    });
+
+    const score = scoreFixture({
+      groundTruth,
+      observedRequirements: [],
+      observedFindings: [boundObsFinding]
+    });
+
+    expect(score.unclassifiedFindingsCount).toBe(1);
+    expect(score.mismatchedFindings).toHaveLength(1);
+    expect(score.mismatchedFindings[0].type).toBe('unclassified-observed');
+    expect(score.mismatchedFindings[0].category).toBe('data-boundary-ambiguity');
+    expect(score.findingsByCategory['data-boundary-ambiguity']!.falsePositives).toBe(1);
+  });
 });

@@ -15,6 +15,8 @@ This procedure supersedes Revision 1 and establishes comprehensive rules for pro
 
 Section 2.1: Purchase commitments exceeding $50,000 require CEO sign-off before contract execution.
 
+Section 2.2: Dual-approval trigger boundaries apply to corporate expenditures; commitments of $50,000 or more require secondary review, whereas contracts exceeding $50,000 must also secure written CFO sign-off, leaving obligations at exactly $50,000 ambiguous regarding mandatory CFO endorsement.
+
 # 3. Contractor Access Governance
 
 Section 3.1: Contractor access duration is capped at 30 days before credential revalidation is required by the hiring manager.
@@ -38,6 +40,8 @@ Section 7.3: Outbound SMS alerts for safety warnings are dispatched via external
 # 8. Archival Maintenance
 
 Section 8.1: Archival table compression executes periodically whenever host memory usage appears low.
+
+Section 8.2: Routine archival maintenance sweeps must be completed within a reasonable timeframe and utilize adequate system buffering without causing noticeable service degradation.
 
 # 9. Entity Tagging
 

@@ -2,7 +2,7 @@
   "fixtureId": "canonical-messy-discovery-package",
   "version": "1.0.0",
   "title": "Canonical Messy Discovery Package",
-  "description": "The Phase 1 end-to-end exit gate composite fixture planting examples of all 10 required defect categories simultaneously across multiple sources and revisions, including multiple co-occurring contradictions across different defect categories.",
+  "description": "The Phase 1 end-to-end exit gate composite fixture planting examples of all 12 required defect categories simultaneously across multiple sources and revisions, including multiple co-occurring contradictions across different defect categories.",
   "categories": [
     "contradictory-approval-thresholds",
     "missing-actors-authorization",
@@ -13,7 +13,9 @@
     "unsupported-assumptions",
     "superseded-source-or-requirement",
     "source-authority-conflict",
-    "false-positive-near-conflict"
+    "false-positive-near-conflict",
+    "data-boundary-ambiguity",
+    "subjective-normative-language"
   ],
   "canonicalMessyPackage": true,
   "sources": [
@@ -334,6 +336,32 @@
       ],
       "relatedRequirementKeys": ["REQ-MESSY-ASSUME-01"],
       "rationale": "Ingestion pipeline assumes infinite throughput and zero dropped connections from an external geocoding provider without an SLA or fallback strategy."
+    },
+    {
+      "findingKey": "FINDING-MESSY-BOUNDARY",
+      "category": "data-boundary-ambiguity",
+      "type": "data-boundary-ambiguity",
+      "evidence": [
+        {
+          "sourceRevisionId": "MESSY-SOP-001-R2",
+          "locator": "executive-purchase-sign-off#2.2"
+        }
+      ],
+      "relatedRequirementKeys": ["REQ-MESSY-THRESH-1"],
+      "rationale": "Dual-approval trigger boundary is ambiguous: one clause requires secondary review for commitments 'of $50,000 or more' while another clause designates contracts 'exceeding $50,000' as the CFO sign-off trigger, leaving commitments of exactly $50,000 ambiguous regarding mandatory CFO endorsement."
+    },
+    {
+      "findingKey": "FINDING-MESSY-SUBJECTIVE",
+      "category": "subjective-normative-language",
+      "type": "subjective-normative-language",
+      "evidence": [
+        {
+          "sourceRevisionId": "MESSY-SOP-001-R2",
+          "locator": "archival-maintenance#8.2"
+        }
+      ],
+      "relatedRequirementKeys": ["REQ-MESSY-TIME-01"],
+      "rationale": "Archival maintenance requirements contain unmeasurable subjective language ('reasonable timeframe', 'adequate system buffering') lacking explicit duration bounds or resource metrics."
     }
   ],
   "expectedNonFindings": [

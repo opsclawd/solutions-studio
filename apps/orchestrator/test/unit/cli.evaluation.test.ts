@@ -42,7 +42,7 @@ describe('Evaluation CLI options and reload integration', () => {
     expect(reloaded).toBeDefined();
     expect(reloaded!.id).toBe(runId);
     expect(reloaded!.corpusVersion).toBe('v1.0');
-    expect(reloaded!.fixtureResults).toHaveLength(14);
+    expect(reloaded!.fixtureResults).toHaveLength(16);
     expect(reloaded!.report.candidateSha).toEqual({
       status: 'available',
       value: 'candidate-commit-sha-456'
@@ -84,7 +84,7 @@ describe('Evaluation CLI options and reload integration', () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.report.aggregateScores.failedFixtures).toBe(14);
+    expect(result.report.aggregateScores.failedFixtures).toBe(16);
     expect(result.report.aggregateScores.completedFixtures).toBe(0);
 
     const firstFailed = result.report.fixtureResults[0];

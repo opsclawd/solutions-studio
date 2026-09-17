@@ -69,7 +69,7 @@ describe('Evaluation Contract Schemas', () => {
     ).toThrow();
   });
 
-  it('FIXTURE_CATEGORIES contains exactly the 10 issue-mandated categories', () => {
+  it('FIXTURE_CATEGORIES contains exactly the 12 issue-mandated categories', () => {
     const expected = [
       'contradictory-approval-thresholds',
       'missing-actors-authorization',
@@ -80,10 +80,12 @@ describe('Evaluation Contract Schemas', () => {
       'unsupported-assumptions',
       'superseded-source-or-requirement',
       'source-authority-conflict',
-      'false-positive-near-conflict'
+      'false-positive-near-conflict',
+      'data-boundary-ambiguity',
+      'subjective-normative-language'
     ];
     expect(FIXTURE_CATEGORIES).toEqual(expected);
-    expect(FIXTURE_CATEGORIES).toHaveLength(10);
+    expect(FIXTURE_CATEGORIES).toHaveLength(12);
   });
 
   it('FixtureCategorySchema round-trips all categories and rejects invalid', () => {

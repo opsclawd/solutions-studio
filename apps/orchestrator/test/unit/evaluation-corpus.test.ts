@@ -17,7 +17,7 @@ describe('Adversarial Requirements Evaluation Corpus Integrity', () => {
     expect(corpus.manifest).toBeDefined();
     expect(() => EvaluationManifestDtoSchema.parse(corpus.manifest)).not.toThrow();
     expect(corpus.manifest.corpusVersion).toBe('v1.0');
-    expect(corpus.fixtures.size).toBe(14);
+    expect(corpus.fixtures.size).toBe(16);
 
     for (const [fixtureId, loaded] of corpus.fixtures) {
       expect(() => EvaluationFixtureDtoSchema.parse(loaded.fixture)).not.toThrow();
@@ -64,7 +64,7 @@ describe('Adversarial Requirements Evaluation Corpus Integrity', () => {
     }
   });
 
-  it('4. Exactly one fixture has canonicalMessyPackage: true and covers all 10 categories', () => {
+  it('4. Exactly one fixture has canonicalMessyPackage: true and covers all 12 categories', () => {
     const canonicalFixtures = Array.from(corpus.fixtures.values()).filter(
       (f) => f.fixture.canonicalMessyPackage
     );

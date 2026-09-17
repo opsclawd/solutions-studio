@@ -42,8 +42,8 @@ describe('Evaluation Support Loaders', () => {
 
   it('loadManifest loads all fixtures declared in manifest', () => {
     const corpus = loadManifest();
-    expect(corpus.manifest.fixtures.length).toBe(14);
-    expect(corpus.fixtures.size).toBe(14);
+    expect(corpus.manifest.fixtures.length).toBe(16);
+    expect(corpus.fixtures.size).toBe(16);
   });
 
   it('loadManifest throws when manifest file does not exist', () => {

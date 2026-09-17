@@ -35,7 +35,9 @@ export const FIXTURE_CATEGORIES = [
   'unsupported-assumptions',
   'superseded-source-or-requirement',
   'source-authority-conflict',
-  'false-positive-near-conflict'
+  'false-positive-near-conflict',
+  'data-boundary-ambiguity',
+  'subjective-normative-language'
 ] as const;
 
 export const FixtureCategorySchema = z.enum(FIXTURE_CATEGORIES);
