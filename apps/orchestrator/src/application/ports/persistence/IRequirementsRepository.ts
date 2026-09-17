@@ -18,7 +18,11 @@ import type {
   RequirementResolutionState,
   RequirementReconciliationAction
 } from '@solutions-studio/domain';
-import type { ProjectionMetadataDto } from '@solutions-studio/contracts';
+import type {
+  ProjectionMetadataDto,
+  EvaluationFixtureResultDto,
+  EvaluationReportDto
+} from '@solutions-studio/contracts';
 
 export interface LocatorIndexEntry {
   readonly locator: EvidenceLocator;
@@ -73,18 +77,14 @@ export interface RequirementReconciliationRecord {
 
 export type ReconciliationRecord = FindingReconciliationRecord | RequirementReconciliationRecord;
 
-export interface EvaluationRunFixtureResult {
-  readonly fixtureId: string;
-  readonly passed: boolean;
-  readonly details?: unknown;
-}
+export type EvaluationRunFixtureResult = EvaluationFixtureResultDto;
 
 export interface EvaluationRunRecord {
   readonly id: string;
   readonly corpusVersion: string;
   readonly executedAt: Instant;
   readonly fixtureResults: readonly EvaluationRunFixtureResult[];
-  readonly summary?: unknown;
+  readonly report: EvaluationReportDto;
 }
 
 export interface ProjectionRecord {

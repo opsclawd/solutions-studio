@@ -29,6 +29,28 @@ Summary of candidate requirement extraction metrics across the versioned benchma
 
 ---
 
+## 2.1 Defect Finding Discovery Quality by Category
+
+Summary of candidate finding discovery metrics across all 10 defect categories:
+
+| Defect Category                     | TP  | FP  | FN  | Precision | Recall | F1 Score |
+| :---------------------------------- | :-: | :-: | :-: | :-------: | :----: | :------: |
+| `contradictory-approval-thresholds` |     |     |     |           |        |          |
+| `missing-actors-authorization`      |     |     |     |           |        |          |
+| `incomplete-state-transitions`      |     |     |     |           |        |          |
+| `missing-failure-recovery`          |     |     |     |           |        |          |
+| `temporal-ambiguity`                |     |     |     |           |        |          |
+| `undefined-cardinality`             |     |     |     |           |        |          |
+| `unsupported-assumptions`           |     |     |     |           |        |          |
+| `superseded-source-or-requirement`  |     |     |     |           |        |          |
+| `source-authority-conflict`         |     |     |     |           |        |          |
+| `false-positive-near-conflict`      |     |     |     |           |        |          |
+
+- **Unclassified False Positive Observations Count:**
+- **Category-specific Misses (False Negatives) Analysis:**
+
+---
+
 ## 3. False-Positive Hotspots
 
 Categories and root causes of spurious candidate findings or misclassified requirements:

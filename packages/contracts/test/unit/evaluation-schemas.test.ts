@@ -16,7 +16,14 @@ import {
   EvaluationFixtureDtoSchema,
   EvaluationManifestDtoSchema,
   CORPUS_VERSION_REGEX,
-  SafeRelativePathSchema
+  SafeRelativePathSchema,
+  SafeFixtureIdSchema,
+  SourceLineageMapEntrySchema,
+  ScoreCountersSchema,
+  EvaluationFixtureResultSchema,
+  EvaluationReportSchema,
+  EvaluationRunRecordSchema,
+  canonicalizeReportForDigest
 } from '../../src/evaluation/index.js';
 
 describe('Evaluation Contract Schemas', () => {
@@ -396,5 +403,727 @@ describe('Evaluation Contract Schemas', () => {
         ]
       })
     ).toThrow();
+  });
+
+  describe('Phase 1.6 Evaluation Report and Runner Schemas', () => {
+    it('SourceLineageMapEntrySchema validates valid entry and rejects invalid', () => {
+      const validEntry = {
+        declaredRevisionId: 'MESSY-SOP-001-R2',
+        declaredSourceId: 'CORE-SOP-001',
+        declaredOrdinal: 2,
+        declaredPredecessorAlias: 'MESSY-SOP-001-R1',
+        capturedRevisionId: 'CORE-SOP-001-R2',
+        capturedSourceId: 'CORE-SOP-001',
+        capturedOrdinal: 2,
+        capturedPredecessorId: 'CORE-SOP-001-R1',
+        contentHash: 'abcdef1234567890abcdef1234567890'
+      };
+      expect(SourceLineageMapEntrySchema.parse(validEntry)).toEqual(validEntry);
+
+      // Rejects negative ordinal
+      expect(() =>
+        SourceLineageMapEntrySchema.parse({ ...validEntry, declaredOrdinal: -1 })
+      ).toThrow();
+      expect(() =>
+        SourceLineageMapEntrySchema.parse({ ...validEntry, capturedOrdinal: 0 })
+      ).toThrow();
+      // Rejects empty declaredRevisionId
+      expect(() =>
+        SourceLineageMapEntrySchema.parse({ ...validEntry, declaredRevisionId: '' })
+      ).toThrow();
+    });
+
+    it('ScoreCountersSchema handles null and valid numbers correctly', () => {
+      const zeroDenominator = {
+        truePositives: 0,
+        falsePositives: 0,
+        falseNegatives: 0,
+        precision: null,
+        recall: null,
+        f1Score: null
+      };
+      expect(ScoreCountersSchema.parse(zeroDenominator)).toEqual(zeroDenominator);
+
+      const withScores = {
+        truePositives: 4,
+        falsePositives: 1,
+        falseNegatives: 1,
+        precision: 0.8,
+        recall: 0.8,
+        f1Score: 0.8
+      };
+      expect(ScoreCountersSchema.parse(withScores)).toEqual(withScores);
+
+      // Rejects negative counts
+      expect(() => ScoreCountersSchema.parse({ ...withScores, truePositives: -1 })).toThrow();
+      // Rejects precision > 1
+      expect(() => ScoreCountersSchema.parse({ ...withScores, precision: 1.5 })).toThrow();
+    });
+
+    it('EvaluationFixtureResultSchema discriminates completed vs failed results', () => {
+      const completed = {
+        fixtureId: 'test-fixture',
+        status: 'completed' as const,
+        sourceLineageMap: [
+          {
+            declaredRevisionId: 'DEC-R1',
+            declaredSourceId: 'SRC-01',
+            declaredOrdinal: 1,
+            capturedRevisionId: 'SRC-01-R1',
+            capturedSourceId: 'SRC-01',
+            capturedOrdinal: 1,
+            contentHash: 'hash1'
+          }
+        ],
+        executed: {
+          capturedSourceRevisionIds: ['SRC-01-R1'],
+          inputSourceRevisionIds: ['SRC-01-R1'],
+          acceptedRequirementRevisions: ['REQ-01-R1'],
+          acceptedFindingIds: ['FIND-01'],
+          acceptedRequirementCount: 1,
+          rejectedRequirementCount: 0,
+          acceptedFindingCount: 1,
+          rejectedFindingCount: 0,
+          providerMetadata: {
+            status: 'available' as const,
+            value: {
+              provider: 'fixture-replay',
+              model: 'replay-v1',
+              durationMs: 12
+            }
+          }
+        },
+        measured: {
+          durationMs: 45,
+          score: {
+            requirementsByCategory: {
+              'business-rule': {
+                truePositives: 1,
+                falsePositives: 0,
+                falseNegatives: 0,
+                precision: 1.0,
+                recall: 1.0,
+                f1Score: 1.0
+              }
+            },
+            findingsByCategory: {
+              'contradictory-approval-thresholds': {
+                truePositives: 1,
+                falsePositives: 0,
+                falseNegatives: 0,
+                precision: 1.0,
+                recall: 1.0,
+                f1Score: 1.0
+              }
+            },
+            unclassifiedFindingsCount: 0,
+            matchedRequirements: [
+              {
+                expectedRequirementKey: 'REQ-1',
+                observedRequirementRevisionId: 'REQ-01-R1',
+                category: 'business-rule',
+                origin: 'EXPLICIT',
+                declaredEvidence: [{ sourceRevisionId: 'DEC-R1', locator: 'loc-1' }],
+                normalizedEvidence: [{ sourceRevisionId: 'SRC-01-R1', locator: 'loc-1' }],
+                observedEvidence: [{ sourceRevisionId: 'SRC-01-R1', locator: 'loc-1' }],
+                statement: 'statement'
+              }
+            ],
+            mismatchedRequirements: [],
+            matchedFindings: [
+              {
+                expectedFindingKey: 'FIND-1',
+                observedFindingId: 'FIND-01',
+                category: 'contradictory-approval-thresholds',
+                type: 'contradiction',
+                declaredEvidence: [{ sourceRevisionId: 'DEC-R1', locator: 'loc-1' }],
+                normalizedEvidence: [{ sourceRevisionId: 'SRC-01-R1', locator: 'loc-1' }],
+                observedEvidence: [{ sourceRevisionId: 'SRC-01-R1', locator: 'loc-1' }],
+                relatedRequirementKeys: ['REQ-1']
+              }
+            ],
+            mismatchedFindings: [],
+            unclassifiedFindings: [],
+            rejectedCompilerRequirements: [],
+            rejectedCompilerFindings: []
+          }
+        }
+      };
+
+      const parsedCompleted = EvaluationFixtureResultSchema.parse(completed);
+      expect(parsedCompleted.status).toBe('completed');
+
+      const failed = {
+        fixtureId: 'failed-fixture',
+        status: 'failed' as const,
+        error: {
+          name: 'CompileRequirementsError',
+          message: 'Malformed output',
+          phase: 'compile' as const
+        }
+      };
+
+      const parsedFailed = EvaluationFixtureResultSchema.parse(failed);
+      expect(parsedFailed.status).toBe('failed');
+    });
+
+    it('EvaluationRunRecordSchema round-trips a valid report envelope', () => {
+      const report = {
+        reportSchemaVersion: '1.0.0' as const,
+        runId: 'RUN-001',
+        executedAt: '2026-09-17T02:00:00.000Z',
+        corpusVersion: 'v1.0',
+        corpusIdentity: 'sha256-corpus-identity',
+        candidateSha: { status: 'available' as const, value: 'abcd1234efgh5678' },
+        fixtureOrder: ['fixture-1'],
+        fixtureResults: [
+          {
+            fixtureId: 'fixture-1',
+            status: 'failed' as const,
+            error: {
+              name: 'Error',
+              message: 'Test failure',
+              phase: 'capture' as const
+            }
+          }
+        ],
+        aggregateScores: {
+          totalFixtures: 1,
+          completedFixtures: 0,
+          failedFixtures: 1,
+          requirementsByCategory: {},
+          findingsByCategory: {},
+          unclassifiedFindingsCount: 0
+        },
+        reportArtifacts: {
+          jsonReportPath: { status: 'available' as const, value: 'reports/report.json' },
+          jsonReportDigest: { status: 'available' as const, value: 'digest-123' },
+          markdownReportPath: { status: 'unavailable' as const, reason: 'Not generated' },
+          markdownReportDigest: { status: 'unavailable' as const, reason: 'Not generated' }
+        },
+        provenance: {
+          requested: {
+            candidateSha: { status: 'available' as const, value: 'abcd1234efgh5678' },
+            providerMode: 'fixture-replay',
+            providerName: 'fixture-replay',
+            manifestPath: 'manifests/corpus.v1.json',
+            outputReportPath: { status: 'available' as const, value: 'reports/report.json' },
+            storeDir: { status: 'unavailable' as const, reason: 'In-memory' }
+          },
+          declared: {
+            manifestVersion: 'v1.0',
+            manifestHash: 'hash-manifest',
+            canonicalizationVersion: 'v1',
+            corpusIdentity: 'sha256-corpus-identity',
+            fixtureOrder: ['fixture-1'],
+            fixtures: [
+              {
+                fixtureId: 'fixture-1',
+                expectedJsonHash: 'hash-expected',
+                sources: [
+                  {
+                    sourceRevisionId: 'SRC-R1',
+                    sourceId: 'SRC-01',
+                    sourceType: 'sop' as const,
+                    revision: 1,
+                    contentHash: 'hash-src'
+                  }
+                ]
+              }
+            ]
+          },
+          configured: {
+            compilerVersion: '1.0.0',
+            promptVersion: '1.0.0',
+            gatewayConfig: { provider: 'fixture-replay' },
+            nodeVersion: process.version,
+            platform: process.platform,
+            arch: process.arch
+          },
+          verified: {
+            schemaValidation: true,
+            corpusLineageValid: true,
+            persistenceVerified: true,
+            reportDigest: 'digest-report'
+          }
+        }
+      };
+
+      const runRecord = {
+        id: 'RUN-001',
+        corpusVersion: 'v1.0',
+        executedAt: '2026-09-17T02:00:00.000Z',
+        fixtureResults: report.fixtureResults,
+        report
+      };
+
+      const parsed = EvaluationRunRecordSchema.parse(runRecord);
+      expect(parsed).toEqual(runRecord);
+    });
+
+    it('SafeFixtureIdSchema rejects traversal and non-alphanumeric identifiers', () => {
+      expect(() => SafeFixtureIdSchema.parse('../../../escaped')).toThrow();
+      expect(() => SafeFixtureIdSchema.parse('foo/bar')).toThrow();
+      expect(() => SafeFixtureIdSchema.parse('foo\\bar')).toThrow();
+      expect(() => SafeFixtureIdSchema.parse('foo bar')).toThrow();
+      expect(() => SafeFixtureIdSchema.parse('')).toThrow();
+      expect(SafeFixtureIdSchema.parse('valid-fixture_01')).toBe('valid-fixture_01');
+    });
+
+    it('ScoreCountersSchema rejects mathematically inconsistent precision, recall, and f1Score', () => {
+      // TP=0, FP=100, but precision=1 -> must throw
+      expect(() =>
+        ScoreCountersSchema.parse({
+          truePositives: 0,
+          falsePositives: 100,
+          falseNegatives: 0,
+          precision: 1,
+          recall: null,
+          f1Score: 1
+        })
+      ).toThrow(/precision mismatch/);
+
+      // TP+FP=0, but precision is not null
+      expect(() =>
+        ScoreCountersSchema.parse({
+          truePositives: 0,
+          falsePositives: 0,
+          falseNegatives: 5,
+          precision: 0,
+          recall: 0,
+          f1Score: 0
+        })
+      ).toThrow(/precision must be null/);
+
+      // Consistent counters
+      const valid = {
+        truePositives: 2,
+        falsePositives: 2,
+        falseNegatives: 0,
+        precision: 0.5,
+        recall: 1,
+        f1Score: (2 * 0.5 * 1) / (0.5 + 1)
+      };
+      expect(ScoreCountersSchema.parse(valid)).toEqual(valid);
+    });
+
+    it('EvaluationReportSchema rejects duplicate fixtureOrder and count mismatches', () => {
+      const validReport = {
+        reportSchemaVersion: '1.0.0' as const,
+        runId: 'RUN-001',
+        executedAt: '2026-09-17T02:00:00.000Z',
+        corpusVersion: 'v1.0',
+        corpusIdentity: 'sha256-corpus-identity',
+        candidateSha: { status: 'available' as const, value: 'abcd1234efgh5678' },
+        fixtureOrder: ['fixture-1'],
+        fixtureResults: [
+          {
+            fixtureId: 'fixture-1',
+            status: 'failed' as const,
+            error: {
+              name: 'Error',
+              message: 'Test failure',
+              phase: 'capture' as const
+            }
+          }
+        ],
+        aggregateScores: {
+          totalFixtures: 1,
+          completedFixtures: 0,
+          failedFixtures: 1,
+          requirementsByCategory: {},
+          findingsByCategory: {},
+          unclassifiedFindingsCount: 0
+        },
+        reportArtifacts: {
+          jsonReportPath: { status: 'available' as const, value: 'reports/report.json' },
+          jsonReportDigest: { status: 'available' as const, value: 'digest-123' },
+          markdownReportPath: { status: 'unavailable' as const, reason: 'Not generated' },
+          markdownReportDigest: { status: 'unavailable' as const, reason: 'Not generated' }
+        },
+        provenance: {
+          requested: {
+            candidateSha: { status: 'available' as const, value: 'abcd1234efgh5678' },
+            providerMode: 'fixture-replay',
+            providerName: 'fixture-replay',
+            manifestPath: 'manifests/corpus.v1.json',
+            outputReportPath: { status: 'available' as const, value: 'reports/report.json' },
+            storeDir: { status: 'unavailable' as const, reason: 'In-memory' }
+          },
+          declared: {
+            manifestVersion: 'v1.0',
+            manifestHash: 'hash-manifest',
+            canonicalizationVersion: 'v1',
+            corpusIdentity: 'sha256-corpus-identity',
+            fixtureOrder: ['fixture-1'],
+            fixtures: [
+              {
+                fixtureId: 'fixture-1',
+                expectedJsonHash: 'hash-expected',
+                sources: [
+                  {
+                    sourceRevisionId: 'SRC-R1',
+                    sourceId: 'SRC-01',
+                    sourceType: 'sop' as const,
+                    revision: 1,
+                    contentHash: 'hash-src'
+                  }
+                ]
+              }
+            ]
+          },
+          configured: {
+            compilerVersion: '1.0.0',
+            promptVersion: '1.0.0',
+            gatewayConfig: { provider: 'fixture-replay' },
+            nodeVersion: process.version,
+            platform: process.platform,
+            arch: process.arch
+          },
+          verified: {
+            schemaValidation: true,
+            corpusLineageValid: true,
+            persistenceVerified: true,
+            reportDigest: 'digest-report'
+          }
+        }
+      };
+
+      // Inconsistent totalFixtures
+      expect(() =>
+        EvaluationReportSchema.parse({
+          ...validReport,
+          aggregateScores: { ...validReport.aggregateScores, totalFixtures: 999 }
+        })
+      ).toThrow(/aggregateScores\.totalFixtures \(999\) does not match fixture count/);
+
+      // Inconsistent declared corpus identity
+      expect(() =>
+        EvaluationReportSchema.parse({
+          ...validReport,
+          provenance: {
+            ...validReport.provenance,
+            declared: {
+              ...validReport.provenance.declared,
+              corpusIdentity: 'different-identity'
+            }
+          }
+        })
+      ).toThrow(/does not match declared corpusIdentity/);
+    });
+
+    it('EvaluationRunRecordSchema rejects envelope ID mismatch with report.runId', () => {
+      const validReport = {
+        reportSchemaVersion: '1.0.0' as const,
+        runId: 'RUN-001',
+        executedAt: '2026-09-17T02:00:00.000Z',
+        corpusVersion: 'v1.0',
+        corpusIdentity: 'sha256-corpus-identity',
+        candidateSha: { status: 'available' as const, value: 'abcd1234efgh5678' },
+        fixtureOrder: ['fixture-1'],
+        fixtureResults: [
+          {
+            fixtureId: 'fixture-1',
+            status: 'failed' as const,
+            error: {
+              name: 'Error',
+              message: 'Test failure',
+              phase: 'capture' as const
+            }
+          }
+        ],
+        aggregateScores: {
+          totalFixtures: 1,
+          completedFixtures: 0,
+          failedFixtures: 1,
+          requirementsByCategory: {},
+          findingsByCategory: {},
+          unclassifiedFindingsCount: 0
+        },
+        reportArtifacts: {
+          jsonReportPath: { status: 'available' as const, value: 'reports/report.json' },
+          jsonReportDigest: { status: 'available' as const, value: 'digest-123' },
+          markdownReportPath: { status: 'unavailable' as const, reason: 'Not generated' },
+          markdownReportDigest: { status: 'unavailable' as const, reason: 'Not generated' }
+        },
+        provenance: {
+          requested: {
+            candidateSha: { status: 'available' as const, value: 'abcd1234efgh5678' },
+            providerMode: 'fixture-replay',
+            providerName: 'fixture-replay',
+            manifestPath: 'manifests/corpus.v1.json',
+            outputReportPath: { status: 'available' as const, value: 'reports/report.json' },
+            storeDir: { status: 'unavailable' as const, reason: 'In-memory' }
+          },
+          declared: {
+            manifestVersion: 'v1.0',
+            manifestHash: 'hash-manifest',
+            canonicalizationVersion: 'v1',
+            corpusIdentity: 'sha256-corpus-identity',
+            fixtureOrder: ['fixture-1'],
+            fixtures: [
+              {
+                fixtureId: 'fixture-1',
+                expectedJsonHash: 'hash-expected',
+                sources: [
+                  {
+                    sourceRevisionId: 'SRC-R1',
+                    sourceId: 'SRC-01',
+                    sourceType: 'sop' as const,
+                    revision: 1,
+                    contentHash: 'hash-src'
+                  }
+                ]
+              }
+            ]
+          },
+          configured: {
+            compilerVersion: '1.0.0',
+            promptVersion: '1.0.0',
+            gatewayConfig: { provider: 'fixture-replay' },
+            nodeVersion: process.version,
+            platform: process.platform,
+            arch: process.arch
+          },
+          verified: {
+            schemaValidation: true,
+            corpusLineageValid: true,
+            persistenceVerified: true,
+            reportDigest: 'digest-report'
+          }
+        }
+      };
+
+      expect(() =>
+        EvaluationRunRecordSchema.parse({
+          id: 'RUN-DIFFERENT',
+          corpusVersion: 'v1.0',
+          executedAt: '2026-09-17T02:00:00.000Z',
+          fixtureResults: validReport.fixtureResults,
+          report: validReport
+        })
+      ).toThrow(/does not match report\.runId/);
+    });
+
+    it('canonicalizeReportForDigest produces deterministic non-circular projection', () => {
+      const validReport = {
+        reportSchemaVersion: '1.0.0' as const,
+        runId: 'RUN-001',
+        executedAt: '2026-09-17T02:00:00.000Z',
+        corpusVersion: 'v1.0',
+        corpusIdentity: 'sha256-corpus-identity',
+        candidateSha: { status: 'available' as const, value: 'abcd1234efgh5678' },
+        fixtureOrder: ['fixture-1'],
+        fixtureResults: [
+          {
+            fixtureId: 'fixture-1',
+            status: 'failed' as const,
+            error: {
+              name: 'Error',
+              message: 'Test failure',
+              phase: 'capture' as const
+            }
+          }
+        ],
+        aggregateScores: {
+          totalFixtures: 1,
+          completedFixtures: 0,
+          failedFixtures: 1,
+          requirementsByCategory: {},
+          findingsByCategory: {},
+          unclassifiedFindingsCount: 0
+        },
+        reportArtifacts: {
+          jsonReportPath: { status: 'available' as const, value: 'reports/report.json' },
+          jsonReportDigest: { status: 'available' as const, value: 'digest-foo' },
+          markdownReportPath: { status: 'unavailable' as const, reason: 'Not generated' },
+          markdownReportDigest: { status: 'unavailable' as const, reason: 'Not generated' }
+        },
+        provenance: {
+          requested: {
+            candidateSha: { status: 'available' as const, value: 'abcd1234efgh5678' },
+            providerMode: 'fixture-replay',
+            providerName: 'fixture-replay',
+            manifestPath: 'manifests/corpus.v1.json',
+            outputReportPath: { status: 'available' as const, value: 'reports/report.json' },
+            storeDir: { status: 'unavailable' as const, reason: 'In-memory' }
+          },
+          declared: {
+            manifestVersion: 'v1.0',
+            manifestHash: 'hash-manifest',
+            canonicalizationVersion: 'v1',
+            corpusIdentity: 'sha256-corpus-identity',
+            fixtureOrder: ['fixture-1'],
+            fixtures: [
+              {
+                fixtureId: 'fixture-1',
+                expectedJsonHash: 'hash-expected',
+                sources: [
+                  {
+                    sourceRevisionId: 'SRC-R1',
+                    sourceId: 'SRC-01',
+                    sourceType: 'sop' as const,
+                    revision: 1,
+                    contentHash: 'hash-src'
+                  }
+                ]
+              }
+            ]
+          },
+          configured: {
+            compilerVersion: '1.0.0',
+            promptVersion: '1.0.0',
+            gatewayConfig: { provider: 'fixture-replay' },
+            nodeVersion: process.version,
+            platform: process.platform,
+            arch: process.arch
+          },
+          verified: {
+            schemaValidation: true,
+            corpusLineageValid: true,
+            persistenceVerified: true,
+            reportDigest: 'digest-report-initial'
+          }
+        }
+      };
+
+      const c1 = canonicalizeReportForDigest(validReport);
+      // Mutate verified.reportDigest and jsonReportDigest
+      const modifiedReport = {
+        ...validReport,
+        reportArtifacts: {
+          ...validReport.reportArtifacts,
+          jsonReportDigest: { status: 'available' as const, value: 'digest-bar' }
+        },
+        provenance: {
+          ...validReport.provenance,
+          verified: {
+            ...validReport.provenance.verified,
+            reportDigest: 'digest-report-changed'
+          }
+        }
+      };
+      const c2 = canonicalizeReportForDigest(modifiedReport);
+      expect(c1).toBe(c2);
+    });
+
+    it('canonicalizeReportForDigest produces identical canonical string regardless of key ordering', () => {
+      const obj1 = {
+        reportSchemaVersion: '1.0.0' as const,
+        runId: 'RUN-KEY-ORDER',
+        executedAt: '2026-09-17T02:00:00.000Z',
+        corpusVersion: 'v1.0',
+        corpusIdentity: 'identity-123',
+        candidateSha: { status: 'unavailable' as const, reason: 'N/A' },
+        fixtureOrder: ['f1'],
+        fixtureResults: [],
+        aggregateScores: {
+          totalFixtures: 0,
+          completedFixtures: 0,
+          failedFixtures: 0,
+          requirementsByCategory: {},
+          findingsByCategory: {},
+          unclassifiedFindingsCount: 0
+        },
+        reportArtifacts: {
+          jsonReportPath: { status: 'unavailable' as const, reason: 'N/A' },
+          jsonReportDigest: { status: 'unavailable' as const, reason: 'N/A' },
+          markdownReportPath: { status: 'unavailable' as const, reason: 'N/A' },
+          markdownReportDigest: { status: 'unavailable' as const, reason: 'N/A' }
+        },
+        provenance: {
+          requested: {
+            candidateSha: { status: 'unavailable' as const, reason: 'N/A' },
+            providerMode: 'fixture-replay',
+            providerName: 'fixture-replay',
+            manifestPath: 'm.json',
+            outputReportPath: { status: 'unavailable' as const, reason: 'N/A' },
+            storeDir: { status: 'unavailable' as const, reason: 'N/A' }
+          },
+          declared: {
+            manifestVersion: 'v1.0',
+            manifestHash: 'mh',
+            canonicalizationVersion: 'v1',
+            corpusIdentity: 'identity-123',
+            fixtureOrder: ['f1'],
+            fixtures: []
+          },
+          configured: {
+            compilerVersion: '1.0.0',
+            promptVersion: '1.0.0',
+            gatewayConfig: {},
+            nodeVersion: process.version,
+            platform: process.platform,
+            arch: process.arch
+          },
+          verified: {
+            schemaValidation: true,
+            corpusLineageValid: true,
+            persistenceVerified: true,
+            reportDigest: 'digest-1'
+          }
+        }
+      };
+
+      // Create obj2 with reversed key orders at multiple levels
+      const obj2 = {
+        provenance: {
+          verified: {
+            reportDigest: 'different-digest',
+            persistenceVerified: true,
+            corpusLineageValid: true,
+            schemaValidation: true
+          },
+          configured: {
+            arch: process.arch,
+            platform: process.platform,
+            nodeVersion: process.version,
+            gatewayConfig: {},
+            promptVersion: '1.0.0',
+            compilerVersion: '1.0.0'
+          },
+          declared: {
+            fixtures: [],
+            fixtureOrder: ['f1'],
+            corpusIdentity: 'identity-123',
+            canonicalizationVersion: 'v1',
+            manifestHash: 'mh',
+            manifestVersion: 'v1.0'
+          },
+          requested: {
+            storeDir: { reason: 'N/A', status: 'unavailable' as const },
+            outputReportPath: { reason: 'N/A', status: 'unavailable' as const },
+            manifestPath: 'm.json',
+            providerName: 'fixture-replay',
+            providerMode: 'fixture-replay',
+            candidateSha: { reason: 'N/A', status: 'unavailable' as const }
+          }
+        },
+        reportArtifacts: {
+          markdownReportDigest: { reason: 'N/A', status: 'unavailable' as const },
+          markdownReportPath: { reason: 'N/A', status: 'unavailable' as const },
+          jsonReportDigest: { reason: 'N/A', status: 'unavailable' as const },
+          jsonReportPath: { reason: 'N/A', status: 'unavailable' as const }
+        },
+        aggregateScores: {
+          unclassifiedFindingsCount: 0,
+          findingsByCategory: {},
+          requirementsByCategory: {},
+          failedFixtures: 0,
+          completedFixtures: 0,
+          totalFixtures: 0
+        },
+        fixtureResults: [],
+        fixtureOrder: ['f1'],
+        candidateSha: { reason: 'N/A', status: 'unavailable' as const },
+        corpusIdentity: 'identity-123',
+        corpusVersion: 'v1.0',
+        executedAt: '2026-09-17T02:00:00.000Z',
+        runId: 'RUN-KEY-ORDER',
+        reportSchemaVersion: '1.0.0' as const
+      };
+
+      expect(canonicalizeReportForDigest(obj1)).toBe(canonicalizeReportForDigest(obj2));
+    });
   });
 });
