@@ -29,7 +29,8 @@ import {
   type RequirementRevision,
   type CandidateFinding,
   type RequirementsBaseline,
-  type EvidenceLocator
+  type EvidenceLocator,
+  type SourceType
 } from '@solutions-studio/domain';
 import type {
   IRequirementsRepository,
@@ -192,6 +193,7 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
 
     const locatorIndex = deriveLocatorIndex(input.markdownText);
     const record: SourceRevisionRecord = Object.freeze({
+      sourceType: input.sourceType,
       revision: sourceRevision,
       rawText: input.markdownText,
       locatorIndex: Object.freeze(locatorIndex)
@@ -224,6 +226,7 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
     }
 
     return Object.freeze({
+      sourceType: (raw as { sourceType?: SourceType }).sourceType ?? ('sop' as SourceType),
       revision: createSourceRevision({
         id: createSourceRevisionId(raw.revision.id),
         sourceId: createSourceId(raw.revision.sourceId),

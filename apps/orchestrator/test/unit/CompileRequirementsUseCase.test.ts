@@ -1135,4 +1135,81 @@ Hope this meets your requirements!`;
       operationalErrorC
     );
   });
+
+  it('19. includes prominent sourceType, capturedAt, supersedes, cross-source instructions, precision guidance, and contrastive few-shot examples in generated prompt', async () => {
+    const rec1 = await repo.captureSourceRevision({
+      sourceId: createSourceId('SRC-POL-001'),
+      sourceType: 'policy',
+      markdownText: '# Security Policy\n\nAll endpoints must be encrypted.'
+    });
+
+    // Capture second revision of SRC-POL-001 with updated text so it sets supersedes
+    const rec1v2 = await repo.captureSourceRevision({
+      sourceId: createSourceId('SRC-POL-001'),
+      sourceType: 'policy',
+      markdownText: '# Security Policy\n\nAll endpoints must use hardware-backed encryption.'
+    });
+    expect(rec1v2.revision.supersedes).toBe(rec1.revision.id);
+
+    const rec2 = await repo.captureSourceRevision({
+      sourceId: createSourceId('SRC-INT-001'),
+      sourceType: 'interview',
+      markdownText: '# Field Interview\n\nEngineers use standard USB drives without encryption.'
+    });
+
+    fakeGateway.queueResponse(
+      JSON.stringify({
+        requirements: [],
+        findings: []
+      })
+    );
+
+    await useCase.compile({
+      sourceRevisionIds: [rec1v2.revision.id, rec2.revision.id]
+    });
+
+    expect(fakeGateway.recordedRequests).toHaveLength(1);
+    const prompt = fakeGateway.recordedRequests[0].prompt;
+
+    // Prominent metadata for each source revision
+    expect(prompt).toContain(`### Source Revision: ${rec1v2.revision.id}`);
+    expect(prompt).toContain('- Source Type: POLICY');
+    expect(prompt).toContain(`- Captured At: ${rec1v2.revision.capturedAt}`);
+    expect(prompt).toContain(`- Supersedes: ${rec1.revision.id}`);
+
+    expect(prompt).toContain(`### Source Revision: ${rec2.revision.id}`);
+    expect(prompt).toContain('- Source Type: INTERVIEW');
+    expect(prompt).toContain(`- Captured At: ${rec2.revision.capturedAt}`);
+
+    // Authority and recency hierarchy instructions
+    expect(prompt).toContain('## Source Authority & Recency Hierarchy');
+    expect(prompt).toContain('policy');
+    expect(prompt).toContain('schema');
+    expect(prompt).toContain('sop');
+    expect(prompt).toContain('interview');
+    expect(prompt).toContain('spreadsheet');
+
+    // Cross-source analysis instructions
+    expect(prompt).toContain('## Cross-Source Analysis Instructions');
+    expect(prompt).toContain('Topic Overlap');
+    expect(prompt).toContain('Contradiction Findings');
+    expect(prompt).toContain('Superseded Source Revisions');
+
+    // Evidence standard and precision calibration
+    expect(prompt).toContain(
+      '## Evidence Standard & Precision Calibration (Preventing False Positives)'
+    );
+    expect(prompt).toContain('Direct Unambiguous Textual Evidence Required');
+    expect(prompt).toContain('Scoped & Partitioned Thresholds Are NOT Contradictions');
+    expect(prompt).toContain(
+      'Paraphrased & Semantically Equivalent Phrasing Is NOT a Contradiction'
+    );
+
+    // Contrastive few-shot examples
+    expect(prompt).toContain('## Few-Shot Contrastive Examples');
+    expect(prompt).toContain('Source Authority Conflict (Policy vs. Interview)');
+    expect(prompt).toContain('Superseded Source Revision');
+    expect(prompt).toContain('Distinct Geographically Scoped Thresholds');
+    expect(prompt).toContain('Paraphrased / Semantically Equivalent Timeframes');
+  });
 });
