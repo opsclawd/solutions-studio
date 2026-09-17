@@ -21,6 +21,7 @@ function makeCapturedRecord(
 ): SourceRevisionRecord {
   const id = `${sourceId}-R${revision}`;
   return {
+    sourceType: 'sop',
     revision: createSourceRevision({
       id: createSourceRevisionId(id),
       sourceId: createSourceId(sourceId),

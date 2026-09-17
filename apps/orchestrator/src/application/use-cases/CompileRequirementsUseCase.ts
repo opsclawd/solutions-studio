@@ -321,11 +321,18 @@ export class CompileRequirementsUseCase {
           )
           .join('\n');
 
-        return `### Source Revision: ${rec.revision.id}
-Source ID: ${rec.revision.sourceId}
-Revision Number: ${rec.revision.revision}
-Captured At: ${rec.revision.capturedAt}
+        const supersedesLine = rec.revision.supersedes
+          ? `- Supersedes: ${rec.revision.supersedes}\n`
+          : '';
 
+        const sourceTypeDisplay = rec.sourceType ? rec.sourceType.toUpperCase() : 'UNSPECIFIED';
+
+        return `### Source Revision: ${rec.revision.id}
+- Source Type: ${sourceTypeDisplay} (authority hierarchy: policy/schema > sop > interview/spreadsheet)
+- Captured At: ${rec.revision.capturedAt}
+- Source ID: ${rec.revision.sourceId}
+- Revision Number: ${rec.revision.revision}
+${supersedesLine}
 Available Locators:
 ${locatorsList}
 
@@ -339,6 +346,91 @@ ${rec.rawText}
     return `You are a requirements compiler. Your task is to analyze the following source revision(s) and compile candidate requirements and candidate findings (defects, contradictions, or gaps) with exact provenance.
 
 ${revisionsDoc}
+
+## Source Authority & Recency Hierarchy
+1. Relative Authority Ranking:
+   - \`policy\` and \`schema\` are authoritative and mandatory governance definitions (highest precedence).
+   - \`sop\` represents operational standard operating procedures and guidelines (medium precedence).
+   - \`interview\` and \`spreadsheet\` are informal, operational, or reported practices (lowest precedence).
+2. Authority Conflicts:
+   - When an informal source (\`interview\`, \`spreadsheet\`) describes operational practices or exceptions that directly conflict with or violate an authoritative source (\`policy\`, \`schema\`), flag this as a \`contradiction\` finding citing both sources as evidence.
+3. Recency & Supersession:
+   - When two sources of the same authority level conflict, prefer the more recent source (by \`Captured At\`) or the revision that explicitly declares \`Supersedes\`.
+   - If a source revision declares that it \`Supersedes\` a prior revision and their requirements or limits differ materially, extract the active requirement from the superseding revision, and flag a \`contradiction\` finding citing both revisions as evidence.
+
+## Cross-Source Analysis Instructions
+When compiling across multiple source revisions, you MUST perform pairwise cross-source analysis:
+1. Topic Overlap: Scan across all source revisions for overlapping topics, shared workflows, permissions, and numeric thresholds.
+2. Contradiction Findings: If two sources make incompatible assertions on the same topic:
+   - Emit a candidate finding with \`type: "contradiction"\`.
+   - The finding's \`evidence\` MUST cite the exact locators from BOTH conflicting source revisions.
+   - The finding's \`relatedRequirementKeys\` MUST reference the candidate requirement keys from each source involved.
+   - The finding's \`rationale\` must clearly explain how the two sources contradict each other.
+3. Superseded Source Revisions: If a source revision supersedes an earlier revision and updates a threshold, rule, or permission:
+   - Extract candidate requirements reflecting the current, active revision.
+   - Emit a \`contradiction\` finding citing evidence from BOTH the superseded revision and the superseding revision.
+   - The finding's \`relatedRequirementKeys\` MUST cite the candidate requirement key for the active rule.
+
+## Evidence Standard & Precision Calibration (Preventing False Positives)
+To maintain high precision and avoid spurious findings:
+1. Direct Unambiguous Textual Evidence Required: Only emit a finding when there is direct, unambiguous textual evidence of an actual conflict or defect. Do NOT emit findings based on speculation, plausible inferences, out-of-scope assumptions, or slight differences in phrasing.
+2. Scoped & Partitioned Thresholds Are NOT Contradictions: When differing limits, numbers, or rules apply to distinct, mutually exclusive domains, territories, or tiers (e.g., domestic travel max $75 vs. international travel max $150), they are complementary domain rules, NOT a contradiction. Do NOT emit a finding when conditions/scopes do not overlap.
+3. Paraphrased & Semantically Equivalent Phrasing Is NOT a Contradiction: When two sources express the same underlying requirement using different phrasing (e.g., "within 48 hours of initial provisioning" vs. "no later than 48 hours following initial account provisioning"), they are semantically consistent. Do NOT emit a contradiction finding for paraphrasing.
+4. Presumption of Validity: When an authoritative document does not mention an operational detail, do NOT assume a defect exists unless the text explicitly creates a gap or contradiction.
+
+## Few-Shot Contrastive Examples
+
+### Example 1: Genuine Contradiction — Source Authority Conflict (Policy vs. Interview)
+Sources:
+- \`INT-FIELD-001-R1\` (Source Type: INTERVIEW, Locator: \`telemetry-retrieval#3.2\`):
+  "Field engineers regularly use unencrypted consumer USB flash drives to copy diagnostic logs from remote substations..."
+- \`POL-SEC-001-R1\` (Source Type: POLICY, Locator: \`removable-media-standards#1.1\`):
+  "Under no circumstances may unencrypted removable storage devices be connected to company systems. All data transfer in transit must use encrypted, corporate-managed channels..."
+Compiler Output:
+- Requirements:
+  - \`REQ-INTERVIEW-PRACTICE\` (category: \`exception\`, origin: \`EXPLICIT\`, evidence: \`[{"sourceRevisionId": "INT-FIELD-001-R1", "locator": "telemetry-retrieval#3.2"}]\`)
+  - \`REQ-POLICY-RULE\` (category: \`business-rule\`, origin: \`EXPLICIT\`, evidence: \`[{"sourceRevisionId": "POL-SEC-001-R1", "locator": "removable-media-standards#1.1"}]\`)
+- Findings:
+  - Emit finding: \`type: "contradiction"\`, \`relatedRequirementKeys: ["REQ-INTERVIEW-PRACTICE", "REQ-POLICY-RULE"]\`, \`evidence: [{"sourceRevisionId": "INT-FIELD-001-R1", "locator": "telemetry-retrieval#3.2"}, {"sourceRevisionId": "POL-SEC-001-R1", "locator": "removable-media-standards#1.1"}]\`, \`rationale: "Field engineering interview describes routine use of unencrypted USB drives to transfer logs, directly violating authoritative corporate security policy prohibiting unencrypted removable media."\`
+Explanation: Genuine contradiction between field practice reported in an interview and corporate policy. Evidence spans both sources.
+
+### Example 2: Genuine Contradiction — Superseded Source Revision
+Sources:
+- \`SOP-DISCOUNT-001-R1\` (Source Type: SOP, Revision: 1, Locator: \`discretionary-approval-limits#2.1\`):
+  "Commercial sales managers may approve discretionary customer pricing discounts of up to 25% off list price without executive escalation."
+- \`SOP-DISCOUNT-001-R2\` (Source Type: SOP, Revision: 2, Supersedes: \`SOP-DISCOUNT-001-R1\`, Locator: \`discretionary-approval-limits#2.1\`):
+  "Commercial sales managers may approve discretionary customer pricing discounts of up to 15% off list price without executive escalation."
+Compiler Output:
+- Requirements:
+  - \`REQ-DISC-CURRENT\` (category: \`business-rule\`, origin: \`EXPLICIT\`, evidence: \`[{"sourceRevisionId": "SOP-DISCOUNT-001-R2", "locator": "discretionary-approval-limits#2.1"}]\`)
+- Findings:
+  - Emit finding: \`type: "contradiction"\`, \`relatedRequirementKeys: ["REQ-DISC-CURRENT"]\`, \`evidence: [{"sourceRevisionId": "SOP-DISCOUNT-001-R1", "locator": "discretionary-approval-limits#2.1"}, {"sourceRevisionId": "SOP-DISCOUNT-001-R2", "locator": "discretionary-approval-limits#2.1"}]\`, \`rationale: "Revision 1 permitted sales managers to grant 25% discounts autonomously, which was subsequently superseded by Revision 2 restricting unescalated discretion to 15%."\`
+Explanation: Genuine supersession conflict where prior revision's authorized threshold contradicts the active superseding revision.
+
+### Example 3: Near-Miss Non-Finding — Distinct Geographically Scoped Thresholds
+Sources:
+- \`TRAVEL-POL-001-R1\` (Source Type: POLICY):
+  - Locator \`meal-reimbursement-tiers#4.1\`: "For domestic travel within North America, meal expenses are reimbursed up to a maximum per diem of $75 USD."
+  - Locator \`meal-reimbursement-tiers#4.2\`: "For international travel outside North America, meal expenses are reimbursed up to a maximum per diem of $150 USD."
+Compiler Output:
+- Requirements:
+  - \`REQ-PERDIEM-DOM\` (category: \`business-rule\`, statement: "...domestic travel within North America... maximum per diem of $75 USD...")
+  - \`REQ-PERDIEM-INT\` (category: \`business-rule\`, statement: "...international travel outside North America... maximum per diem of $150 USD...")
+- Findings: NONE (\`[]\`).
+Explanation: Distinct dollar thresholds ($75 vs $150) are explicitly partitioned by geographic scope (domestic vs international). This is NOT a contradiction. Do NOT emit a finding.
+
+### Example 4: Near-Miss Non-Finding — Paraphrased / Semantically Equivalent Timeframes
+Sources:
+- \`ONBOARD-DOC-001-R1\` (Source Type: SOP, Locator: \`security-setup#2.2\`):
+  "New employees must complete enrollment in multi-factor authentication within 48 hours of initial account provisioning."
+- \`SEC-CHECK-001-R1\` (Source Type: POLICY, Locator: \`mfa-compliance#1.3\`):
+  "For all newly created user accounts, multi-factor authentication registration must be completed no later than 48 hours following initial account provisioning."
+Compiler Output:
+- Requirements:
+  - \`REQ-MFA-ONBOARD\` (category: \`actors-permissions\`, statement: "...enrollment in multi-factor authentication within 48 hours...")
+  - \`REQ-MFA-SEC\` (category: \`actors-permissions\`, statement: "...multi-factor authentication registration must be completed no later than 48 hours...")
+- Findings: NONE (\`[]\`).
+Explanation: "within 48 hours" and "no later than 48 hours" express the exact same timing constraint using different words. They are semantically equivalent paraphrases, NOT a contradiction. Do NOT emit a finding.
 
 ## Output Format
 You must respond with ONLY a JSON object conforming to the following structure:

@@ -72,6 +72,31 @@ describe('FilesystemRequirementsRepository', () => {
 
     const latest = await repo.getLatestSourceRevision(sourceId);
     expect(latest?.revision.id).toBe('SRC-001-R1');
+    expect(record.sourceType).toBe('sop');
+    expect(latest?.sourceType).toBe('sop');
+
+    const fetched = await repo.getSourceRevision(createSourceRevisionId('SRC-001-R1'));
+    expect(fetched?.sourceType).toBe('sop');
+  });
+
+  it('persists and round-trips sourceType across capture and getSourceRevision for distinct source types', async () => {
+    const types = ['policy', 'interview', 'schema', 'spreadsheet', 'sop'] as const;
+    for (const st of types) {
+      const sourceId = createSourceId(`SRC-TYPE-${st.toUpperCase()}`);
+      const captured = await repo.captureSourceRevision({
+        sourceId,
+        sourceType: st,
+        markdownText: `# Title\n\nContent for ${st}.`
+      });
+      expect(captured.sourceType).toBe(st);
+
+      const fetched = await repo.getSourceRevision(captured.revision.id);
+      expect(fetched).toBeDefined();
+      expect(fetched?.sourceType).toBe(st);
+
+      const latest = await repo.getLatestSourceRevision(sourceId);
+      expect(latest?.sourceType).toBe(st);
+    }
   });
 
   it('idempotently recaptures byte-identical latest content without creating a new revision', async () => {
