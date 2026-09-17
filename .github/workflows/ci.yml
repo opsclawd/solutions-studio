@@ -47,6 +47,9 @@ jobs:
           PUPPETEER_CONFIG_PATH: ${{ github.workspace }}/.github/puppeteer-config.json
         run: pnpm -r --if-present test
 
+      - name: Run Phase 1 Exit Gate Integration
+        run: pnpm --filter @solutions-studio/orchestrator exit-gate
+
       - name: Install Playwright Browsers
         run: pnpm --filter @solutions-studio/web exec playwright install --with-deps chromium
 

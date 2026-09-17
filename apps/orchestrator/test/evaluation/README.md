@@ -100,18 +100,74 @@ pnpm --filter @solutions-studio/orchestrator eval \
 > [!IMPORTANT]
 > The candidate SHA supplied via `--candidate-sha` represents `requested` provenance in the evaluation report unless independently verified by the operator. Live provider runs execute only against the versioned synthetic corpus; no production or customer data is transmitted.
 
-## Issue #12 Candidate Validation & Disposition Checklist
+## Phase 1 Release Batch Candidate Validation & Disposition Procedure
 
-Before Phase 1 promotion, an authoritative reviewer executes the following steps:
+After all Phase 1 issues (#6–#12) have merged into the Release Batch branch and the coordinator locks the exact candidate SHA, an authoritative human operator performs Phase 1 validation against that exact SHA using the following procedure:
 
-1. **Lock Exact Candidate SHA:** Pin the working tree commit SHA (`git rev-parse HEAD`).
-2. **Execute Live Evaluation:** Run the real-provider command targeting the pinned candidate SHA.
-3. **Reload Persisted Run:** Verify that the run reloaded from `.evaluation-store` matches the output report.
-4. **Inspect Defect & Requirement Quality:**
+1. **Lock Exact Candidate SHA:**
+   Ensure the working tree is clean and capture the exact candidate commit SHA:
+
+   ```bash
+   CANDIDATE_SHA=$(git rev-parse HEAD)
+   echo "Validating Candidate SHA: ${CANDIDATE_SHA}"
+   ```
+
+2. **Execute Deterministic Synthetic Verification & Exit Gate:**
+   Verify all unit tests, typecheck, linting, and the Phase 1 exit gate complete deterministically without network or live provider credentials:
+
+   ```bash
+   pnpm typecheck
+   pnpm lint
+   pnpm --filter @solutions-studio/orchestrator test
+   pnpm --filter @solutions-studio/orchestrator exit-gate
+   ```
+
+3. **Execute Real-Provider Candidate Evaluation (Synthetic Corpus Only):**
+   Execute empirical evaluation against the configured real provider (`agy` or `opencode`) targeting the pinned candidate SHA:
+
+   ```bash
+   # Antigravity CLI
+   pnpm --filter @solutions-studio/orchestrator eval \
+     --provider agy \
+     --candidate-sha "${CANDIDATE_SHA}" \
+     --store ".evaluation-store" \
+     --output "reports/evaluation-report-${CANDIDATE_SHA}.json" \
+     --output-markdown "reports/evaluation-report-${CANDIDATE_SHA}.md"
+
+   # or OpenCode CLI
+   pnpm --filter @solutions-studio/orchestrator eval \
+     --provider opencode \
+     --candidate-sha "${CANDIDATE_SHA}" \
+     --store ".evaluation-store" \
+     --output "reports/evaluation-report-${CANDIDATE_SHA}.json" \
+     --output-markdown "reports/evaluation-report-${CANDIDATE_SHA}.md"
+   ```
+
+   > [!IMPORTANT]
+   > The candidate SHA supplied via `--candidate-sha` represents `requested` provenance in the evaluation report unless independently verified by the operator. Live provider runs execute only against the versioned synthetic corpus; no production or customer data is transmitted.
+
+4. **Verify End-to-End Baseline Projection & Closed-Loop Repair:**
+   Execute the standalone tracer targeting the configured real provider to inspect diagram generation and <=2 repair behavior:
+
+   ```bash
+   pnpm --filter @solutions-studio/orchestrator tracer --provider agy
+   # or
+   pnpm --filter @solutions-studio/orchestrator tracer --provider opencode
+   ```
+
+5. **Inspect Empirical Quality & Runtime Diagnostics:**
+   - Reload the persisted run from `.evaluation-store` and verify parity with output reports.
    - Inspect category-specific misses (False Negatives).
    - Inspect expected-non-finding hotspots (False Positives from near-conflict traps).
    - Inspect unclassified candidate observations emitted by the compiler.
    - Inspect measured provider and model runtime metadata per fixture.
    - Verify 0 execution failures across all 14 fixtures.
-5. **Record Human Disposition:** Copy and complete `docs/phase-1-report-template.md`. Leave the GO recommendation unchecked until empirical evidence is reviewed.
-6. **No Arbitrary Quality Threshold:** Solutions Studio establishes empirical baselines. No arbitrary 90% or 95% pass threshold is enforced by software gates.
+
+6. **Record Authoritative Human Disposition:**
+   Copy `docs/phase-1-report-template.md` to `docs/reports/phase-1-${CANDIDATE_SHA}.md` and complete all sections.
+   Select exactly ONE human disposition:
+   - **GO** — approve the exact candidate SHA and proceed to promotion; or
+   - **DESIGN CHANGE** — reject the candidate and append remediation issue(s) to the release batch before re-testing.
+
+   > [!CAUTION]
+   > The autonomous implementation Run must not make this product/architecture promotion decision on the operator's behalf. Solutions Studio establishes empirical baselines; no arbitrary 90% or 95% pass threshold is enforced by software gates.

@@ -176,7 +176,7 @@ Implementation discipline: the PRD describes destination concepts, not a mandate
 
 ## Candidate-SHA Real-Provider Validation Checklist
 
-For authoritative release validation and Phase 1 exit gating against a configured real provider (e.g. `agy` or `opencode`), execute the following checklist using only synthetic, non-sensitive fixtures:
+For authoritative release validation and Phase 1 exit gating against a configured real provider (e.g. `agy` or `opencode`), execute the canonical procedure documented in [`apps/orchestrator/test/evaluation/README.md`](file:///home/gary/.openclaw/workspace/solutions-studio/.ai-worktrees/issue-12/apps/orchestrator/test/evaluation/README.md) using only synthetic, non-sensitive fixtures:
 
 1. **Pin Candidate SHA:**
    Ensure your working tree is clean and capture the exact candidate commit SHA:
@@ -187,14 +187,13 @@ For authoritative release validation and Phase 1 exit gating against a configure
    ```
 
 2. **Run Deterministic Synthetic Fixture Verification:**
-   Verify all unit tests, typecheck, linting, and witness harnesses complete without network or provider credentials:
+   Verify all unit tests, typecheck, linting, and the Phase 1 exit gate complete without network or provider credentials:
 
    ```bash
    pnpm typecheck
    pnpm lint
    pnpm --filter @solutions-studio/orchestrator test
-   pnpm --filter @solutions-studio/orchestrator exec tsx scripts/run-reconciliation-harness.ts
-   pnpm --filter @solutions-studio/orchestrator eval
+   pnpm --filter @solutions-studio/orchestrator exit-gate
    ```
 
 3. **Run Real-Provider Candidate Validation (Synthetic Fixtures Only):**
@@ -233,4 +232,4 @@ For authoritative release validation and Phase 1 exit gating against a configure
    - False-positive hotspots and unclassified observations
    - Provider/model observations (latency, tokens, repair counts)
    - Evidence-backed design changes
-   - Complete the exit decision gate (`[ ] GO / [ ] NO-GO / [ ] CONDITIONAL`) with reviewing authority signature (no arbitrary 90%/95% threshold is enforced).
+   - Complete the exit decision gate (`[ ] GO / [ ] DESIGN CHANGE`) with reviewing authority signature (no arbitrary 90%/95% threshold is enforced).
