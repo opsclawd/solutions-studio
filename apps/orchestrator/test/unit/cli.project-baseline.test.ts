@@ -88,6 +88,38 @@ describe('ProjectBaseline CLI and composition', () => {
       expect(parsed.opencodeBinPath).toBe(path.resolve(process.cwd(), '/opt/bin/opencode'));
     });
 
+    it('parses --model option for agy provider', () => {
+      const parsed = parseArgs([
+        '--baseline',
+        'BASE-001',
+        '--artifact-type',
+        'process-diagram',
+        '--provider',
+        'agy',
+        '--model',
+        'gemini-3.1-pro-high'
+      ]);
+
+      expect(parsed.provider).toBe('agy');
+      expect(parsed.modelName).toBe('gemini-3.1-pro-high');
+    });
+
+    it('parses --model option for opencode provider', () => {
+      const parsed = parseArgs([
+        '--baseline',
+        'BASE-001',
+        '--artifact-type',
+        'process-diagram',
+        '--provider',
+        'opencode',
+        '--model',
+        'minimax-coding-plan/MiniMax-M3'
+      ]);
+
+      expect(parsed.provider).toBe('opencode');
+      expect(parsed.modelName).toBe('minimax-coding-plan/MiniMax-M3');
+    });
+
     it('rejects unknown options', () => {
       expect(() =>
         parseArgs([
@@ -269,6 +301,36 @@ describe('ProjectBaseline CLI and composition', () => {
       expect(components.generationGateway).toBeInstanceOf(OpenCodeCliAdapter);
       expect(components.repository).toBeInstanceOf(FilesystemRequirementsRepository);
       expect(components.provider).toBe('opencode');
+    });
+
+    it('threads model option to generation adapter for agy provider', () => {
+      const components = composeProjectBaselineComponents({
+        baselineId: 'BASE-PROD-003',
+        artifactType: 'process-diagram',
+        provider: 'agy',
+        storeDir: tempDir,
+        modelName: 'gemini-3.1-pro-high'
+      });
+
+      expect(components.generationGateway).toBeInstanceOf(AntigravityCliAdapter);
+      expect((components.generationGateway as unknown as { model?: string }).model).toBe(
+        'gemini-3.1-pro-high'
+      );
+    });
+
+    it('threads model option to generation adapter for opencode provider', () => {
+      const components = composeProjectBaselineComponents({
+        baselineId: 'BASE-PROD-004',
+        artifactType: 'state-diagram',
+        provider: 'opencode',
+        storeDir: tempDir,
+        modelName: 'minimax-coding-plan/MiniMax-M3'
+      });
+
+      expect(components.generationGateway).toBeInstanceOf(OpenCodeCliAdapter);
+      expect((components.generationGateway as unknown as { model?: string }).model).toBe(
+        'minimax-coding-plan/MiniMax-M3'
+      );
     });
   });
 

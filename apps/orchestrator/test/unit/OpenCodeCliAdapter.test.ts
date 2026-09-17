@@ -168,4 +168,108 @@ exit 0
       await fs.unlink(tempScript).catch(() => {});
     }
   });
+
+  it('passes -m flag to spawned CLI args and populates metadata.model when model option is set', async () => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const tempScript = path.join(os.tmpdir(), `mock-opencode-model-${id}.sh`);
+    const captureFile = path.join(os.tmpdir(), `mock-opencode-args-${id}.txt`);
+    const scriptContent = `#!/bin/sh
+for arg in "$@"; do
+  printf '%s\\n' "$arg" >> "${captureFile}"
+done
+cat << 'EOF'
+{"type":"step_start","timestamp":100}
+{"type":"text","part":{"type":"text","text":"graph TD;\\n  A-->B;"}}
+{"type":"step_finish","part":{"tokens":{"input":15,"output":25,"total":40}}}
+EOF
+exit 0
+`;
+    await fs.writeFile(tempScript, scriptContent, { mode: 0o755 });
+
+    try {
+      const adapter = new OpenCodeCliAdapter({
+        executablePath: tempScript,
+        model: 'minimax-coding-plan/MiniMax-M3'
+      });
+
+      const result = await adapter.generate({ prompt: 'generate diagram' });
+
+      expect(result.text).toBe('graph TD;\n  A-->B;');
+      expect(result.metadata?.model).toBe('minimax-coding-plan/MiniMax-M3');
+
+      const capturedRaw = await fs.readFile(captureFile, 'utf-8');
+      const capturedArgs = capturedRaw.trim().split('\n');
+
+      expect(capturedArgs).toContain('-m');
+      const mIndex = capturedArgs.indexOf('-m');
+      expect(capturedArgs[mIndex + 1]).toBe('minimax-coding-plan/MiniMax-M3');
+      // prompt is the last argument after -m <model>
+      expect(capturedArgs.length).toBeGreaterThan(mIndex + 1);
+    } finally {
+      await fs.unlink(tempScript).catch(() => {});
+      await fs.unlink(captureFile).catch(() => {});
+    }
+  });
+
+  it('does not pass -m flag and leaves metadata.model undefined when model option is unset', async () => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const tempScript = path.join(os.tmpdir(), `mock-opencode-nomodel-${id}.sh`);
+    const captureFile = path.join(os.tmpdir(), `mock-opencode-args-${id}.txt`);
+    const scriptContent = `#!/bin/sh
+for arg in "$@"; do
+  printf '%s\\n' "$arg" >> "${captureFile}"
+done
+cat << 'EOF'
+{"type":"step_start","timestamp":100}
+{"type":"text","part":{"type":"text","text":"graph TD;\\n  A-->B;"}}
+{"type":"step_finish","part":{"tokens":{"input":15,"output":25,"total":40}}}
+EOF
+exit 0
+`;
+    await fs.writeFile(tempScript, scriptContent, { mode: 0o755 });
+
+    try {
+      const adapter = new OpenCodeCliAdapter({
+        executablePath: tempScript
+      });
+
+      const result = await adapter.generate({ prompt: 'generate diagram' });
+
+      expect(result.text).toBe('graph TD;\n  A-->B;');
+      expect(result.metadata?.model).toBeUndefined();
+
+      const capturedRaw = await fs.readFile(captureFile, 'utf-8');
+      const capturedArgs = capturedRaw.trim().split('\n');
+
+      expect(capturedArgs).not.toContain('-m');
+    } finally {
+      await fs.unlink(tempScript).catch(() => {});
+      await fs.unlink(captureFile).catch(() => {});
+    }
+  });
+
+  it('populates metadata.model from NDJSON events when present', async () => {
+    const tempScript = path.join(os.tmpdir(), `mock-opencode-eventmodel-${Date.now()}.sh`);
+    const scriptContent = `#!/bin/sh
+cat << 'EOF'
+{"type":"step_start","timestamp":100,"model":"streamed-provider/streamed-model-v2"}
+{"type":"text","part":{"type":"text","text":"graph TD;\\n  A-->B;"}}
+{"type":"step_finish","part":{"tokens":{"input":15,"output":25,"total":40}}}
+EOF
+exit 0
+`;
+    await fs.writeFile(tempScript, scriptContent, { mode: 0o755 });
+
+    try {
+      const adapter = new OpenCodeCliAdapter({
+        executablePath: tempScript,
+        model: 'configured-fallback-model'
+      });
+
+      const result = await adapter.generate({ prompt: 'generate diagram' });
+      expect(result.metadata?.model).toBe('streamed-provider/streamed-model-v2');
+    } finally {
+      await fs.unlink(tempScript).catch(() => {});
+    }
+  });
 });
