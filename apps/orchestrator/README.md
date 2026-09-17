@@ -109,6 +109,23 @@ pnpm --filter @solutions-studio/orchestrator eval --provider agy --candidate-sha
 pnpm --filter @solutions-studio/orchestrator eval --provider opencode --candidate-sha "${CANDIDATE_SHA}"
 ```
 
+### 6. Run Baseline Projection Command
+
+```bash
+# Real provider candidate baseline projection (against an exit gate store)
+pnpm --filter @solutions-studio/orchestrator project \
+  --baseline BASE-CANONICAL-MESSY-001 \
+  --artifact-type process-diagram \
+  --provider agy \
+  --store ".validation-store"
+# or
+pnpm --filter @solutions-studio/orchestrator project \
+  --baseline BASE-CANONICAL-MESSY-001 \
+  --artifact-type process-diagram \
+  --provider opencode \
+  --store ".validation-store"
+```
+
 ---
 
 ## CLI Execution Contracts & Observed Findings
@@ -180,7 +197,7 @@ The Phase 0 generation and Mermaid validation seam was validated and de-risked. 
 
 ## Phase 1 Release Batch Candidate Validation Checklist
 
-For authoritative release validation and Phase 1 exit gating against a configured real provider (e.g. `agy` or `opencode`), execute the canonical procedure documented in [`test/evaluation/README.md`](file:///home/gary/.openclaw/workspace/solutions-studio/.ai-worktrees/issue-12/apps/orchestrator/test/evaluation/README.md) using only synthetic, non-sensitive fixtures:
+For authoritative release validation and Phase 1 exit gating against a configured real provider (e.g. `agy` or `opencode`), execute the canonical procedure documented in [`test/evaluation/README.md`](test/evaluation/README.md) using only synthetic, non-sensitive fixtures:
 
 1. **Pin Candidate SHA:**
    Ensure your working tree is clean and capture the exact candidate commit SHA:
@@ -197,17 +214,28 @@ For authoritative release validation and Phase 1 exit gating against a configure
    pnpm typecheck
    pnpm lint
    pnpm --filter @solutions-studio/orchestrator test
-   pnpm --filter @solutions-studio/orchestrator exit-gate
+   pnpm --filter @solutions-studio/orchestrator exit-gate --store ".validation-store"
    ```
 
+   > [!NOTE]
+   > Passing `--store ".validation-store"` preserves the reconciled requirements repository and verified baseline `BASE-CANONICAL-MESSY-001` on disk beneath `apps/orchestrator/.validation-store` for subsequent real-provider baseline projection. A normal `exit-gate` invocation without `--store` creates and removes an ephemeral temporary store.
+
 3. **Run Real-Provider Candidate Validation (Synthetic Fixtures Only):**
-   Execute the tracer and evaluation runner targeting the configured real provider:
+   Execute baseline projection and the evaluation runner targeting the configured real provider:
 
    ```bash
-   # Validate diagram generation and closed-loop repair with real provider
-   pnpm --filter @solutions-studio/orchestrator tracer --provider agy
+   # Project verified baseline with real provider using real MermaidCliLinterAdapter (reusing existing <= 2 repair attempts)
+   pnpm --filter @solutions-studio/orchestrator project \
+     --baseline BASE-CANONICAL-MESSY-001 \
+     --artifact-type process-diagram \
+     --provider agy \
+     --store ".validation-store"
    # or
-   pnpm --filter @solutions-studio/orchestrator tracer --provider opencode
+   pnpm --filter @solutions-studio/orchestrator project \
+     --baseline BASE-CANONICAL-MESSY-001 \
+     --artifact-type process-diagram \
+     --provider opencode \
+     --store ".validation-store"
 
    # Execute requirements intelligence evaluation runner over the synthetic corpus
    pnpm --filter @solutions-studio/orchestrator eval \
@@ -224,6 +252,11 @@ For authoritative release validation and Phase 1 exit gating against a configure
      --output "reports/evaluation-report-${CANDIDATE_SHA}.json" \
      --output-markdown "reports/evaluation-report-${CANDIDATE_SHA}.md"
    ```
+
+   > [!NOTE]
+   > The baseline projection command prints projection ID, baseline ID, exact requirement revision IDs, repairs needed, attempt count, and content hash; the full record is persisted to `apps/orchestrator/.validation-store/projections/<projection-id>.json`.
+   > The candidate SHA supplied to `eval` is recorded as `requested` provenance unless independently verified by the operator.
+   > The evaluation produces both machine-readable JSON and human-readable Markdown reports.
 
 4. **Record Authoritative Human Disposition:**
    Copy `docs/phase-1-report-template.md` to `docs/reports/phase-1-${CANDIDATE_SHA}.md` and record:
