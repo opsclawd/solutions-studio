@@ -103,7 +103,7 @@ export function renderHumanReport(report: EvaluationReportDto): string {
   lines.push('');
   if (report.aggregateScores.unclassifiedFindingsCount > 0) {
     lines.push(
-      `> [!WARNING]\n> **Unclassified False Positive Findings:** ${report.aggregateScores.unclassifiedFindingsCount} candidate findings did not match any expected finding or non-finding signature.`
+      `> [!WARNING]\n> **Unclassified False Positive Findings:** ${report.aggregateScores.unclassifiedFindingsCount} candidate finding(s) did not match any expected finding or exact non-finding signature. These contribute to false-positive counts and category precision.`
     );
     lines.push('');
   }
@@ -133,7 +133,12 @@ export function renderHumanReport(report: EvaluationReportDto): string {
     desc?: string;
     findingId?: string;
   }[] = [];
-  const unclassifiedFPs: { fixtureId: string; findingId?: string; domainType: string }[] = [];
+  const unclassifiedFPs: {
+    fixtureId: string;
+    findingId?: string;
+    domainType: string;
+    category?: string;
+  }[] = [];
 
   for (const fixtureRes of report.fixtureResults) {
     if (fixtureRes.status === 'completed') {
@@ -170,7 +175,8 @@ export function renderHumanReport(report: EvaluationReportDto): string {
         unclassifiedFPs.push({
           fixtureId: fixtureRes.fixtureId,
           findingId: u.findingId,
-          domainType: u.domainType
+          domainType: u.domainType,
+          category: u.category
         });
       }
     }
@@ -223,8 +229,9 @@ export function renderHumanReport(report: EvaluationReportDto): string {
       lines.push('### Unclassified Spurious Findings');
       lines.push('');
       for (const ufp of unclassifiedFPs) {
+        const catDesc = ufp.category ? `Category: \`${ufp.category}\`, ` : '';
         lines.push(
-          `- Fixture \`${ufp.fixtureId}\`: Spurious finding \`${ufp.findingId}\` (Type: \`${ufp.domainType}\`)`
+          `- Fixture \`${ufp.fixtureId}\`: Spurious finding \`${ufp.findingId}\` (${catDesc}Type: \`${ufp.domainType}\`)`
         );
       }
       lines.push('');
@@ -289,12 +296,21 @@ export function renderHumanReport(report: EvaluationReportDto): string {
     lines.push('');
   }
 
-  lines.push('## Empirical Baseline Notice');
-  lines.push('');
-  lines.push(
-    '> [!NOTE]\n> This report reflects empirical versioned corpus evaluation. No arbitrary production promotion threshold (such as 90% or 95%) is enforced by this runner. Phase 1 candidate approval requires authoritative human review via `docs/phase-1-report-template.md`.'
-  );
-  lines.push('');
+  if (report.provenance.requested.providerMode === 'fixture-replay') {
+    lines.push('## Deterministic Replay Self-Check Notice');
+    lines.push('');
+    lines.push(
+      '> [!NOTE]\n> This report reflects a deterministic replay self-check (smoke test). Fixture ground truth is replayed to verify evaluation and scoring pipeline plumbing; this is not an empirical provider baseline. Real-provider empirical evaluation requires running the evaluation harness against a live provider on a pinned candidate SHA.'
+    );
+    lines.push('');
+  } else {
+    lines.push('## Empirical Baseline Notice');
+    lines.push('');
+    lines.push(
+      '> [!NOTE]\n> This report reflects empirical versioned corpus evaluation. No arbitrary production promotion threshold (such as 90% or 95%) is enforced by this runner. Phase 1 candidate approval requires authoritative human review via `docs/phase-1-report-template.md`.'
+    );
+    lines.push('');
+  }
 
   return lines.join('\n');
 }

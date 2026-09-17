@@ -248,7 +248,9 @@ describe('scoreFixture (pure structural scoring)', () => {
     expect(score.mismatchedFindings).toHaveLength(2); // 1 missing expected finding, 1 unclassified observed
     const catScore = score.findingsByCategory['contradictory-approval-thresholds']!;
     expect(catScore.truePositives).toBe(0);
+    expect(catScore.falsePositives).toBe(1);
     expect(catScore.falseNegatives).toBe(1);
+    expect(catScore.precision).toBe(0);
   });
 
   it('an expected non-finding matched by an observed finding attributes a False Positive to non-finding category', () => {
@@ -290,7 +292,7 @@ describe('scoreFixture (pure structural scoring)', () => {
     expect(nearConflictScore.truePositives).toBe(0);
   });
 
-  it('unclassified findings remain visible in unclassifiedFindings bucket', () => {
+  it('unclassified findings remain visible in unclassifiedFindings bucket and attribute category FP', () => {
     const groundTruth: NormalizedGroundTruth = {
       expectedRequirements: [],
       expectedFindings: [],
@@ -316,6 +318,124 @@ describe('scoreFixture (pure structural scoring)', () => {
     expect(score.unclassifiedFindings).toHaveLength(1);
     expect(score.unclassifiedFindings[0].findingId).toBe('FIND-STRAY-01');
     expect(score.unclassifiedFindings[0].type).toBe('unclassified-observed');
+    expect(score.unclassifiedFindings[0].category).toBe('unsupported-assumptions');
+    const catScore = score.findingsByCategory['unsupported-assumptions']!;
+    expect(catScore.falsePositives).toBe(1);
+    expect(catScore.precision).toBe(0);
+  });
+
+  it('a finding of a declared type with evidence that partially overlaps a non-finding fixture reduces category precision', () => {
+    const ref1 = createEvidenceReference(
+      createSourceRevisionId('SRC-01-R1'),
+      createEvidenceLocator('sec-1#1.1')
+    );
+    const ref3 = createEvidenceReference(
+      createSourceRevisionId('SRC-01-R1'),
+      createEvidenceLocator('sec-1#1.3')
+    );
+
+    const groundTruth: NormalizedGroundTruth = {
+      expectedRequirements: [],
+      expectedFindings: [],
+      expectedNonFindings: [
+        {
+          description: 'Near-conflict threshold pairing',
+          category: 'false-positive-near-conflict',
+          wouldBeType: 'contradiction',
+          evidence: [
+            { sourceRevisionId: 'SRC-01-R1', locator: 'sec-1#1.1' },
+            { sourceRevisionId: 'SRC-01-R1', locator: 'sec-1#1.2' }
+          ],
+          declaredEvidence: [
+            { sourceRevisionId: 'SRC-01-R1', locator: 'sec-1#1.1' },
+            { sourceRevisionId: 'SRC-01-R1', locator: 'sec-1#1.2' }
+          ],
+          normalizedEvidence: [
+            { sourceRevisionId: 'SRC-01-R1', locator: 'sec-1#1.1' },
+            { sourceRevisionId: 'SRC-01-R1', locator: 'sec-1#1.2' }
+          ]
+        }
+      ]
+    };
+
+    // Observed finding has partial evidence overlap (ref1 matches, ref3 differs)
+    const partialOverlapFinding = createCandidateFinding({
+      id: createFindingId('FIND-PARTIAL-01'),
+      type: 'contradiction',
+      affectedRequirementRevisions: [],
+      evidence: [ref1, ref3],
+      discoveredBy: 'model',
+      disposition: 'OPEN'
+    });
+
+    const score = scoreFixture({
+      groundTruth,
+      observedRequirements: [],
+      observedFindings: [partialOverlapFinding]
+    });
+
+    expect(score.matchedFindings).toHaveLength(0);
+    // Unmatched with exact non-finding, but attributed to false-positive-near-conflict via overlap
+    expect(score.unclassifiedFindingsCount).toBe(1);
+    expect(score.unclassifiedFindings[0].category).toBe('false-positive-near-conflict');
+    const catScore = score.findingsByCategory['false-positive-near-conflict']!;
+    expect(catScore.truePositives).toBe(0);
+    expect(catScore.falsePositives).toBe(1);
+    expect(catScore.precision).toBe(0);
+  });
+
+  it('contradiction finding with zero evidence overlap in multi-contradiction fixture remains unclassified without category attribution', () => {
+    const groundTruth: NormalizedGroundTruth = {
+      expectedRequirements: [],
+      expectedFindings: [
+        {
+          findingKey: 'FIND-THRESH-01',
+          category: 'contradictory-approval-thresholds',
+          type: 'contradiction',
+          evidence: [{ sourceRevisionId: 'SRC-01-R1', locator: 'sec-1#1.1' }],
+          declaredEvidence: [{ sourceRevisionId: 'SRC-01-R1', locator: 'sec-1#1.1' }],
+          normalizedEvidence: [{ sourceRevisionId: 'SRC-01-R1', locator: 'sec-1#1.1' }],
+          relatedRequirementKeys: []
+        },
+        {
+          findingKey: 'FIND-AUTH-01',
+          category: 'source-authority-conflict',
+          type: 'contradiction',
+          evidence: [{ sourceRevisionId: 'SRC-02-R1', locator: 'sec-2#2.1' }],
+          declaredEvidence: [{ sourceRevisionId: 'SRC-02-R1', locator: 'sec-2#2.1' }],
+          normalizedEvidence: [{ sourceRevisionId: 'SRC-02-R1', locator: 'sec-2#2.1' }],
+          relatedRequirementKeys: []
+        }
+      ],
+      expectedNonFindings: []
+    };
+
+    // Completely unrelated stray contradiction with no evidence overlap to either category
+    const strayFinding = createCandidateFinding({
+      id: createFindingId('FIND-AMBIGUOUS-01'),
+      type: 'contradiction',
+      affectedRequirementRevisions: [],
+      evidence: [
+        createEvidenceReference(
+          createSourceRevisionId('SRC-99-R1'),
+          createEvidenceLocator('sec-99#9.9')
+        )
+      ],
+      discoveredBy: 'model',
+      disposition: 'OPEN'
+    });
+
+    const score = scoreFixture({
+      groundTruth,
+      observedRequirements: [],
+      observedFindings: [strayFinding]
+    });
+
+    expect(score.unclassifiedFindingsCount).toBe(1);
+    expect(score.unclassifiedFindings[0].category).toBeUndefined();
+    // Neither contradiction category receives a false positive without evidence overlap
+    expect(score.findingsByCategory['contradictory-approval-thresholds']!.falsePositives).toBe(0);
+    expect(score.findingsByCategory['source-authority-conflict']!.falsePositives).toBe(0);
   });
 
   it('statement pattern mismatch records diagnostic but does NOT alter structural True Positive', () => {
@@ -455,6 +575,8 @@ describe('scoreFixture (pure structural scoring)', () => {
     // Must NOT award True Positive because model returned an extra unmapped requirement key
     expect(score.matchedFindings).toHaveLength(0);
     expect(score.findingsByCategory['contradictory-approval-thresholds']!.truePositives).toBe(0);
+    expect(score.findingsByCategory['contradictory-approval-thresholds']!.falsePositives).toBe(1);
     expect(score.findingsByCategory['contradictory-approval-thresholds']!.falseNegatives).toBe(1);
+    expect(score.findingsByCategory['contradictory-approval-thresholds']!.precision).toBe(0);
   });
 });

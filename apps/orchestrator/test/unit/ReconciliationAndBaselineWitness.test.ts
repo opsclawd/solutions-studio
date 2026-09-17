@@ -2,13 +2,17 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it, expect } from 'vitest';
-import { runPhase1ExitGate } from '../harness/runPhase1ExitGate.js';
+import { runPhase1ExitGate } from '../../src/application/harness/runPhase1ExitGate.js';
+import { createPhase1TestAdapter } from '../harness/createPhase1ExitGateAdapter.js';
 import { runEvaluation } from '../../src/infrastructure/evaluation/runEvaluation.js';
 import { FilesystemRequirementsRepository } from '../../src/infrastructure/persistence/filesystem/FilesystemRequirementsRepository.js';
 
 describe('Phase 1.7 — End-to-End Baseline Projection & Exit Gate Witness', () => {
   it('executes complete Phase 1 integration workflow: import messy package -> compile -> reconcile -> lineage block -> baseline -> restart reload -> repaired Mermaid projection -> evaluation report', async () => {
-    const result = await runPhase1ExitGate({ silent: true });
+    const result = await runPhase1ExitGate({
+      silent: true,
+      adapter: createPhase1TestAdapter()
+    });
 
     // 1. Ingestion & locator index assertions
     expect(result.success).toBe(true);
