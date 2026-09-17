@@ -1,6 +1,7 @@
 #!/usr/bin/env tsx
 import path from 'node:path';
-import { runPhase1ExitGate } from '../test/harness/runPhase1ExitGate.js';
+import { runPhase1ExitGate } from '../src/application/harness/runPhase1ExitGate.js';
+import { createPhase1TestAdapter } from '../test/harness/createPhase1ExitGateAdapter.js';
 
 function parseArgs(args: string[]): { storeDir?: string; cleanup?: boolean } {
   let storeDir: string | undefined;
@@ -26,7 +27,8 @@ async function main() {
     const result = await runPhase1ExitGate({
       storeDir,
       cleanup,
-      silent: false
+      silent: false,
+      adapter: createPhase1TestAdapter()
     });
 
     if (!result.success) {

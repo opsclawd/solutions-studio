@@ -249,6 +249,115 @@ export function scoreFixture(input: ScoreFixtureInput): FixtureScorerResultDto {
     }
   }
 
+  const TYPE_TO_CATEGORY_MAP: Partial<Record<string, FixtureCategoryDto>> = {
+    'missing-authorization': 'missing-actors-authorization',
+    'incomplete-state-machine': 'incomplete-state-transitions',
+    'missing-failure-recovery': 'missing-failure-recovery',
+    'temporal-ambiguity': 'temporal-ambiguity',
+    'undefined-cardinality': 'undefined-cardinality',
+    'unsupported-assumption': 'unsupported-assumptions'
+  };
+
+  function countEvidenceOverlap(
+    obsEvidence: readonly EvidenceExpectationDto[],
+    targetEvidence: readonly EvidenceExpectationDto[]
+  ): number {
+    let count = 0;
+    for (const obsItem of obsEvidence) {
+      if (
+        targetEvidence.some(
+          (targetItem) =>
+            targetItem.sourceRevisionId === obsItem.sourceRevisionId &&
+            targetItem.locator === obsItem.locator
+        )
+      ) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  function resolveFindingCategory(
+    obsFinding: CandidateFinding,
+    obsNormalizedEvidence: readonly EvidenceExpectationDto[],
+    groundTruth: NormalizedGroundTruth
+  ): FixtureCategoryDto | undefined {
+    interface CandidateMatch {
+      category: FixtureCategoryDto;
+      overlapCount: number;
+      isNonFinding: boolean;
+    }
+
+    const candidates: CandidateMatch[] = [];
+
+    for (const nf of groundTruth.expectedNonFindings) {
+      if (nf.wouldBeType === obsFinding.type) {
+        const overlap = countEvidenceOverlap(obsNormalizedEvidence, nf.normalizedEvidence);
+        if (overlap > 0) {
+          candidates.push({
+            category: nf.category,
+            overlapCount: overlap,
+            isNonFinding: true
+          });
+        }
+      }
+    }
+
+    for (const ef of groundTruth.expectedFindings) {
+      if (ef.type === obsFinding.type) {
+        const overlap = countEvidenceOverlap(obsNormalizedEvidence, ef.normalizedEvidence);
+        if (overlap > 0) {
+          candidates.push({
+            category: ef.category,
+            overlapCount: overlap,
+            isNonFinding: false
+          });
+        }
+      }
+    }
+
+    if (candidates.length > 0) {
+      candidates.sort((a, b) => {
+        if (b.overlapCount !== a.overlapCount) {
+          return b.overlapCount - a.overlapCount;
+        }
+        if (b.isNonFinding !== a.isNonFinding) {
+          return b.isNonFinding ? 1 : -1;
+        }
+        return a.category.localeCompare(b.category);
+      });
+
+      return candidates[0].category;
+    }
+
+    // No evidence overlap: check 1-to-1 finding type mapping
+    const mappedCategory = TYPE_TO_CATEGORY_MAP[obsFinding.type];
+    if (mappedCategory) {
+      return mappedCategory;
+    }
+
+    // If type is contradiction, check if the fixture context only has a single contradiction category
+    if (obsFinding.type === 'contradiction') {
+      const fixtureContradictionCategories = new Set<FixtureCategoryDto>();
+      for (const nf of groundTruth.expectedNonFindings) {
+        if (nf.wouldBeType === 'contradiction') {
+          fixtureContradictionCategories.add(nf.category);
+        }
+      }
+      for (const ef of groundTruth.expectedFindings) {
+        if (ef.type === 'contradiction') {
+          fixtureContradictionCategories.add(ef.category);
+        }
+      }
+
+      if (fixtureContradictionCategories.size === 1) {
+        return Array.from(fixtureContradictionCategories)[0];
+      }
+    }
+
+    return undefined;
+  }
+
   // Unmatched observed findings: check against expected non-findings or unclassified
   for (const obsFinding of observedFindings) {
     if (matchedObservedFindingIds.has(obsFinding.id)) {
@@ -280,9 +389,16 @@ export function scoreFixture(input: ScoreFixtureInput): FixtureScorerResultDto {
     }
 
     if (!matchedNonFinding) {
+      const resolvedCategory = resolveFindingCategory(
+        obsFinding,
+        obsNormalizedEvidence,
+        groundTruth
+      );
+
       const unclassifiedDetail: FindingMismatchDetailDto = {
         type: 'unclassified-observed',
         findingId: obsFinding.id,
+        category: resolvedCategory,
         domainType: obsFinding.type,
         observedEvidence: obsNormalizedEvidence as unknown as EvidenceExpectationDto[],
         affectedRequirementRevisions: [...obsFinding.affectedRequirementRevisions],
@@ -311,7 +427,9 @@ export function scoreFixture(input: ScoreFixtureInput): FixtureScorerResultDto {
   for (const cat of FIXTURE_CATEGORIES) {
     const tp = matchedFindings.filter((m) => m.category === cat).length;
     const fp = mismatchedFindings.filter(
-      (m) => m.type === 'matched-expected-non-finding' && m.category === cat
+      (m) =>
+        (m.type === 'matched-expected-non-finding' || m.type === 'unclassified-observed') &&
+        m.category === cat
     ).length;
     const fn = mismatchedFindings.filter(
       (m) => m.type === 'missing-expected' && m.category === cat

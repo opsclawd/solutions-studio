@@ -13,18 +13,28 @@
 
 Summary of candidate requirement extraction metrics across the versioned benchmark corpus:
 
-| Corpus Fixture                      | Target Requirements | Extracted | True Positives | False Positives | Recall | Precision |
-| :---------------------------------- | :------------------ | :-------- | :------------- | :-------------- | :----- | :-------- |
-| `missing-authorization-basic`       |                     |           |                |                 |        |           |
-| `contradiction-basic`               |                     |           |                |                 |        |           |
-| `temporal-ambiguity-basic`          |                     |           |                |                 |        |           |
-| `canonical-messy-discovery-package` |                     |           |                |                 |        |           |
-| **Total / Aggregate**               |                     |           |                |                 |        |           |
+| Corpus Fixture                                   | Target Requirements | Extracted | True Positives | False Positives | Recall | Precision |
+| :----------------------------------------------- | :------------------ | :-------- | :------------- | :-------------- | :----- | :-------- |
+| `approval-threshold-contradiction-basic`         |                     |           |                |                 |        |           |
+| `approval-threshold-contradiction-cross-source`  |                     |           |                |                 |        |           |
+| `missing-authorization-basic`                    |                     |           |                |                 |        |           |
+| `missing-authorization-role-gap`                 |                     |           |                |                 |        |           |
+| `incomplete-state-transition-basic`              |                     |           |                |                 |        |           |
+| `missing-failure-recovery-basic`                 |                     |           |                |                 |        |           |
+| `temporal-ambiguity-basic`                       |                     |           |                |                 |        |           |
+| `undefined-cardinality-basic`                    |                     |           |                |                 |        |           |
+| `unsupported-assumption-basic`                   |                     |           |                |                 |        |           |
+| `superseded-source-revision`                     |                     |           |                |                 |        |           |
+| `source-authority-conflict`                      |                     |           |                |                 |        |           |
+| `false-positive-near-conflict-scoped-thresholds` |                     |           |                |                 |        |           |
+| `false-positive-near-conflict-paraphrase`        |                     |           |                |                 |        |           |
+| `canonical-messy-discovery-package`              |                     |           |                |                 |        |           |
+| **Total / Aggregate**                            |                     |           |                |                 |        |           |
 
 ### Extraction Analysis & Notes
 
 - Observation of requirement completeness against source locators:
-- Accuracy of origin classifications (`EXPLICIT`, `ASSUMED`, `DERIVED`, `INFERRED`):
+- Accuracy of origin classifications (`EXPLICIT`, `INFERRED`, `ASSUMED`, `GENERATED_PROPOSAL`, `REVIEWER_PROPOSAL`):
 - Exactness and addressability of evidence references:
 
 ---
