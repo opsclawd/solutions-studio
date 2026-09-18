@@ -1,4 +1,5 @@
 import fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
+import cors from '@fastify/cors';
 import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod';
 import type { GetRequirementsReviewStateUseCase } from '../application/use-cases/GetRequirementsReviewStateUseCase.js';
 import type { ReconcileRequirementsUseCase } from '../application/use-cases/ReconcileRequirementsUseCase.js';
@@ -25,6 +26,16 @@ export function buildServer(
 
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
+
+  const rawOrigins = process.env.CORS_ORIGINS ?? process.env.CORS_ORIGIN;
+  const allowedOrigins = rawOrigins
+    ? rawOrigins.split(',').map((o) => o.trim())
+    : ['http://localhost:3000', 'http://127.0.0.1:3000'];
+
+  app.register(cors, {
+    origin: allowedOrigins,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS']
+  });
 
   app.setErrorHandler((error, _request, reply) => {
     const mapped = mapErrorToResponse(error);

@@ -8,7 +8,8 @@ import {
   ReopenFindingRequestDtoSchema,
   GenerateProjectionRequestDtoSchema,
   EvidenceExcerptDtoSchema,
-  RequirementsReviewStateDtoSchema
+  RequirementsReviewStateDtoSchema,
+  RevisionLineageEntryDtoSchema
 } from '../../src/requirements/index.js';
 import { ApiErrorDtoSchema, API_ERROR_CODES } from '../../src/http/index.js';
 
@@ -204,10 +205,43 @@ describe('HTTP and Review Schemas', () => {
             endLine: 3
           }
         ],
-        projections: []
+        projections: [],
+        revisionLineage: [
+          {
+            revisionId: 'REQ-001-R1',
+            requirementId: 'REQ-001'
+          }
+        ]
       });
       expect(parsed.requirementRevisions).toHaveLength(1);
+      expect(parsed.revisionLineage).toHaveLength(1);
       expect(parsed.baseline).toBeUndefined();
+    });
+  });
+
+  describe('RevisionLineageEntryDtoSchema', () => {
+    it('accepts valid revision lineage entry', () => {
+      const parsed = RevisionLineageEntryDtoSchema.parse({
+        revisionId: 'REQ-001-R1',
+        requirementId: 'REQ-001'
+      });
+      expect(parsed.revisionId).toBe('REQ-001-R1');
+      expect(parsed.requirementId).toBe('REQ-001');
+    });
+
+    it('rejects empty strings', () => {
+      expect(() =>
+        RevisionLineageEntryDtoSchema.parse({
+          revisionId: '',
+          requirementId: 'REQ-001'
+        })
+      ).toThrow();
+      expect(() =>
+        RevisionLineageEntryDtoSchema.parse({
+          revisionId: 'REQ-001-R1',
+          requirementId: ''
+        })
+      ).toThrow();
     });
   });
 

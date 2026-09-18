@@ -8,6 +8,7 @@
     "test:browser": "pnpm --filter @solutions-studio/web test:browser",
     "test:integration": "pnpm --filter @solutions-studio/orchestrator test:integration",
     "dev:web": "pnpm --filter @solutions-studio/web dev",
+    "dev:orchestrator": "pnpm --filter @solutions-studio/orchestrator exec tsx scripts/run-http-server.ts --port 4000",
     "tracer": "pnpm --filter @solutions-studio/orchestrator tracer",
     "project": "pnpm --filter @solutions-studio/orchestrator project",
     "lint": "eslint .",

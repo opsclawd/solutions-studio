@@ -132,6 +132,10 @@ export function mapReviewStateToDto(state: RequirementsReviewState): Requirement
     findings: state.findings.map(mapCandidateFindingToDto),
     reconciliationHistory: state.reconciliationHistory.map(mapReconciliationRecordToDto),
     evidenceExcerpts: state.evidenceExcerpts.map(mapEvidenceExcerptToDto),
-    projections: state.projections.map(mapProjectionRecordToDto)
+    projections: state.projections.map(mapProjectionRecordToDto),
+    revisionLineage: state.revisionLineage.map((entry) => ({
+      revisionId: entry.revisionId,
+      requirementId: entry.requirementId
+    }))
   };
 }

@@ -326,11 +326,17 @@ export const EvidenceExcerptDtoSchema = z.object({
   endLine: z.number().int().positive()
 });
 
+export const RevisionLineageEntryDtoSchema = z.object({
+  revisionId: z.string().min(1),
+  requirementId: z.string().min(1)
+});
+
 export const RequirementsReviewStateDtoSchema = z.object({
   baseline: RequirementsBaselineDtoSchema.optional(),
   requirementRevisions: z.array(RequirementRevisionDtoSchema),
   findings: z.array(CandidateFindingDtoSchema),
   reconciliationHistory: z.array(ReconciliationRecordDtoSchema),
   evidenceExcerpts: z.array(EvidenceExcerptDtoSchema),
-  projections: z.array(ProjectionRecordDtoSchema)
+  projections: z.array(ProjectionRecordDtoSchema),
+  revisionLineage: z.array(RevisionLineageEntryDtoSchema)
 });

@@ -28,6 +28,11 @@ export interface EvidenceExcerpt {
   readonly endLine: number;
 }
 
+export interface RevisionLineageEntry {
+  readonly revisionId: string;
+  readonly requirementId: string;
+}
+
 export interface RequirementsReviewState {
   readonly baseline?: RequirementsBaseline;
   readonly requirementRevisions: readonly RequirementRevision[];
@@ -35,6 +40,7 @@ export interface RequirementsReviewState {
   readonly reconciliationHistory: readonly ReconciliationRecord[];
   readonly evidenceExcerpts: readonly EvidenceExcerpt[];
   readonly projections: readonly ProjectionRecord[];
+  readonly revisionLineage: readonly RevisionLineageEntry[];
 }
 
 export interface GetRequirementsReviewStateInput {
@@ -83,7 +89,8 @@ export class GetRequirementsReviewStateUseCase {
         findings: Object.freeze([]),
         reconciliationHistory: Object.freeze([]),
         evidenceExcerpts: Object.freeze([]),
-        projections: Object.freeze([...projections])
+        projections: Object.freeze([...projections]),
+        revisionLineage: Object.freeze([])
       };
     }
 
@@ -92,9 +99,29 @@ export class GetRequirementsReviewStateUseCase {
       this.repository.getRequirementRevision(id)
     );
 
+    const revisionMap = new Map<string, RequirementRevision>();
+    for (const rev of revisions) {
+      revisionMap.set(rev.id, rev);
+    }
+
+    const revisionLineage: RevisionLineageEntry[] = [];
+    for (const revId of lineage.closure) {
+      const inHand = revisionMap.get(revId);
+      if (inHand) {
+        revisionLineage.push({ revisionId: revId, requirementId: inHand.requirementId });
+      } else {
+        const ancestor = await this.repository.getRequirementRevision(revId);
+        if (ancestor) {
+          revisionLineage.push({ revisionId: revId, requirementId: ancestor.requirementId });
+        }
+      }
+    }
+
     const allFindings = await this.repository.listCandidateFindings();
-    const inScopeFindings = allFindings.filter((f) =>
-      f.affectedRequirementRevisions.some((revId) => lineage.closure.has(revId))
+    const inScopeFindings = allFindings.filter(
+      (f) =>
+        f.affectedRequirementRevisions.length === 0 ||
+        f.affectedRequirementRevisions.some((revId) => lineage.closure.has(revId))
     );
 
     const inScopeFindingIds = new Set<string>(inScopeFindings.map((f) => f.id));
@@ -157,7 +184,8 @@ export class GetRequirementsReviewStateUseCase {
       findings: Object.freeze(inScopeFindings),
       reconciliationHistory: Object.freeze(inScopeReconciliation),
       evidenceExcerpts: Object.freeze(evidenceExcerpts),
-      projections: Object.freeze([...projections])
+      projections: Object.freeze([...projections]),
+      revisionLineage: Object.freeze(revisionLineage)
     };
   }
 }
