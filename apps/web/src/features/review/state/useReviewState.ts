@@ -4,10 +4,12 @@ import type {
   RequirementRevisionDto,
   CandidateFindingDto,
   EvidenceExcerptDto,
-  ReconciliationRecordDto
+  ReconciliationRecordDto,
+  ProjectionRecordDto
 } from '@solutions-studio/contracts';
 import type { ApiError } from '../api/client';
 import { getReviewState } from '../api/reviewStateApi';
+import { generateProjection } from '../api/projectionsApi';
 import {
   buildRevisionRequirementIndex,
   type RevisionRequirementIndex
@@ -20,22 +22,25 @@ export interface ReviewState {
   mutationError?: ApiError | null;
   selectedRequirementId?: string;
   selectedFindingId?: string;
-  findingsView: 'byRequirement' | 'all';
+  selectedProjectionId?: string;
+  findingsView: 'byRequirement' | 'all' | 'projections';
 }
 
-type ReviewAction =
+export type ReviewAction =
   | { type: 'FETCH_START' }
   | { type: 'FETCH_SUCCESS'; payload: RequirementsReviewStateDto }
   | { type: 'FETCH_ERROR'; payload: ApiError }
   | { type: 'SELECT_REQUIREMENT'; payload: string }
   | { type: 'SELECT_FINDING'; payload?: string }
-  | { type: 'SET_FINDINGS_VIEW'; payload: 'byRequirement' | 'all' }
+  | { type: 'SELECT_PROJECTION'; payload: string }
+  | { type: 'SET_FINDINGS_VIEW'; payload: 'byRequirement' | 'all' | 'projections' }
   | { type: 'MUTATION_SUCCESS_REQUIREMENT'; payload: RequirementRevisionDto }
   | { type: 'MUTATION_SUCCESS_FINDING'; payload: CandidateFindingDto }
+  | { type: 'PROJECTION_GENERATED'; payload: ProjectionRecordDto }
   | { type: 'MUTATION_ERROR'; payload: ApiError }
   | { type: 'CLEAR_MUTATION_ERROR' };
 
-function reviewReducer(state: ReviewState, action: ReviewAction): ReviewState {
+export function reviewReducer(state: ReviewState, action: ReviewAction): ReviewState {
   switch (action.type) {
     case 'FETCH_START':
       return {
@@ -52,13 +57,33 @@ function reviewReducer(state: ReviewState, action: ReviewAction): ReviewState {
         ? currentSelected
         : data.requirementRevisions[0]?.requirementId;
 
+      const combinedProjections = [...(data.projections ?? [])];
+      if (state.data?.projections && state.data.baseline?.id === data.baseline?.id) {
+        for (const p of state.data.projections) {
+          if (
+            p.baselineId === data.baseline?.id &&
+            !combinedProjections.some((cp) => cp.id === p.id)
+          ) {
+            combinedProjections.push(p);
+          }
+        }
+      }
+
+      const currentSelectedProj = state.selectedProjectionId;
+      const projExists = combinedProjections.some((p) => p.id === currentSelectedProj);
+      const selectedProjectionId = projExists ? currentSelectedProj : combinedProjections[0]?.id;
+
       return {
         ...state,
         status: 'ready',
-        data,
+        data: {
+          ...data,
+          projections: combinedProjections
+        },
         error: null,
         mutationError: null,
-        selectedRequirementId
+        selectedRequirementId,
+        selectedProjectionId
       };
     }
 
@@ -83,11 +108,40 @@ function reviewReducer(state: ReviewState, action: ReviewAction): ReviewState {
         mutationError: null
       };
 
+    case 'SELECT_PROJECTION':
+      return {
+        ...state,
+        selectedProjectionId: action.payload,
+        mutationError: null
+      };
+
     case 'SET_FINDINGS_VIEW':
       return {
         ...state,
         findingsView: action.payload
       };
+
+    case 'PROJECTION_GENERATED': {
+      if (!state.data) return state;
+      const newProj = action.payload;
+      const nextProjections = [...state.data.projections];
+      const existingIdx = nextProjections.findIndex((p) => p.id === newProj.id);
+      if (existingIdx >= 0) {
+        nextProjections[existingIdx] = newProj;
+      } else {
+        nextProjections.push(newProj);
+      }
+
+      return {
+        ...state,
+        data: {
+          ...state.data,
+          projections: nextProjections
+        },
+        selectedProjectionId: newProj.id,
+        mutationError: null
+      };
+    }
 
     case 'MUTATION_SUCCESS_REQUIREMENT': {
       if (!state.data) return state;
@@ -207,6 +261,14 @@ export function useReviewState(baselineId?: string) {
     );
   }, [state.data, state.selectedRequirementId]);
 
+  const selectedProjection: ProjectionRecordDto | undefined = useMemo(() => {
+    if (!state.data) return undefined;
+    return (
+      state.data.projections.find((p) => p.id === state.selectedProjectionId) ??
+      state.data.projections[0]
+    );
+  }, [state.data, state.selectedProjectionId]);
+
   const findingsForSelectedRequirement: readonly CandidateFindingDto[] = useMemo(() => {
     if (!state.selectedRequirementId) return [];
     return revisionRequirementIndex.findingsByRequirementId.get(state.selectedRequirementId) ?? [];
@@ -220,13 +282,40 @@ export function useReviewState(baselineId?: string) {
     dispatch({ type: 'SELECT_FINDING', payload: findingId });
   }, []);
 
-  const setFindingsView = useCallback((view: 'byRequirement' | 'all') => {
+  const selectProjection = useCallback((projectionId: string) => {
+    dispatch({ type: 'SELECT_PROJECTION', payload: projectionId });
+  }, []);
+
+  const setFindingsView = useCallback((view: 'byRequirement' | 'all' | 'projections') => {
     dispatch({ type: 'SET_FINDINGS_VIEW', payload: view });
   }, []);
 
   const clearMutationError = useCallback(() => {
     dispatch({ type: 'CLEAR_MUTATION_ERROR' });
   }, []);
+
+  const handleGenerateProjection = useCallback(
+    async (
+      artifactType: 'process-diagram' | 'state-diagram',
+      prompt?: string
+    ): Promise<ProjectionRecordDto> => {
+      if (!baselineId) {
+        throw new Error('Cannot generate projection without an active baseline');
+      }
+      try {
+        const projection = await generateProjection(baselineId, { artifactType, prompt });
+        dispatch({ type: 'PROJECTION_GENERATED', payload: projection });
+        getReviewState(baselineId)
+          .then((fresh) => dispatch({ type: 'FETCH_SUCCESS', payload: fresh }))
+          .catch(() => {});
+        return projection;
+      } catch (err) {
+        dispatch({ type: 'MUTATION_ERROR', payload: err as ApiError });
+        throw err;
+      }
+    },
+    [baselineId]
+  );
 
   const handleRequirementMutation = useCallback(
     async (mutationFn: () => Promise<RequirementRevisionDto>): Promise<RequirementRevisionDto> => {
@@ -271,7 +360,10 @@ export function useReviewState(baselineId?: string) {
     mutationError: state.mutationError,
     selectedRequirementId: state.selectedRequirementId,
     selectedFindingId: state.selectedFindingId,
+    selectedProjectionId: state.selectedProjectionId,
     selectedRequirement,
+    selectedProjection,
+    projections: state.data?.projections ?? [],
     findingsView: state.findingsView,
     findingsForSelectedRequirement,
     revisionRequirementIndex,
@@ -280,9 +372,11 @@ export function useReviewState(baselineId?: string) {
     refresh: loadData,
     selectRequirement,
     selectFinding,
+    selectProjection,
     setFindingsView,
     clearMutationError,
     handleRequirementMutation,
-    handleFindingMutation
+    handleFindingMutation,
+    handleGenerateProjection
   };
 }

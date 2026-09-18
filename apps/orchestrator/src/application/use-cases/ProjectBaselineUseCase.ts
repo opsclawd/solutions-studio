@@ -115,4 +115,8 @@ export class ProjectBaselineUseCase {
       repairHistory: generationResult.repairHistory
     };
   }
+
+  async getProjection(projectionId: string): Promise<ProjectionRecord | undefined> {
+    return this.repository.getProjectionRecord(projectionId);
+  }
 }

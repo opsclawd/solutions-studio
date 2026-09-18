@@ -72,6 +72,23 @@ export class GetRequirementsReviewStateUseCase {
       }
 
       projections = await this.repository.listProjectionRecords(baselineId);
+      const projectionIds = new Set(projections.map((p) => p.id));
+
+      const reqIds = await this.repository.listRequirementIds();
+      for (const reqId of reqIds) {
+        const revs = await this.repository.listRequirementRevisions(reqId);
+        for (const rev of revs) {
+          if (
+            rev.reviewState === 'PENDING' &&
+            (rev.baselineId === baselineId ||
+              (rev.originatingProjectionId && projectionIds.has(rev.originatingProjectionId)))
+          ) {
+            if (!revisions.some((r) => r.id === rev.id)) {
+              revisions.push(rev);
+            }
+          }
+        }
+      }
     } else {
       const reqIds = await this.repository.listRequirementIds();
       for (const reqId of reqIds) {

@@ -44,12 +44,16 @@ describe('HTTP Boundary: Projections API', () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  async function seedBaseline(baseId = 'BASE-001') {
+  async function seedBaseline(
+    baseId = 'BASE-001',
+    reqId = `REQ-${baseId}`,
+    revId = `REQ-${baseId}-R1`
+  ) {
     const rev = createRequirementRevision({
-      id: createRequirementRevisionId('REQ-001-R1'),
-      requirementId: createRequirementId('REQ-001'),
+      id: createRequirementRevisionId(revId),
+      requirementId: createRequirementId(reqId),
       revision: 1,
-      statement: 'Audited requirement statement',
+      statement: `Audited requirement statement for ${baseId}`,
       category: 'business-rule',
       origin: 'ASSUMED',
       reviewState: 'ACCEPTED',
@@ -166,6 +170,134 @@ describe('HTTP Boundary: Projections API', () => {
       expect(list).toHaveLength(1);
       expect(list[0].baselineId).toBe('BASE-001');
       expect(list[0].artifactType).toBe('process-diagram');
+    });
+  });
+
+  describe('GET /api/baselines/:baselineId/projections/:projectionId', () => {
+    it('returns 200 with specific projection record', async () => {
+      await seedBaseline('BASE-001');
+      fakeGen.setDefaultResponse('graph TD;\n  A --> B;');
+      fakeLinter.setDefaultResult({ isValid: true });
+
+      const genRes = await app.inject({
+        method: 'POST',
+        url: '/api/baselines/BASE-001/projections',
+        payload: { artifactType: 'process-diagram' }
+      });
+      const generated = genRes.json();
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/baselines/BASE-001/projections/${generated.id}`
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.id).toBe(generated.id);
+      expect(body.baselineId).toBe('BASE-001');
+      expect(body.artifactType).toBe('process-diagram');
+    });
+
+    it('returns 404 PROJECTION_NOT_FOUND when projection does not exist', async () => {
+      await seedBaseline('BASE-001');
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/baselines/BASE-001/projections/NONEXISTENT-PROJ'
+      });
+
+      expect(res.statusCode).toBe(404);
+      expect(res.json().code).toBe('PROJECTION_NOT_FOUND');
+    });
+
+    it('returns 404 PROJECTION_NOT_FOUND when projection belongs to another baseline', async () => {
+      await seedBaseline('BASE-001');
+      await seedBaseline('BASE-002');
+      fakeGen.setDefaultResponse('graph TD;\n  A --> B;');
+      fakeLinter.setDefaultResult({ isValid: true });
+
+      const genRes = await app.inject({
+        method: 'POST',
+        url: '/api/baselines/BASE-001/projections',
+        payload: { artifactType: 'process-diagram' }
+      });
+      const proj1 = genRes.json();
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/baselines/BASE-002/projections/${proj1.id}`
+      });
+
+      expect(res.statusCode).toBe(404);
+      expect(res.json().code).toBe('PROJECTION_NOT_FOUND');
+    });
+  });
+
+  describe('Closed-loop repair & cross-baseline isolation', () => {
+    it('succeeds with repairsNeeded = 1 and attemptCount = 2 when first attempt fails linter', async () => {
+      await seedBaseline('BASE-001');
+      fakeGen.queueResponse('invalid syntax');
+      fakeGen.queueResponse('graph TD;\n  Fixed --> Done;');
+      fakeLinter.setResultFor('invalid syntax', {
+        isValid: false,
+        errorMessage: 'Parse error line 1'
+      });
+      fakeLinter.setDefaultResult({ isValid: true });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/baselines/BASE-001/projections',
+        payload: { artifactType: 'process-diagram' }
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.metadata.measuredVerification.repairsNeeded).toBe(1);
+      expect(body.metadata.measuredVerification.attemptCount).toBe(2);
+      expect(body.content).toContain('Fixed --> Done;');
+    });
+
+    it('guarantees projections remain strictly isolated across baselines', async () => {
+      await seedBaseline('BASE-001');
+      await seedBaseline('BASE-002');
+      fakeGen.setDefaultResponse('graph TD;\n  Start --> Finish;');
+      fakeLinter.setDefaultResult({ isValid: true });
+
+      // Generate projection for BASE-001
+      const res1 = await app.inject({
+        method: 'POST',
+        url: '/api/baselines/BASE-001/projections',
+        payload: { artifactType: 'process-diagram' }
+      });
+      const proj1 = res1.json();
+
+      // Generate projection for BASE-002
+      const res2 = await app.inject({
+        method: 'POST',
+        url: '/api/baselines/BASE-002/projections',
+        payload: { artifactType: 'state-diagram' }
+      });
+      const proj2 = res2.json();
+
+      // BASE-001 list contains only proj1
+      const list1Res = await app.inject({
+        method: 'GET',
+        url: '/api/baselines/BASE-001/projections'
+      });
+      const list1 = list1Res.json();
+      expect(list1).toHaveLength(1);
+      expect(list1[0].id).toBe(proj1.id);
+      expect(list1[0].baselineId).toBe('BASE-001');
+
+      // BASE-002 list contains only proj2
+      const list2Res = await app.inject({
+        method: 'GET',
+        url: '/api/baselines/BASE-002/projections'
+      });
+      const list2 = list2Res.json();
+      expect(list2).toHaveLength(1);
+      expect(list2[0].id).toBe(proj2.id);
+      expect(list2[0].baselineId).toBe('BASE-002');
     });
   });
 });
