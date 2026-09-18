@@ -11,6 +11,7 @@
     "tracer": "pnpm --filter @solutions-studio/orchestrator tracer",
     "project": "pnpm --filter @solutions-studio/orchestrator project",
     "lint": "eslint .",
+    "boundaries": "depcruise apps packages --config .dependency-cruiser.cjs",
     "typecheck": "pnpm -r --if-present typecheck",
     "format": "prettier --check .",
     "format:fix": "prettier --write .",
@@ -23,6 +24,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
+    "dependency-cruiser": "^16.10.4",
     "eslint": "^9.17.0",
     "lint-staged": "^16.4.0",
     "prettier": "^3.4.2",

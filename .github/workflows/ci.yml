@@ -34,6 +34,9 @@ jobs:
       - name: Format check
         run: pnpm format
 
+      - name: Check boundaries
+        run: pnpm boundaries
+
       # Must run before Typecheck: apps/web's tsconfig.json includes
       # .next/types/**/*.ts, which only exists after `next build` generates it.
       - name: Build all workspaces
