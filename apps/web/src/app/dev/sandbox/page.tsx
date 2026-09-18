@@ -15,7 +15,7 @@ import {
   SECURITY_NETWORK_EXFILTRATION_FIXTURE_CODE,
   SECURITY_MESSAGE_SPOOFING_FIXTURE_CODE,
   SECURITY_PROTOTYPE_POISONING_FIXTURE_CODE
-} from '../../../../test/fixtures/prototype-sandbox';
+} from '@/features/prototype-sandbox/fixtures';
 
 const FIXTURES: Record<string, { name: string; description: string; code: string }> = {
   counter: {

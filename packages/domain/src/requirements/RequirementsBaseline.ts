@@ -7,7 +7,11 @@ import type {
 } from './ids.js';
 import { now } from './ids.js';
 import type { RequirementRevision } from './RequirementRevision.js';
-import { InvalidBaselineMembershipError, EmptyBaselineError } from './errors.js';
+import {
+  InvalidBaselineMembershipError,
+  EmptyBaselineError,
+  type BaselineMembershipViolation as GenericBaselineMembershipViolation
+} from './errors.js';
 
 export interface RequirementsBaseline {
   readonly id: RequirementsBaselineId;
@@ -16,11 +20,10 @@ export interface RequirementsBaseline {
   readonly createdBy: ReviewerId;
 }
 
-export interface BaselineMembershipViolation {
-  readonly revisionId: RequirementRevisionId;
-  readonly requirementId: RequirementId;
-  readonly reasons: readonly string[];
-}
+type BaselineMembershipViolation = GenericBaselineMembershipViolation<
+  RequirementRevisionId,
+  RequirementId
+>;
 
 export function validateBaselineMembership(
   candidates: readonly RequirementRevision[]

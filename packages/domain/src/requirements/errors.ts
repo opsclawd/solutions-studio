@@ -1,4 +1,8 @@
-import type { BaselineMembershipViolation } from './RequirementsBaseline.js';
+export interface BaselineMembershipViolation<TRevisionId = string, TRequirementId = string> {
+  readonly revisionId: TRevisionId;
+  readonly requirementId: TRequirementId;
+  readonly reasons: readonly string[];
+}
 
 export class DomainError extends Error {
   constructor(
