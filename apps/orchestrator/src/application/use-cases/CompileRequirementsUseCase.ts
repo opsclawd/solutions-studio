@@ -45,7 +45,7 @@ import {
 } from './CompileRequirementsErrors.js';
 
 export const COMPILER_VERSION = '1.0.0' as const;
-export const PROMPT_VERSION = '1.0.0' as const;
+export const PROMPT_VERSION = '1.1.0' as const;
 
 function isUnsafeSourceRevisionId(id: string): boolean {
   if (typeof id !== 'string' || id.trim().length === 0) {
@@ -378,6 +378,21 @@ To maintain high precision and avoid spurious findings:
 3. Paraphrased & Semantically Equivalent Phrasing Is NOT a Contradiction: When two sources express the same underlying requirement using different phrasing (e.g., "within 48 hours of initial provisioning" vs. "no later than 48 hours following initial account provisioning"), they are semantically consistent. Do NOT emit a contradiction finding for paraphrasing.
 4. Presumption of Validity: When an authoritative document does not mention an operational detail, do NOT assume a defect exists unless the text explicitly creates a gap or contradiction.
 
+## Requirement Category Classification Guidelines
+Every extracted requirement MUST be classified into exactly one of the allowed categories:
+1. \`business-rule\`: A rule defining a business constraint, numeric threshold, financial or approval limit, condition, calculation, or operational schedule:
+   - Approval & Authorization Thresholds: Rules that state a threshold, monetary limit, or condition governing approval authority (e.g. "purchase orders over $50,000 require CFO approval", "department managers may authorize leases up to $75,000 without Executive Committee approval") MUST be classified as \`business-rule\`. The governing constraint is the threshold/condition on the action.
+   - Contrast with Role Assignment: Even if an approval rule explicitly mentions the approving role or job title, classify it as \`business-rule\` whenever it defines a threshold or condition for that approval.
+   - Do NOT Split Threshold Requirements: Do NOT split a requirement that defines an approval threshold into two separate candidates (e.g. do NOT create one \`business-rule\` for the threshold and a duplicate \`actors-permissions\` for the approving role). Keep it unified as a single \`business-rule\` candidate.
+   - Automated Schedules & Workers: Rules specifying when, how often, or under what conditions background jobs, settlement processes, sync workers, or maintenance routines run (e.g. "the reconciliation worker runs periodically throughout the day", "archival process executes periodically") are operational \`business-rule\`s, NOT \`actors-permissions\`. Background workers and automated jobs are system processes, not human actors.
+2. \`actors-permissions\`: A rule defining who is authorized to perform an action, role capabilities, user privileges, persona responsibilities, or access control boundaries WITHOUT a numeric or conditional threshold (e.g. "Tier 1 support agents may override MFA credentials", "Only InfoSec officers may approve security exceptions", "database administration access is restricted to primary DBA personnel").
+3. \`lifecycle-state\`: States, stages, and valid status transitions in an entity's lifecycle (e.g. "order states are QUEUED, PROCESSING, COMPLETED").
+4. \`data-constraint\`: Data format, schema validation, field types, cardinality, retention tags, and uniqueness rules.
+5. \`integration\`: External systems, APIs, endpoints, webhook protocols, or third-party service communications.
+6. \`failure-behavior\`: Error handling, retries, fallbacks, recovery mechanisms, timeouts, and circuit breakers.
+7. \`exception\`: Informal workarounds, undocumented overrides, emergency bypasses, or operational practices deviating from official policy.
+8. \`nfr\`: Non-functional requirements including performance targets, latency, throughput, availability, and uptime SLAs.
+
 ## Few-Shot Contrastive Examples
 
 ### Example 1: Genuine Contradiction — Source Authority Conflict (Policy vs. Interview)
@@ -419,7 +434,7 @@ Compiler Output:
 - Findings: NONE (\`[]\`).
 Explanation: Distinct dollar limits ($5,000 vs $25,000) are explicitly and exhaustively partitioned by named mutually-exclusive delivery tiers (Standard Ground vs Express Air). Because the scopes are separate and non-overlapping, this is NOT a contradiction. Do NOT emit a finding.
 
-### Example: Genuine Contradiction — Same-Authority Threshold Conflict
+### Example 4: Genuine Contradiction — Same-Authority Threshold Conflict
 Sources:
 - \`SOP-CAPEX-005-R1\` (Source Type: SOP, Locator: \`capex-approval-matrix#1.2\`):
   "Department managers may authorize capital expenditure equipment leases up to $75,000 without Executive Committee approval."
@@ -431,9 +446,9 @@ Compiler Output:
   - \`REQ-CAPEX-DIRECTOR\` (category: \`business-rule\`, origin: \`EXPLICIT\`, evidence: \`[{"sourceRevisionId": "POL-CAPEX-005-R1", "locator": "capital-expenditure-governance#3.1"}]\`)
 - Findings:
   - Emit finding: \`type: "contradiction"\`, \`relatedRequirementKeys: ["REQ-CAPEX-MANAGER", "REQ-CAPEX-DIRECTOR"]\`, \`evidence: [{"sourceRevisionId": "SOP-CAPEX-005-R1", "locator": "capex-approval-matrix#1.2"}, {"sourceRevisionId": "POL-CAPEX-005-R1", "locator": "capital-expenditure-governance#3.1"}]\`, \`rationale: "SOP permits department managers to authorize equipment leases up to $75,000 without Executive Committee approval, whereas Policy mandates Executive Committee approval for any lease exceeding $30,000. Both apply to the same expenditure action without an explicit scope partition, creating a direct threshold contradiction for amounts between $30,000 and $75,000."\`
-Explanation: Genuine contradiction between two conflicting dollar thresholds applying to the same action/authority without an explicit and exhaustive scope partition. Unlike scoped partitions, these thresholds directly conflict over the same transaction range.
+Explanation: Genuine contradiction between two conflicting dollar thresholds applying to the same action/authority without an explicit and exhaustive scope partition. Unlike scoped partitions, these thresholds directly conflict over the same transaction range. Because these requirements define dollar thresholds and approval boundaries, both are classified as \`business-rule\` (not \`actors-permissions\`), and must NOT be split into separate role candidates.
 
-### Example 4: Near-Miss Non-Finding — Paraphrased / Semantically Equivalent Timeframes
+### Example 5: Near-Miss Non-Finding — Paraphrased / Semantically Equivalent Timeframes
 Sources:
 - \`IT-ONBOARD-003-R1\` (Source Type: SOP, Locator: \`credential-hygiene#4.4\`):
   "System administrators must rotate administrative database credentials every 90 calendar days."
@@ -445,6 +460,21 @@ Compiler Output:
   - \`REQ-ROTATION-POLICY\` (category: \`actors-permissions\`, statement: "...credential rotation is required at least once per 90-day cycle...")
 - Findings: NONE (\`[]\`).
 Explanation: "every 90 calendar days" and "at least once per 90-day cycle" express the exact same cadence constraint using different words. They are semantically equivalent paraphrases, NOT a contradiction. Do NOT emit a finding.
+
+### Example 6: Category Classification Contrast — Approval Thresholds (\`business-rule\`) vs. Role Authorization (\`actors-permissions\`)
+Sources:
+- \`POL-FIN-009-R1\` (Source Type: POLICY, Locator: \`disbursement-controls#1.1\`):
+  "Department managers may authorize equipment disbursements up to $50,000; commitments exceeding $50,000 require formal approval from the Chief Financial Officer."
+- \`SEC-ACCESS-009-R1\` (Source Type: POLICY, Locator: \`system-roles#3.2\`):
+  "Only designated IT Security Officers are authorized to provision privileged administrative database credentials to external contractors."
+Compiler Output:
+- Requirements:
+  - \`REQ-DISBURSEMENT-LIMITS\` (category: \`business-rule\`, origin: \`EXPLICIT\`, evidence: \`[{"sourceRevisionId": "POL-FIN-009-R1", "locator": "disbursement-controls#1.1"}]\`, statement: "Department managers may authorize equipment disbursements up to $50,000; commitments exceeding $50,000 require Chief Financial Officer approval.")
+  - \`REQ-PROVISION-AUTHORITY\` (category: \`actors-permissions\`, origin: \`EXPLICIT\`, evidence: \`[{"sourceRevisionId": "SEC-ACCESS-009-R1", "locator": "system-roles#3.2"}]\`, statement: "Only designated IT Security Officers are authorized to provision privileged administrative database credentials to external contractors.")
+- Findings: NONE (\`[]\`).
+Explanation:
+- \`REQ-DISBURSEMENT-LIMITS\` specifies an approval threshold and monetary limit ($50,000) governing authorization. Even though it names roles (department managers, Chief Financial Officer), it is classified as \`business-rule\` and kept as a single unified requirement rather than split into multiple categories.
+- \`REQ-PROVISION-AUTHORITY\` specifies role-based privileges and access boundaries without a numeric or monetary threshold, so it is classified as \`actors-permissions\`.
 
 ## Output Format
 You must respond with ONLY a JSON object conforming to the following structure:

@@ -164,5 +164,75 @@ describe('CompileRequirementsUseCase Fixture Compatibility', () => {
     expect(finding!.affectedRequirementRevisions).toEqual(
       expect.arrayContaining([...result.acceptedRequirementRevisions])
     );
+
+    const savedReq0 = await repo.getRequirementRevision(result.acceptedRequirementRevisions[0]);
+    const savedReq1 = await repo.getRequirementRevision(result.acceptedRequirementRevisions[1]);
+    expect(savedReq0?.category).toBe('business-rule');
+    expect(savedReq1?.category).toBe('business-rule');
+  });
+
+  it('runs successfully against unmodified #7 fixture: approval-threshold-contradiction-cross-source', async () => {
+    const loaded = loadFixture('approval-threshold-contradiction-cross-source');
+    const records = [];
+    for (const sourceDef of loaded.fixture.sources) {
+      const sourceRev = loaded.sourceRevisions.get(sourceDef.sourceRevisionId);
+      expect(sourceRev).toBeDefined();
+      const record = await repo.captureSourceRevision({
+        sourceId: createSourceId(sourceDef.sourceId),
+        sourceType: sourceDef.sourceType,
+        markdownText: sourceRev!.text
+      });
+      records.push(record);
+    }
+
+    const scriptedResponse = {
+      requirements: loaded.fixture.expectedRequirements.map((r) => ({
+        requirementKey: r.requirementKey,
+        statement:
+          r.requirementKey === 'REQ-FIN-01'
+            ? 'All capital expenditure commitments exceeding $10,000 require formal CFO sign-off prior to commitment.'
+            : 'Operations Director may approve emergency field equipment acquisitions up to $50,000 without CFO review.',
+        category: r.category,
+        origin: r.origin,
+        evidence: r.evidence.map((e) => ({
+          sourceRevisionId: e.sourceRevisionId,
+          locator: e.locator
+        }))
+      })),
+      findings: loaded.fixture.expectedFindings.map((f) => ({
+        findingKey: f.findingKey,
+        type: f.type,
+        relatedRequirementKeys: [...f.relatedRequirementKeys],
+        evidence: f.evidence.map((e) => ({
+          sourceRevisionId: e.sourceRevisionId,
+          locator: e.locator
+        })),
+        rationale: f.rationale
+      }))
+    };
+
+    fakeGateway.queueResponse(JSON.stringify(scriptedResponse));
+
+    const result = await useCase.compile({
+      sourceRevisionIds: records.map((r) => r.revision.id)
+    });
+
+    expect(result.rejectedRequirements).toHaveLength(0);
+    expect(result.rejectedFindings).toHaveLength(0);
+    expect(result.acceptedRequirementRevisions).toHaveLength(2);
+    expect(result.acceptedFindingIds).toHaveLength(1);
+
+    const savedReq0 = await repo.getRequirementRevision(result.acceptedRequirementRevisions[0]);
+    const savedReq1 = await repo.getRequirementRevision(result.acceptedRequirementRevisions[1]);
+    expect(savedReq0?.category).toBe('business-rule');
+    expect(savedReq1?.category).toBe('business-rule');
+
+    const finding = await repo.getCandidateFinding(result.acceptedFindingIds[0]);
+    expect(finding).toBeDefined();
+    expect(finding!.type).toBe('contradiction');
+    expect(finding!.affectedRequirementRevisions).toHaveLength(2);
+    expect(finding!.affectedRequirementRevisions).toEqual(
+      expect.arrayContaining([...result.acceptedRequirementRevisions])
+    );
   });
 });
