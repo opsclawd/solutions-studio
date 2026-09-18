@@ -1,0 +1,38 @@
+{
+  "phase": 1,
+  "recordType": "phase-closeout-audit",
+  "promotionDecision": {
+    "candidateSha": "91fd4f819c5b1c9273af8a83b19f026db686c899",
+    "decision": "GO",
+    "report": "docs/phase-1-candidate-validation-report.md"
+  },
+  "postGoRemediation": {
+    "issue": 42,
+    "pullRequest": 43,
+    "mergeSha": "69fa4f129553606c6f2b4a00aa93b6c148e5fb1b",
+    "terminalPhase1Sha": "69fa4f129553606c6f2b4a00aa93b6c148e5fb1b",
+    "validation": {
+      "provider": "agy",
+      "model": "gemini-3.8-flash-high",
+      "runs": 3,
+      "corpusFixtures": 16,
+      "contradictoryApprovalThresholds": "3/0/0 in all three runs",
+      "temporalAmbiguity": "2/0/0 in all three runs",
+      "orchestratorTests": 281,
+      "orchestratorTestFiles": 24,
+      "ciRun": 62,
+      "ciConclusion": "success"
+    }
+  },
+  "phase2PrerequisiteHardening": {
+    "issue": 15,
+    "pullRequest": 44,
+    "mergeSha": "c142d908925d79730553b3e4f83c1e9d1901efdf",
+    "classification": "post-phase-1"
+  },
+  "notes": [
+    "Sections 1-6 of the Phase 1 candidate validation report remain the historical record for the exact candidate that received GO.",
+    "Section 5 item 5 was resolved after GO by issue 42 / PR 43.",
+    "PR 44 mechanically enforces architectural boundaries and is classified as Phase 2 prerequisite hardening, not a change to the Phase 1 promotion decision."
+  ]
+}
