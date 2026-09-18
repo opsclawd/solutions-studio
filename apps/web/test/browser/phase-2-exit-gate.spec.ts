@@ -25,7 +25,7 @@ test.describe('Phase 2.7 — End-to-End Phase 2 Exit Gate Reviewer Journey', () 
     const evidencePanel = page.getByTestId('evidence-panel');
     await expect(evidencePanel).toBeVisible();
     await expect(evidencePanel).toContainText('SRC-001');
-    await expect(evidencePanel).toContainText('sec-2');
+    await expect(evidencePanel).toContainText('role-based-access-control');
     await expect(page.getByTestId('evidence-excerpt-text')).toContainText(
       'Administrative roles must require multi-factor authentication'
     );
