@@ -6,9 +6,10 @@ import { SandboxFrame } from '../../prototype-sandbox/SandboxFrame';
 
 export interface PrototypeViewerProps {
   projection: ProjectionRecordDto;
+  currentBaselineId?: string;
 }
 
-export function PrototypeViewer({ projection }: PrototypeViewerProps) {
+export function PrototypeViewer({ projection, currentBaselineId }: PrototypeViewerProps) {
   const [showRawCode, setShowRawCode] = useState<boolean>(false);
 
   const handleExportTsx = () => {
@@ -58,6 +59,14 @@ export function PrototypeViewer({ projection }: PrototypeViewerProps) {
           >
             {declaredProvenance.baselineId}
           </span>
+          {currentBaselineId && projection.baselineId !== currentBaselineId && (
+            <span
+              data-testid="projection-staleness-badge"
+              className="font-mono bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-bold"
+            >
+              Prior Baseline ({projection.baselineId})
+            </span>
+          )}
 
           <span className="font-semibold text-gray-700 ml-2">Revisions:</span>
           <div data-testid="projection-revisions-list" className="flex flex-wrap gap-1">

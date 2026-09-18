@@ -16,6 +16,8 @@ export interface AllFindingsPanelProps {
     rationale: string
   ) => Promise<void>;
   onReopen: (findingId: string, rationale?: string) => Promise<void>;
+  onNavigateToProjection?: (projectionId: string) => void;
+  onNavigateToRequirement?: (requirementId: string) => void;
 }
 
 export function AllFindingsPanel({
@@ -23,7 +25,9 @@ export function AllFindingsPanel({
   lineageIndex,
   actorId,
   onDisposition,
-  onReopen
+  onReopen,
+  onNavigateToProjection,
+  onNavigateToRequirement
 }: AllFindingsPanelProps) {
   if (allFindings.length === 0) {
     return (
@@ -83,6 +87,11 @@ export function AllFindingsPanel({
                 actorId={actorId}
                 onDisposition={onDisposition}
                 onReopen={onReopen}
+                onNavigateToProjection={onNavigateToProjection}
+                onNavigateToRequirement={onNavigateToRequirement}
+                getRequirementIdForRevision={(revId) =>
+                  lineageIndex.revisionToRequirementId.get(revId)
+                }
               />
             ))}
           </div>
@@ -114,6 +123,11 @@ export function AllFindingsPanel({
                 actorId={actorId}
                 onDisposition={onDisposition}
                 onReopen={onReopen}
+                onNavigateToProjection={onNavigateToProjection}
+                onNavigateToRequirement={onNavigateToRequirement}
+                getRequirementIdForRevision={(revId) =>
+                  lineageIndex.revisionToRequirementId.get(revId)
+                }
               />
             ))}
           </div>

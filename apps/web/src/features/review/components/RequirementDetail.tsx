@@ -40,8 +40,9 @@ export interface RequirementDetailProps {
     disposition: FindingDisposition,
     rationale: string
   ) => Promise<void>;
-
   onFindingReopen: (findingId: string, rationale?: string) => Promise<void>;
+  onNavigateToProjection?: (projectionId: string) => void;
+  onNavigateToRequirement?: (requirementId: string) => void;
 }
 
 export function RequirementDetail({
@@ -56,7 +57,9 @@ export function RequirementDetail({
   onResolve,
   onRevise,
   onFindingDisposition,
-  onFindingReopen
+  onFindingReopen,
+  onNavigateToProjection,
+  onNavigateToRequirement
 }: RequirementDetailProps) {
   const originBadge = getOriginBadge(revision.origin);
   const reviewBadge = getReviewStateBadge(revision.reviewState);
@@ -99,6 +102,26 @@ export function RequirementDetail({
                   : 'Current working state (unbaselined reviewer inbox)'}
               </span>
             </div>
+
+            {revision.originatingProjectionId && (
+              <div
+                data-testid="originating-projection-context"
+                className="mt-2.5 p-2 bg-purple-50 border border-purple-200 rounded-lg text-xs text-purple-900 flex flex-wrap items-center justify-between gap-2"
+              >
+                <span>
+                  Discovered during review of projection:{' '}
+                  <strong className="font-mono">{revision.originatingProjectionId}</strong>
+                </span>
+                <button
+                  type="button"
+                  data-testid="back-to-projection-btn"
+                  onClick={() => onNavigateToProjection?.(revision.originatingProjectionId!)}
+                  className="text-purple-700 hover:text-purple-900 font-semibold underline"
+                >
+                  View Originating Projection →
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -207,6 +230,8 @@ export function RequirementDetail({
             actorId={actorId}
             onDisposition={onFindingDisposition}
             onReopen={onFindingReopen}
+            onNavigateToProjection={onNavigateToProjection}
+            onNavigateToRequirement={onNavigateToRequirement}
           />
         </div>
       </div>

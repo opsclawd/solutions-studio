@@ -19,6 +19,8 @@ export interface ProjectionsPanelProps {
     prompt?: string
   ) => Promise<ProjectionRecordDto>;
   onRefreshWorkspace: () => void | Promise<void>;
+  onNavigateToRequirement?: (requirementId: string) => void;
+  onNavigateToFinding?: (findingId: string) => void;
 }
 
 export function ProjectionsPanel({
@@ -28,7 +30,9 @@ export function ProjectionsPanel({
   actorId,
   onSelectProjection,
   onGenerateProjection,
-  onRefreshWorkspace
+  onRefreshWorkspace,
+  onNavigateToRequirement,
+  onNavigateToFinding
 }: ProjectionsPanelProps) {
   const [artifactType, setArtifactType] = useState<
     'process-diagram' | 'state-diagram' | 'prototype'
@@ -178,6 +182,7 @@ export function ProjectionsPanel({
           <span className="text-xs font-semibold text-gray-500 mr-2">Available Projections:</span>
           {projections.map((proj) => {
             const isSelected = activeProjection?.id === proj.id;
+            const isPrior = proj.baselineId !== baselineId;
             return (
               <button
                 key={proj.id}
@@ -192,9 +197,32 @@ export function ProjectionsPanel({
               >
                 <span className="font-bold">{proj.id}</span>{' '}
                 <span className="text-gray-400">({proj.artifactType})</span>
+                {isPrior && (
+                  <span
+                    data-testid={`projection-prior-tag-${proj.id}`}
+                    className="ml-1.5 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-sans font-medium"
+                  >
+                    [Prior Baseline: {proj.baselineId}]
+                  </span>
+                )}
               </button>
             );
           })}
+        </div>
+      )}
+
+      {/* Prior Baseline Alert Banner */}
+      {activeProjection && activeProjection.baselineId !== baselineId && (
+        <div
+          data-testid="projection-prior-baseline-alert"
+          className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-xs flex items-center gap-2"
+        >
+          <span className="font-semibold">Prior Baseline Projection:</span>
+          <span>
+            This projection was generated from older baseline{' '}
+            <strong className="font-mono">{activeProjection.baselineId}</strong>. The current active
+            review baseline is <strong className="font-mono">{baselineId}</strong>.
+          </span>
         </div>
       )}
 
@@ -202,20 +230,24 @@ export function ProjectionsPanel({
       {activeProjection ? (
         activeProjection.artifactType === 'prototype' ? (
           <div>
-            <PrototypeViewer projection={activeProjection} />
+            <PrototypeViewer projection={activeProjection} currentBaselineId={baselineId} />
             <PrototypeDiscoveryPanel
               projection={activeProjection}
               actorId={actorId}
               onDiscoveryRecorded={onRefreshWorkspace}
+              onNavigateToRequirement={onNavigateToRequirement}
+              onNavigateToFinding={onNavigateToFinding}
             />
           </div>
         ) : (
           <div>
-            <MermaidViewer projection={activeProjection} />
+            <MermaidViewer projection={activeProjection} currentBaselineId={baselineId} />
             <DiagramDiscoveryPanel
               projection={activeProjection}
               actorId={actorId}
               onDiscoveryRecorded={onRefreshWorkspace}
+              onNavigateToRequirement={onNavigateToRequirement}
+              onNavigateToFinding={onNavigateToFinding}
             />
           </div>
         )

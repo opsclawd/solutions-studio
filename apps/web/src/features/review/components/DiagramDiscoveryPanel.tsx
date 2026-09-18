@@ -12,17 +12,23 @@ export interface DiagramDiscoveryPanelProps {
   projection: ProjectionRecordDto;
   actorId?: string;
   onDiscoveryRecorded?: () => void | Promise<void>;
+  onNavigateToRequirement?: (requirementId: string) => void;
+  onNavigateToFinding?: (findingId: string) => void;
 }
 
 export function DiagramDiscoveryPanel({
   projection,
   actorId,
-  onDiscoveryRecorded
+  onDiscoveryRecorded,
+  onNavigateToRequirement,
+  onNavigateToFinding
 }: DiagramDiscoveryPanelProps) {
   const [activeTab, setActiveTab] = useState<'requirement' | 'finding'>('requirement');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [lastCreatedRequirementId, setLastCreatedRequirementId] = useState<string | null>(null);
+  const [lastCreatedFindingId, setLastCreatedFindingId] = useState<string | null>(null);
 
   // Requirement proposal state
   const [statement, setStatement] = useState<string>('');
@@ -51,7 +57,7 @@ export function DiagramDiscoveryPanel({
     setErrorMessage(null);
 
     try {
-      await recordRequirementDiscovery({
+      const created = await recordRequirementDiscovery({
         statement: statement.trim(),
         category,
         rationale: reqRationale.trim(),
@@ -60,6 +66,7 @@ export function DiagramDiscoveryPanel({
         originatingProjectionId: projection.id
       });
 
+      setLastCreatedRequirementId(created.requirementId);
       setSuccessMessage('Requirement proposal recorded successfully.');
       setStatement('');
       setReqRationale('');
@@ -82,7 +89,7 @@ export function DiagramDiscoveryPanel({
     setErrorMessage(null);
 
     try {
-      await recordFindingDiscovery({
+      const created = await recordFindingDiscovery({
         type: findingType,
         discoveredBy: 'artifact-validation',
         rationale: findingRationale.trim(),
@@ -92,6 +99,7 @@ export function DiagramDiscoveryPanel({
         affectedRequirementRevisions: selectedRevs
       });
 
+      setLastCreatedFindingId(created.id);
       setSuccessMessage('Candidate finding recorded successfully.');
       setFindingRationale('');
       if (onDiscoveryRecorded) {
@@ -158,9 +166,31 @@ export function DiagramDiscoveryPanel({
       {successMessage && (
         <div
           data-testid="discovery-success-message"
-          className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-800 text-xs flex items-center justify-between"
+          className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-800 text-xs flex flex-wrap items-center justify-between gap-2"
         >
-          <span>✓ {successMessage}</span>
+          <div className="flex flex-wrap items-center gap-3">
+            <span>✓ {successMessage}</span>
+            {lastCreatedRequirementId && activeTab === 'requirement' && (
+              <button
+                type="button"
+                data-testid="view-discovered-requirement-btn"
+                onClick={() => onNavigateToRequirement?.(lastCreatedRequirementId)}
+                className="font-semibold underline text-green-900 hover:text-green-950"
+              >
+                Review &amp; Reconcile Requirement {lastCreatedRequirementId} →
+              </button>
+            )}
+            {lastCreatedFindingId && activeTab === 'finding' && (
+              <button
+                type="button"
+                data-testid="view-discovered-finding-btn"
+                onClick={() => onNavigateToFinding?.(lastCreatedFindingId)}
+                className="font-semibold underline text-green-900 hover:text-green-950"
+              >
+                View Finding {lastCreatedFindingId} in Workspace →
+              </button>
+            )}
+          </div>
           <button
             type="button"
             onClick={() => setSuccessMessage(null)}

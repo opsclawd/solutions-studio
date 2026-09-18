@@ -157,6 +157,7 @@ export interface IRequirementsRepository {
     expectedLatestRevisionIds: readonly RequirementRevisionId[]
   ): Promise<void>;
   getRequirementsBaseline(id: RequirementsBaselineId): Promise<RequirementsBaseline | undefined>;
+  listRequirementsBaselines(): Promise<readonly RequirementsBaseline[]>;
   saveEvaluationRun(run: EvaluationRunRecord): Promise<void>;
   getEvaluationRun(id: string): Promise<EvaluationRunRecord | undefined>;
   listEvaluationRuns(): Promise<readonly EvaluationRunRecord[]>;

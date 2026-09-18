@@ -15,6 +15,8 @@ export interface FindingsPanelProps {
     rationale: string
   ) => Promise<void>;
   onReopen: (findingId: string, rationale?: string) => Promise<void>;
+  onNavigateToProjection?: (projectionId: string) => void;
+  onNavigateToRequirement?: (requirementId: string) => void;
 }
 
 export function FindingsPanel({
@@ -22,7 +24,9 @@ export function FindingsPanel({
   findings,
   actorId,
   onDisposition,
-  onReopen
+  onReopen,
+  onNavigateToProjection,
+  onNavigateToRequirement
 }: FindingsPanelProps) {
   if (findings.length === 0) {
     return (
@@ -44,6 +48,9 @@ export function FindingsPanel({
           actorId={actorId}
           onDisposition={onDisposition}
           onReopen={onReopen}
+          onNavigateToProjection={onNavigateToProjection}
+          onNavigateToRequirement={onNavigateToRequirement}
+          getRequirementIdForRevision={() => requirementId}
         />
       ))}
     </div>

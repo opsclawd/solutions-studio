@@ -137,4 +137,68 @@ describe('reviewReducer', () => {
 
     expect(nextState.data?.projections.map((p) => p.id)).toEqual(['PROJ-A1']);
   });
+
+  it('handles SELECT_BASELINE and resets selected entities', () => {
+    const initialState: ReviewState = {
+      status: 'ready',
+      selectedBaselineId: 'BASE-001',
+      selectedRequirementId: 'REQ-001',
+      selectedProjectionId: 'PROJ-001',
+      selectedFindingId: 'FIND-001',
+      availableBaselines: ['BASE-001', 'BASE-002'],
+      findingsView: 'byRequirement'
+    };
+
+    const nextState = reviewReducer(initialState, {
+      type: 'SELECT_BASELINE',
+      payload: 'BASE-002'
+    });
+
+    expect(nextState.selectedBaselineId).toBe('BASE-002');
+    expect(nextState.selectedRequirementId).toBeUndefined();
+    expect(nextState.selectedProjectionId).toBeUndefined();
+    expect(nextState.selectedFindingId).toBeUndefined();
+  });
+
+  it('handles SET_CREATING_BASELINE', () => {
+    const initialState: ReviewState = {
+      status: 'ready',
+      isCreatingBaseline: false,
+      findingsView: 'byRequirement'
+    };
+
+    const nextState = reviewReducer(initialState, {
+      type: 'SET_CREATING_BASELINE',
+      payload: true
+    });
+
+    expect(nextState.isCreatingBaseline).toBe(true);
+
+    const closedState = reviewReducer(nextState, {
+      type: 'SET_CREATING_BASELINE',
+      payload: false
+    });
+
+    expect(closedState.isCreatingBaseline).toBe(false);
+  });
+
+  it('stores availableBaselines from incoming review state', () => {
+    const initialState: ReviewState = {
+      status: 'ready',
+      findingsView: 'byRequirement'
+    };
+
+    const incomingData: RequirementsReviewStateDto = {
+      ...createReviewStateFixture('BASE-002', []),
+      availableBaselines: ['BASE-001', 'BASE-002']
+    };
+
+    const nextState = reviewReducer(initialState, {
+      type: 'FETCH_SUCCESS',
+      payload: incomingData
+    });
+
+    expect(nextState.availableBaselines).toEqual(['BASE-001', 'BASE-002']);
+    expect(nextState.selectedBaselineId).toBe('BASE-002');
+  });
 });

@@ -7,6 +7,7 @@ import type {
   SourceRevisionDtoSchema,
   RequirementRevisionDtoSchema,
   RequirementsBaselineDtoSchema,
+  ListRequirementsBaselinesResponseDtoSchema,
   CandidateFindingDtoSchema,
   InstantDtoSchema,
   SourceTypeSchema,
@@ -53,6 +54,9 @@ export type RequirementDto = z.infer<typeof RequirementDtoSchema>;
 export type SourceRevisionDto = z.infer<typeof SourceRevisionDtoSchema>;
 export type RequirementRevisionDto = z.infer<typeof RequirementRevisionDtoSchema>;
 export type RequirementsBaselineDto = z.infer<typeof RequirementsBaselineDtoSchema>;
+export type ListRequirementsBaselinesResponseDto = z.infer<
+  typeof ListRequirementsBaselinesResponseDtoSchema
+>;
 export type CandidateFindingDto = z.infer<typeof CandidateFindingDtoSchema>;
 export type CandidateRequirementDto = z.infer<typeof CandidateRequirementDtoSchema>;
 export type CandidateFindingResponseDto = z.infer<typeof CandidateFindingResponseDtoSchema>;
