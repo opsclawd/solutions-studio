@@ -12,12 +12,16 @@
     "harness": "tsx scripts/run-phase-1-exit-gate.ts",
     "exit-gate": "tsx scripts/run-phase-1-exit-gate.ts",
     "eval": "tsx scripts/run-evaluation.ts",
-    "project": "tsx scripts/run-project-baseline.ts"
+    "project": "tsx scripts/run-project-baseline.ts",
+    "serve": "tsx scripts/run-http-server.ts"
   },
   "dependencies": {
     "@mermaid-js/mermaid-cli": "^11.4.2",
     "@solutions-studio/contracts": "workspace:*",
-    "@solutions-studio/domain": "workspace:*"
+    "@solutions-studio/domain": "workspace:*",
+    "fastify": "^5.0.0",
+    "fastify-type-provider-zod": "^4.0.2",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^22.7.5",
