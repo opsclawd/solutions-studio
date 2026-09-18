@@ -353,6 +353,41 @@ describe('FilesystemRequirementsRepository', () => {
     expect(list).toEqual([reqRev]);
   });
 
+  it('lists all requirement IDs and handles empty repository', async () => {
+    const emptyList = await repo.listRequirementIds();
+    expect(emptyList).toEqual([]);
+
+    const reqRev1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-001-R1'),
+      requirementId: createRequirementId('REQ-001'),
+      revision: 1,
+      statement: 'First requirement',
+      category: 'business-rule',
+      origin: 'EXPLICIT',
+      reviewState: 'PENDING',
+      resolutionState: 'UNRESOLVED',
+      evidence: []
+    });
+
+    const reqRev2 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-002-R1'),
+      requirementId: createRequirementId('REQ-002'),
+      revision: 1,
+      statement: 'Second requirement',
+      category: 'data-constraint',
+      origin: 'EXPLICIT',
+      reviewState: 'PENDING',
+      resolutionState: 'UNRESOLVED',
+      evidence: []
+    });
+
+    await repo.saveRequirementRevision(reqRev1);
+    await repo.saveRequirementRevision(reqRev2);
+
+    const ids = await repo.listRequirementIds();
+    expect(ids).toEqual(['REQ-001', 'REQ-002']);
+  });
+
   it('persists and reloads CandidateFinding', async () => {
     const finding = createCandidateFinding({
       id: createFindingId('FIND-001'),

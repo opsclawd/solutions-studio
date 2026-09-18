@@ -120,6 +120,7 @@ export interface IRequirementsRepository {
   saveRequirementRevision(revision: RequirementRevision): Promise<void>;
   getRequirementRevision(id: RequirementRevisionId): Promise<RequirementRevision | undefined>;
   listRequirementRevisions(requirementId: RequirementId): Promise<readonly RequirementRevision[]>;
+  listRequirementIds(): Promise<readonly RequirementId[]>;
   transitionRequirementRevision(
     successor: RequirementRevision,
     record: RequirementReconciliationRecord,

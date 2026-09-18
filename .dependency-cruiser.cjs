@@ -92,6 +92,21 @@ module.exports = {
       }
     },
     {
+      name: 'orchestrator-http-routes-cannot-depend-on-infrastructure',
+      severity: 'error',
+      comment:
+        'apps/orchestrator/src/http (routes, server, errorMapper) must NOT depend on ' +
+        'apps/orchestrator/src/infrastructure adapters. Only the composition root ' +
+        '(apps/orchestrator/src/http/composition.ts) may assemble infrastructure components.',
+      from: {
+        path: '^apps/orchestrator/src/http',
+        pathNot: ['^apps/orchestrator/src/http/composition\\.ts']
+      },
+      to: {
+        path: '^apps/orchestrator/src/infrastructure'
+      }
+    },
+    {
       name: 'orchestrator-cannot-depend-on-web',
       severity: 'error',
       comment: 'apps/orchestrator must NOT depend on apps/web.',

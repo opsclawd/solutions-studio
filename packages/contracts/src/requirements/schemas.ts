@@ -253,3 +253,84 @@ export const ProjectionRecordDtoSchema = z.object({
   metadata: ProjectionMetadataDtoSchema,
   createdAt: InstantDtoSchema
 });
+
+export const AcceptRequirementRequestDtoSchema = z.object({
+  rationale: z
+    .string()
+    .min(1)
+    .refine((s) => s.trim().length > 0, { message: 'Rationale must be non-empty' }),
+  actorId: z.string().min(1).optional(),
+  newRevisionId: z.string().min(1).optional()
+});
+
+export const RejectRequirementRequestDtoSchema = z.object({
+  rationale: z
+    .string()
+    .min(1)
+    .refine((s) => s.trim().length > 0, { message: 'Rationale must be non-empty' }),
+  actorId: z.string().min(1).optional(),
+  newRevisionId: z.string().min(1).optional()
+});
+
+export const ResolveRequirementRequestDtoSchema = z.object({
+  rationale: z
+    .string()
+    .min(1)
+    .refine((s) => s.trim().length > 0, { message: 'Rationale must be non-empty' }),
+  actorId: z.string().min(1).optional(),
+  newRevisionId: z.string().min(1).optional()
+});
+
+export const ReviseRequirementRequestDtoSchema = z.object({
+  statement: z.string().min(1).optional(),
+  category: RequirementCategorySchema.optional(),
+  origin: RequirementOriginSchema.optional(),
+  evidence: z.array(EvidenceReferenceDtoSchema).optional(),
+  affectedActors: z.array(z.string().min(1)).optional(),
+  dependencies: z.array(z.string().min(1)).optional(),
+  rationale: z
+    .string()
+    .min(1)
+    .refine((s) => s.trim().length > 0, { message: 'Rationale must be non-empty' }),
+  actorId: z.string().min(1).optional(),
+  newRevisionId: z.string().min(1).optional()
+});
+
+export const DispositionFindingRequestDtoSchema = z.object({
+  disposition: z.enum(FINDING_DISPOSITIONS),
+  rationale: z
+    .string()
+    .min(1)
+    .refine((s) => s.trim().length > 0, { message: 'Rationale must be non-empty' }),
+  actorId: z.string().min(1).optional()
+});
+
+export const ReopenFindingRequestDtoSchema = z.object({
+  rationale: z.string().optional(),
+  actorId: z.string().min(1).optional()
+});
+
+export const GenerateProjectionRequestDtoSchema = z.object({
+  artifactType: z.enum(['process-diagram', 'state-diagram']),
+  prompt: z.string().min(1).optional()
+});
+
+export const EvidenceExcerptDtoSchema = z.object({
+  sourceRevisionId: z.string().min(1),
+  locator: EvidenceLocatorDtoSchema,
+  headingPath: z.string(),
+  blockLabel: z.string(),
+  blockLabelSource: z.enum(['explicit-section', 'sequential-ordinal']).optional(),
+  text: z.string(),
+  startLine: z.number().int().positive(),
+  endLine: z.number().int().positive()
+});
+
+export const RequirementsReviewStateDtoSchema = z.object({
+  baseline: RequirementsBaselineDtoSchema.optional(),
+  requirementRevisions: z.array(RequirementRevisionDtoSchema),
+  findings: z.array(CandidateFindingDtoSchema),
+  reconciliationHistory: z.array(ReconciliationRecordDtoSchema),
+  evidenceExcerpts: z.array(EvidenceExcerptDtoSchema),
+  projections: z.array(ProjectionRecordDtoSchema)
+});

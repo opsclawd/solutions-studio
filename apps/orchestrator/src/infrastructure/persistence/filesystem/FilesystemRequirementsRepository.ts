@@ -369,6 +369,26 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
     return Object.freeze(result);
   }
 
+  async listRequirementIds(): Promise<readonly RequirementId[]> {
+    const dirPath = path.resolve(this.baseDir, 'requirement-index');
+    try {
+      const files = await fs.readdir(dirPath);
+      const jsonFiles = files.filter((f) => f.endsWith('.json')).sort();
+      const result: RequirementId[] = [];
+      for (const file of jsonFiles) {
+        const rawId = file.replace(/\.json$/, '');
+        assertSafeIdentifier(rawId, 'requirementId');
+        result.push(createRequirementId(rawId));
+      }
+      return Object.freeze(result);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return Object.freeze([]);
+      }
+      throw err;
+    }
+  }
+
   async saveCandidateFinding(finding: CandidateFinding): Promise<void> {
     assertSafeIdentifier(finding.id, 'findingId');
     if (finding.disposition !== 'OPEN') {
