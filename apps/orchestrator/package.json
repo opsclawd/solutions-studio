@@ -8,10 +8,16 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --dir test/unit",
     "test:integration": "vitest run --dir test/integration",
-    "tracer": "tsx scripts/run-tracer.ts"
+    "tracer": "tsx scripts/run-tracer.ts",
+    "harness": "tsx scripts/run-phase-1-exit-gate.ts",
+    "exit-gate": "tsx scripts/run-phase-1-exit-gate.ts",
+    "eval": "tsx scripts/run-evaluation.ts",
+    "project": "tsx scripts/run-project-baseline.ts"
   },
   "dependencies": {
-    "@mermaid-js/mermaid-cli": "^11.4.2"
+    "@mermaid-js/mermaid-cli": "^11.4.2",
+    "@solutions-studio/contracts": "workspace:*",
+    "@solutions-studio/domain": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.7.5",

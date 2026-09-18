@@ -97,6 +97,35 @@ pnpm --filter @solutions-studio/orchestrator tracer --provider agy
 pnpm --filter @solutions-studio/orchestrator tracer --provider opencode
 ```
 
+### 5. Run Requirements Intelligence Evaluation Runner
+
+```bash
+# Deterministic local / CI execution (credential-free)
+pnpm --filter @solutions-studio/orchestrator eval
+
+# Real provider candidate validation (synthetic corpus only)
+pnpm --filter @solutions-studio/orchestrator eval --provider agy --candidate-sha "${CANDIDATE_SHA}"
+# or
+pnpm --filter @solutions-studio/orchestrator eval --provider opencode --candidate-sha "${CANDIDATE_SHA}"
+```
+
+### 6. Run Baseline Projection Command
+
+```bash
+# Real provider candidate baseline projection (against an exit gate store)
+pnpm --filter @solutions-studio/orchestrator project \
+  --baseline BASE-CANONICAL-MESSY-001 \
+  --artifact-type process-diagram \
+  --provider agy \
+  --store ".validation-store"
+# or
+pnpm --filter @solutions-studio/orchestrator project \
+  --baseline BASE-CANONICAL-MESSY-001 \
+  --artifact-type process-diagram \
+  --provider opencode \
+  --store ".validation-store"
+```
+
 ---
 
 ## CLI Execution Contracts & Observed Findings
@@ -157,6 +186,83 @@ pnpm --filter @solutions-studio/orchestrator tracer --provider opencode
 | **Automated Test Coverage**       | 100% pass rate across unit suites and real CLI integration tests with synthetic fixtures                                        | **PASS** (25 unit, 3 integration) |
 | **Architectural Zero-Relocation** | Code is placed directly in target Phase 1 locations (`apps/orchestrator/src/...`)                                               | **PASS**                          |
 
-### Exit Gate Verdict: **GO**
+### Historical Phase 0 Spike Exit Verdict: **GO**
 
-The architectural seam is validated and stable. Phase 1 (Vertical Slice 1 — The Visual Process Canvas) can proceed directly using the existing generation gateway and Mermaid validation adapters.
+The Phase 0 generation and Mermaid validation seam was validated and de-risked. Phase 1 establishes the requirements kernel, immutable source and requirement revisions, deterministic human reconciliation, immutable baselines, and baseline projections.
+
+> [!IMPORTANT]
+> The Phase 0 verdict above applies only to the historical Phase 0 spike. Phase 1 candidate promotion requires authoritative human validation of the locked candidate commit SHA via the Release Batch candidate validation procedure.
+
+---
+
+## Phase 1 Release Batch Candidate Validation Checklist
+
+For authoritative release validation and Phase 1 exit gating against a configured real provider (e.g. `agy` or `opencode`), execute the canonical procedure documented in [`test/evaluation/README.md`](test/evaluation/README.md) using only synthetic, non-sensitive fixtures:
+
+1. **Pin Candidate SHA:**
+   Ensure your working tree is clean and capture the exact candidate commit SHA:
+
+   ```bash
+   CANDIDATE_SHA=$(git rev-parse HEAD)
+   echo "Validating Candidate SHA: ${CANDIDATE_SHA}"
+   ```
+
+2. **Run Deterministic Synthetic Fixture Verification:**
+   Verify all unit tests, typecheck, linting, and the Phase 1 exit gate complete without network or provider credentials:
+
+   ```bash
+   pnpm typecheck
+   pnpm lint
+   pnpm --filter @solutions-studio/orchestrator test
+   pnpm --filter @solutions-studio/orchestrator exit-gate --store ".validation-store"
+   ```
+
+   > [!NOTE]
+   > Passing `--store ".validation-store"` preserves the reconciled requirements repository and verified baseline `BASE-CANONICAL-MESSY-001` on disk beneath `apps/orchestrator/.validation-store` for subsequent real-provider baseline projection. A normal `exit-gate` invocation without `--store` creates and removes an ephemeral temporary store.
+
+3. **Run Real-Provider Candidate Validation (Synthetic Fixtures Only):**
+   Execute baseline projection and the evaluation runner targeting the configured real provider:
+
+   ```bash
+   # Project verified baseline with real provider using real MermaidCliLinterAdapter (reusing existing <= 2 repair attempts)
+   pnpm --filter @solutions-studio/orchestrator project \
+     --baseline BASE-CANONICAL-MESSY-001 \
+     --artifact-type process-diagram \
+     --provider agy \
+     --store ".validation-store"
+   # or
+   pnpm --filter @solutions-studio/orchestrator project \
+     --baseline BASE-CANONICAL-MESSY-001 \
+     --artifact-type process-diagram \
+     --provider opencode \
+     --store ".validation-store"
+
+   # Execute requirements intelligence evaluation runner over the synthetic corpus
+   pnpm --filter @solutions-studio/orchestrator eval \
+     --provider agy \
+     --candidate-sha "${CANDIDATE_SHA}" \
+     --store ".evaluation-store" \
+     --output "reports/evaluation-report-${CANDIDATE_SHA}.json" \
+     --output-markdown "reports/evaluation-report-${CANDIDATE_SHA}.md"
+   # or
+   pnpm --filter @solutions-studio/orchestrator eval \
+     --provider opencode \
+     --candidate-sha "${CANDIDATE_SHA}" \
+     --store ".evaluation-store" \
+     --output "reports/evaluation-report-${CANDIDATE_SHA}.json" \
+     --output-markdown "reports/evaluation-report-${CANDIDATE_SHA}.md"
+   ```
+
+   > [!NOTE]
+   > The baseline projection command prints projection ID, baseline ID, exact requirement revision IDs, repairs needed, attempt count, and content hash; the full record is persisted to `apps/orchestrator/.validation-store/projections/<projection-id>.json`.
+   > The candidate SHA supplied to `eval` is recorded as `requested` provenance unless independently verified by the operator.
+   > The evaluation produces both machine-readable JSON and human-readable Markdown reports.
+
+4. **Record Authoritative Human Disposition:**
+   Copy `docs/phase-1-report-template.md` to `docs/reports/phase-1-${CANDIDATE_SHA}.md` and record:
+   - Pinned `CANDIDATE_SHA`
+   - Extraction quality and corpus coverage metrics
+   - False-positive hotspots and unclassified observations
+   - Provider/model observations (latency, repair counts)
+   - Evidence-backed design changes
+   - Record exactly ONE human disposition: `[ ] GO` or `[ ] DESIGN CHANGE` with reviewing authority signature.

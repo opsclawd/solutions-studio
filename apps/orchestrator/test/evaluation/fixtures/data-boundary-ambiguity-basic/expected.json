@@ -1,0 +1,71 @@
+{
+  "fixtureId": "data-boundary-ambiguity-basic",
+  "version": "1.0.0",
+  "title": "Data Boundary Ambiguity in Approval Thresholds",
+  "description": "Tests discovery of data boundary ambiguities where numerical boundaries lack explicit inclusive or exclusive interval specifications.",
+  "categories": ["data-boundary-ambiguity"],
+  "canonicalMessyPackage": false,
+  "sources": [
+    {
+      "sourceRevisionId": "THRESHOLD-SPEC-001-R1",
+      "sourceId": "THRESHOLD-SPEC-001",
+      "sourceType": "sop",
+      "revision": 1,
+      "path": "source.md"
+    }
+  ],
+  "expectedRequirements": [
+    {
+      "requirementKey": "REQ-ORDER-GATEWAY-01",
+      "category": "business-rule",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "THRESHOLD-SPEC-001-R1",
+          "locator": "operational-purpose#1.1"
+        }
+      ],
+      "statementPattern": ".*Standard customer orders are captured by the order processing gateway.*"
+    },
+    {
+      "requirementKey": "REQ-EXPEDITED-FREIGHT-01",
+      "category": "business-rule",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "THRESHOLD-SPEC-001-R1",
+          "locator": "expedited-freight-threshold#3.1"
+        }
+      ],
+      "statementPattern": ".*Freight shipments with valuation up to and including \\$25,000 qualify for expedited routing.*"
+    }
+  ],
+  "expectedFindings": [
+    {
+      "findingKey": "FINDING-BOUNDARY-01",
+      "category": "data-boundary-ambiguity",
+      "type": "data-boundary-ambiguity",
+      "evidence": [
+        {
+          "sourceRevisionId": "THRESHOLD-SPEC-001-R1",
+          "locator": "dual-approval-policy#2.1"
+        }
+      ],
+      "relatedRequirementKeys": ["REQ-ORDER-GATEWAY-01"],
+      "rationale": "Purchase order approval threshold is boundary-ambiguous: one clause requires dual sign-off for orders of '$10,000 or more' while another clause cites orders 'exceeding $10,000', without defining whether an order of exactly $10,000 requires single or dual sign-off."
+    }
+  ],
+  "expectedNonFindings": [
+    {
+      "description": "Expedited freight threshold explicitly resolves interval boundary by specifying up to and including $25,000 and confirming exactly $25,000 is inclusive, and must not be flagged as boundary ambiguous.",
+      "category": "data-boundary-ambiguity",
+      "wouldBeType": "data-boundary-ambiguity",
+      "evidence": [
+        {
+          "sourceRevisionId": "THRESHOLD-SPEC-001-R1",
+          "locator": "expedited-freight-threshold#3.1"
+        }
+      ]
+    }
+  ]
+}

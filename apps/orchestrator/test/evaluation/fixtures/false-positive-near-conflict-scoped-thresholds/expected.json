@@ -1,0 +1,61 @@
+{
+  "fixtureId": "false-positive-near-conflict-scoped-thresholds",
+  "version": "1.0.0",
+  "title": "False Positive Near-Conflict on Geographically Scoped Thresholds",
+  "description": "Tests negative discovery where superficially differing dollar thresholds ($75 vs $150) are explicitly scoped to separate non-overlapping domains (domestic vs international) and must not be flagged as a contradiction.",
+  "categories": ["false-positive-near-conflict"],
+  "canonicalMessyPackage": false,
+  "sources": [
+    {
+      "sourceRevisionId": "TRAVEL-POL-001-R1",
+      "sourceId": "TRAVEL-POL-001",
+      "sourceType": "policy",
+      "revision": 1,
+      "path": "source.md"
+    }
+  ],
+  "expectedRequirements": [
+    {
+      "requirementKey": "REQ-PERDIEM-DOM",
+      "category": "business-rule",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "TRAVEL-POL-001-R1",
+          "locator": "meal-reimbursement-tiers#4.1"
+        }
+      ],
+      "statementPattern": ".*domestic travel.*maximum per diem of \\$75 USD.*"
+    },
+    {
+      "requirementKey": "REQ-PERDIEM-INT",
+      "category": "business-rule",
+      "origin": "EXPLICIT",
+      "evidence": [
+        {
+          "sourceRevisionId": "TRAVEL-POL-001-R1",
+          "locator": "meal-reimbursement-tiers#4.2"
+        }
+      ],
+      "statementPattern": ".*international travel.*maximum per diem of \\$150 USD.*"
+    }
+  ],
+  "expectedFindings": [],
+  "expectedNonFindings": [
+    {
+      "description": "Distinct meal per diem limits for domestic ($75) versus international ($150) travel are partitioned by geographic scope and do not represent a contradiction.",
+      "category": "false-positive-near-conflict",
+      "wouldBeType": "contradiction",
+      "evidence": [
+        {
+          "sourceRevisionId": "TRAVEL-POL-001-R1",
+          "locator": "meal-reimbursement-tiers#4.1"
+        },
+        {
+          "sourceRevisionId": "TRAVEL-POL-001-R1",
+          "locator": "meal-reimbursement-tiers#4.2"
+        }
+      ]
+    }
+  ]
+}

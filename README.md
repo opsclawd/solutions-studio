@@ -171,3 +171,77 @@ The product should be evaluated primarily by the quality of work entering engine
   - Add identity, backlog export, downstream impact analysis where operationally required, and pilot against an active enterprise workflow.
 
 Implementation discipline: the PRD describes destination concepts, not a mandate to create a class or subsystem for every noun. Phase 1 implementation issues should include only what is required to satisfy the Phase 1 exit criterion.
+
+---
+
+## Candidate-SHA Real-Provider Validation Checklist
+
+For authoritative release validation and Phase 1 exit gating against a configured real provider (e.g. `agy` or `opencode`), execute the canonical procedure documented in [`apps/orchestrator/test/evaluation/README.md`](apps/orchestrator/test/evaluation/README.md) using only synthetic, non-sensitive fixtures:
+
+1. **Pin Candidate SHA:**
+   Ensure your working tree is clean and capture the exact candidate commit SHA:
+
+   ```bash
+   CANDIDATE_SHA=$(git rev-parse HEAD)
+   echo "Validating Candidate SHA: ${CANDIDATE_SHA}"
+   ```
+
+2. **Run Deterministic Synthetic Fixture Verification:**
+   Verify all unit tests, typecheck, linting, and the Phase 1 exit gate complete without network or provider credentials:
+
+   ```bash
+   pnpm typecheck
+   pnpm lint
+   pnpm --filter @solutions-studio/orchestrator test
+   pnpm --filter @solutions-studio/orchestrator exit-gate --store ".validation-store"
+   ```
+
+   > [!NOTE]
+   > Passing `--store ".validation-store"` preserves the reconciled requirements repository and verified baseline `BASE-CANONICAL-MESSY-001` on disk beneath `apps/orchestrator/.validation-store` for subsequent real-provider baseline projection. A normal `exit-gate` invocation without `--store` creates and removes an ephemeral temporary store.
+
+3. **Run Real-Provider Candidate Validation (Synthetic Fixtures Only):**
+   Execute baseline projection and the evaluation runner targeting the configured real provider:
+
+   ```bash
+   # Project verified baseline with real provider using real MermaidCliLinterAdapter (reusing existing <= 2 repair attempts)
+   pnpm --filter @solutions-studio/orchestrator project \
+     --baseline BASE-CANONICAL-MESSY-001 \
+     --artifact-type process-diagram \
+     --provider agy \
+     --store ".validation-store"
+   # or
+   pnpm --filter @solutions-studio/orchestrator project \
+     --baseline BASE-CANONICAL-MESSY-001 \
+     --artifact-type process-diagram \
+     --provider opencode \
+     --store ".validation-store"
+
+   # Execute requirements intelligence evaluation runner over the synthetic corpus
+   pnpm --filter @solutions-studio/orchestrator eval \
+     --provider agy \
+     --candidate-sha "${CANDIDATE_SHA}" \
+     --store ".evaluation-store" \
+     --output "reports/evaluation-report-${CANDIDATE_SHA}.json" \
+     --output-markdown "reports/evaluation-report-${CANDIDATE_SHA}.md"
+   # or
+   pnpm --filter @solutions-studio/orchestrator eval \
+     --provider opencode \
+     --candidate-sha "${CANDIDATE_SHA}" \
+     --store ".evaluation-store" \
+     --output "reports/evaluation-report-${CANDIDATE_SHA}.json" \
+     --output-markdown "reports/evaluation-report-${CANDIDATE_SHA}.md"
+   ```
+
+   > [!NOTE]
+   > The baseline projection command prints projection ID, baseline ID, exact requirement revision IDs, repairs needed, attempt count, and content hash; the full record is persisted to `apps/orchestrator/.validation-store/projections/<projection-id>.json`.
+   > The candidate SHA supplied to `eval` is recorded as `requested` provenance unless independently verified by the operator.
+   > The evaluation produces both machine-readable JSON and human-readable Markdown reports.
+
+4. **Record Empirical Evaluation Report:**
+   Copy `docs/phase-1-report-template.md` to `docs/reports/phase-1-${CANDIDATE_SHA}.md` and record:
+   - Pinned `CANDIDATE_SHA`
+   - Extraction quality and corpus coverage metrics (TP/FP/FN per category)
+   - False-positive hotspots and unclassified observations
+   - Provider/model observations (latency, tokens, repair counts)
+   - Evidence-backed design changes
+   - Complete the exit decision gate (`[ ] GO / [ ] DESIGN CHANGE`) with reviewing authority signature (no arbitrary 90%/95% threshold is enforced).

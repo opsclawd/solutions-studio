@@ -10,3 +10,5 @@ chrome-headless-shell/
 .ai-worktrees/
 .ai-tmp/
 *.tsbuildinfo
+validate/
+apps/orchestrator/reports/

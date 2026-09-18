@@ -16,6 +16,7 @@ export interface AntigravityCliAdapterOptions {
   executablePath?: string;
   defaultTimeoutMs?: number;
   cwd?: string;
+  model?: string;
 }
 
 interface AgyJsonOutput {
@@ -24,6 +25,7 @@ interface AgyJsonOutput {
   response?: string;
   duration_seconds?: number;
   num_turns?: number;
+  model?: string;
   usage?: {
     input_tokens?: number;
     output_tokens?: number;
@@ -38,11 +40,13 @@ export class AntigravityCliAdapter implements IGenerationGateway {
   private readonly executablePath: string;
   private readonly defaultTimeoutMs: number;
   private readonly cwd?: string;
+  private readonly model?: string;
 
   constructor(options?: AntigravityCliAdapterOptions) {
     this.executablePath = options?.executablePath ?? process.env.AGY_BIN_PATH ?? 'agy';
     this.defaultTimeoutMs = options?.defaultTimeoutMs ?? 90_000;
     this.cwd = options?.cwd;
+    this.model = options?.model;
   }
 
   async generate(request: GenerationRequest): Promise<GenerationResult> {
@@ -52,7 +56,11 @@ export class AntigravityCliAdapter implements IGenerationGateway {
       'System: You are an automated artifact generation engine. Output ONLY the raw requested text without using any tools, running commands, or providing conversational commentary.';
     const promptText = `${systemInstruction}\n\n${request.prompt}`;
 
-    const args = ['--output-format', 'json', '--dangerously-skip-permissions', '-p', promptText];
+    const args = ['--output-format', 'json', '--dangerously-skip-permissions'];
+    if (this.model) {
+      args.push('--model', this.model);
+    }
+    args.push('-p', promptText);
 
     return new Promise((resolve, reject) => {
       let stdoutData = '';
@@ -141,6 +149,7 @@ export class AntigravityCliAdapter implements IGenerationGateway {
             text: parsed.response,
             metadata: {
               provider: 'antigravity-cli',
+              model: parsed.model ?? this.model,
               durationMs: parsed.duration_seconds
                 ? Math.round(parsed.duration_seconds * 1000)
                 : undefined,
