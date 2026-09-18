@@ -70,6 +70,43 @@ describe('projectionsApi', () => {
     );
   });
 
+  it('generateProjection posts prototype request and returns parsed ProjectionRecordDto', async () => {
+    const protoProjection: ProjectionRecordDto = {
+      ...sampleProjection,
+      id: 'PROJ-PROTO-001',
+      artifactType: 'prototype',
+      content: 'export default function App() { return <div>Proto</div>; }',
+      metadata: {
+        ...sampleProjection.metadata,
+        artifactType: 'prototype',
+        configuredExecution: {
+          provider: 'fake',
+          artifactType: 'prototype'
+        }
+      }
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => protoProjection
+    } as Response);
+
+    const result = await generateProjection('BASE-001', {
+      artifactType: 'prototype'
+    });
+
+    expect(result.id).toBe('PROJ-PROTO-001');
+    expect(result.artifactType).toBe('prototype');
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/baselines/BASE-001/projections'),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ artifactType: 'prototype' })
+      })
+    );
+  });
+
   it('generateProjection throws ApiError on 502 ARTIFACT_GENERATION_FAILED', async () => {
     const errorPayload = {
       code: 'ARTIFACT_GENERATION_FAILED',

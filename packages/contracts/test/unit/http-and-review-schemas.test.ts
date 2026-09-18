@@ -133,13 +133,16 @@ describe('HTTP and Review Schemas', () => {
   });
 
   describe('GenerateProjectionRequestDtoSchema', () => {
-    it('accepts process-diagram and state-diagram', () => {
+    it('accepts process-diagram, state-diagram, and prototype', () => {
       expect(
         GenerateProjectionRequestDtoSchema.parse({ artifactType: 'process-diagram' }).artifactType
       ).toBe('process-diagram');
       expect(
         GenerateProjectionRequestDtoSchema.parse({ artifactType: 'state-diagram' }).artifactType
       ).toBe('state-diagram');
+      expect(
+        GenerateProjectionRequestDtoSchema.parse({ artifactType: 'prototype' }).artifactType
+      ).toBe('prototype');
     });
 
     it('rejects unsupported artifact types', () => {

@@ -16,6 +16,7 @@
     "serve": "tsx scripts/run-http-server.ts"
   },
   "dependencies": {
+    "@babel/standalone": "^7.26.4",
     "@fastify/cors": "^10.0.1",
     "@mermaid-js/mermaid-cli": "^11.4.2",
     "@solutions-studio/contracts": "workspace:*",
@@ -25,6 +26,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/babel__standalone": "^7.1.9",
     "@types/node": "^22.7.5",
     "tsx": "^4.19.1",
     "typescript": "^5.6.3",

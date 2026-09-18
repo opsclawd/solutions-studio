@@ -15,7 +15,9 @@ import {
 import { FilesystemRequirementsRepository } from '../../src/infrastructure/persistence/filesystem/FilesystemRequirementsRepository.js';
 import { FakeGenerationGateway } from '../fakes/FakeGenerationGateway.js';
 import { FakeMermaidLinterGateway } from '../fakes/FakeMermaidLinterGateway.js';
+import { FakePrototypeValidatorGateway } from '../fakes/FakePrototypeValidatorGateway.js';
 import { GenerateArtifactUseCase } from '../../src/application/use-cases/GenerateArtifactUseCase.js';
+import { GeneratePrototypeProjectionUseCase } from '../../src/application/use-cases/GeneratePrototypeProjectionUseCase.js';
 import { ProjectBaselineUseCase } from '../../src/application/use-cases/ProjectBaselineUseCase.js';
 import { UnknownRequirementsBaselineError } from '../../src/application/use-cases/ReconciliationErrors.js';
 
@@ -24,7 +26,9 @@ describe('ProjectBaselineUseCase', () => {
   let repo: FilesystemRequirementsRepository;
   let fakeGateway: FakeGenerationGateway;
   let fakeLinter: FakeMermaidLinterGateway;
+  let fakeValidator: FakePrototypeValidatorGateway;
   let generateArtifactUseCase: GenerateArtifactUseCase;
+  let generatePrototypeProjectionUseCase: GeneratePrototypeProjectionUseCase;
   let projectBaselineUseCase: ProjectBaselineUseCase;
 
   beforeEach(async () => {
@@ -32,8 +36,20 @@ describe('ProjectBaselineUseCase', () => {
     repo = new FilesystemRequirementsRepository({ baseDir: tempDir });
     fakeGateway = new FakeGenerationGateway();
     fakeLinter = new FakeMermaidLinterGateway();
+    fakeValidator = new FakePrototypeValidatorGateway();
     generateArtifactUseCase = new GenerateArtifactUseCase(fakeGateway, fakeLinter);
-    projectBaselineUseCase = new ProjectBaselineUseCase(generateArtifactUseCase, repo, 'fake');
+    generatePrototypeProjectionUseCase = new GeneratePrototypeProjectionUseCase(
+      fakeGateway,
+      fakeValidator,
+      repo,
+      'fake'
+    );
+    projectBaselineUseCase = new ProjectBaselineUseCase(
+      generateArtifactUseCase,
+      repo,
+      'fake',
+      generatePrototypeProjectionUseCase
+    );
   });
 
   afterEach(async () => {
@@ -241,5 +257,52 @@ describe('ProjectBaselineUseCase', () => {
 
     const nonExistent = await projectBaselineUseCase.getProjection('PROJ-NON-EXISTENT');
     expect(nonExistent).toBeUndefined();
+  });
+
+  it('delegates prototype artifactType to GeneratePrototypeProjectionUseCase and returns projection result', async () => {
+    const rev1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-005-R1'),
+      requirementId: createRequirementId('REQ-005'),
+      revision: 1,
+      statement: 'Interactive dashboard displays active telemetry',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR'
+    });
+    await repo.saveRequirementRevision(rev1);
+
+    const baseline = createRequirementsBaseline({
+      id: createRequirementsBaselineId('BASE-PROTO-01'),
+      requirements: [rev1],
+      createdBy: createReviewerId('REV-LEAD')
+    });
+    await repo.saveRequirementsBaseline(baseline);
+
+    const protoCode = [
+      '/**',
+      ' * @baseline BASE-PROTO-01',
+      ' * @requirements REQ-005-R1',
+      ' */',
+      "import React from 'react';",
+      'export default function Dashboard() { return <div>Telemetry</div>; }'
+    ].join('\n');
+
+    fakeGateway.queueResponse(protoCode);
+
+    const result = await projectBaselineUseCase.project({
+      baselineId: baseline.id,
+      artifactType: 'prototype'
+    });
+
+    expect(result.content).toBe(protoCode);
+    expect(result.metadata.artifactType).toBe('prototype');
+    expect(result.metadata.baselineId).toBe('BASE-PROTO-01');
+    expect(result.metadata.declaredProvenance.baselineId).toBe('BASE-PROTO-01');
+    expect(result.metadata.declaredProvenance.requirementRevisionIds).toEqual(['REQ-005-R1']);
+
+    const reloaded = await repo.getProjectionRecord(result.projectionId);
+    expect(reloaded).toBeDefined();
+    expect(reloaded?.artifactType).toBe('prototype');
   });
 });

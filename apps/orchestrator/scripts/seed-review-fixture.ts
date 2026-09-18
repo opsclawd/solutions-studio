@@ -204,6 +204,64 @@ export async function seedReviewFixture(targetDir: string) {
   };
   await repo.saveProjectionRecord(proj1);
 
+  // 8. Initial prototype projection PROJ-002 bound to BASE-001
+  const proj2Content = [
+    '/**',
+    ' * @baseline BASE-001',
+    ' * @requirements REQ-002-R1',
+    ' */',
+    "import React, { useState } from 'react';",
+    '',
+    'export default function CounterPrototype() {',
+    '  const [count, setCount] = useState(0);',
+    '  return (',
+    '    <div className="p-6 bg-white rounded-lg border border-gray-200">',
+    '      <h2 className="text-sm font-bold text-gray-900 mb-2">Interactive Counter Prototype</h2>',
+    '      <p data-testid="counter-value" className="text-xs text-gray-700 font-mono mb-4">',
+    '        Count: {count}',
+    '      </p>',
+    '      <button',
+    '        type="button"',
+    '        data-testid="increment-btn"',
+    '        onClick={() => setCount((c) => c + 1)}',
+    '        className="px-3 py-1.5 bg-blue-600 text-white rounded text-xs font-semibold"',
+    '      >',
+    '        Increment Counter',
+    '      </button>',
+    '    </div>',
+    '  );',
+    '}'
+  ].join('\n');
+
+  const proj2: ProjectionRecord = {
+    id: 'PROJ-002',
+    baselineId: baseline1.id,
+    requirementRevisionIds: [req2Rev1.id],
+    artifactType: 'prototype',
+    content: proj2Content,
+    metadata: {
+      baselineId: 'BASE-001',
+      requirementRevisionIds: ['REQ-002-R1'],
+      artifactType: 'prototype',
+      declaredProvenance: {
+        baselineId: 'BASE-001',
+        requirementRevisionIds: ['REQ-002-R1']
+      },
+      configuredExecution: {
+        provider: 'fake',
+        artifactType: 'prototype'
+      },
+      measuredVerification: {
+        repairsNeeded: 0,
+        attemptCount: 1,
+        contentHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+        verifiedAt: now()
+      }
+    },
+    createdAt: now()
+  };
+  await repo.saveProjectionRecord(proj2);
+
   console.log(`Seeded review fixture store at: ${targetDir}`);
 }
 

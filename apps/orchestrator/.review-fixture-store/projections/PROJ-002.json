@@ -1,0 +1,27 @@
+{
+  "id": "PROJ-002",
+  "baselineId": "BASE-001",
+  "requirementRevisionIds": ["REQ-002-R1"],
+  "artifactType": "prototype",
+  "content": "/**\n * @baseline BASE-001\n * @requirements REQ-002-R1\n */\nimport React, { useState } from 'react';\n\nexport default function CounterPrototype() {\n  const [count, setCount] = useState(0);\n  return (\n    <div className=\"p-6 bg-white rounded-lg border border-gray-200\">\n      <h2 className=\"text-sm font-bold text-gray-900 mb-2\">Interactive Counter Prototype</h2>\n      <p data-testid=\"counter-value\" className=\"text-xs text-gray-700 font-mono mb-4\">\n        Count: {count}\n      </p>\n      <button\n        type=\"button\"\n        data-testid=\"increment-btn\"\n        onClick={() => setCount((c) => c + 1)}\n        className=\"px-3 py-1.5 bg-blue-600 text-white rounded text-xs font-semibold\"\n      >\n        Increment Counter\n      </button>\n    </div>\n  );\n}",
+  "metadata": {
+    "baselineId": "BASE-001",
+    "requirementRevisionIds": ["REQ-002-R1"],
+    "artifactType": "prototype",
+    "declaredProvenance": {
+      "baselineId": "BASE-001",
+      "requirementRevisionIds": ["REQ-002-R1"]
+    },
+    "configuredExecution": {
+      "provider": "fake",
+      "artifactType": "prototype"
+    },
+    "measuredVerification": {
+      "repairsNeeded": 0,
+      "attemptCount": 1,
+      "contentHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "verifiedAt": "2026-09-18T22:04:53.790Z"
+    }
+  },
+  "createdAt": "2026-09-18T22:04:53.790Z"
+}
