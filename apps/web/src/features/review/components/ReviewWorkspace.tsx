@@ -19,6 +19,7 @@ import { RequirementList } from './RequirementList';
 import { RequirementDetail } from './RequirementDetail';
 import { AllFindingsPanel } from './AllFindingsPanel';
 import { ProjectionsPanel } from './ProjectionsPanel';
+import { CreateBaselineModal } from './CreateBaselineModal';
 
 export interface ReviewWorkspaceProps {
   baselineId?: string;
@@ -39,6 +40,9 @@ export function ReviewWorkspace({ baselineId }: ReviewWorkspaceProps) {
     data,
     error,
     mutationError,
+    activeBaselineId,
+    availableBaselines,
+    isCreatingBaseline,
     selectedRequirementId,
     selectedRequirement,
     selectedProjectionId,
@@ -49,6 +53,10 @@ export function ReviewWorkspace({ baselineId }: ReviewWorkspaceProps) {
     evidenceByKey,
     historyByEntityId,
     refresh,
+    selectBaseline,
+    openCreateBaselineModal,
+    closeCreateBaselineModal,
+    handleCreateBaseline,
     selectRequirement,
     selectProjection,
     setFindingsView,
@@ -57,6 +65,21 @@ export function ReviewWorkspace({ baselineId }: ReviewWorkspaceProps) {
     handleFindingMutation,
     handleGenerateProjection
   } = useReviewState(baselineId);
+
+  // Cross-panel deep-link navigation handlers
+  const handleNavigateToRequirement = (reqId: string) => {
+    setFindingsView('byRequirement');
+    selectRequirement(reqId);
+  };
+
+  const handleNavigateToFinding = (_findingId: string) => {
+    setFindingsView('all');
+  };
+
+  const handleNavigateToProjection = (projId: string) => {
+    setFindingsView('projections');
+    selectProjection(projId);
+  };
 
   // Handlers for requirements
   const handleAccept = async (rationale: string) => {
@@ -157,6 +180,40 @@ export function ReviewWorkspace({ baselineId }: ReviewWorkspaceProps) {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Baseline Selector and Create Successor Baseline */}
+            <div className="flex items-center gap-2">
+              <label htmlFor="baseline-selector" className="text-xs text-gray-500 font-medium">
+                Baseline:
+              </label>
+              <select
+                id="baseline-selector"
+                data-testid="baseline-selector"
+                value={activeBaselineId ?? ''}
+                onChange={(e) => selectBaseline(e.target.value)}
+                className="text-xs font-mono font-medium border border-gray-300 rounded-lg px-2 py-1 bg-white text-gray-900 shadow-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+              >
+                {Array.from(
+                  new Set([
+                    ...(availableBaselines ?? []),
+                    ...(activeBaselineId ? [activeBaselineId] : [])
+                  ])
+                ).map((bId) => (
+                  <option key={bId} value={bId}>
+                    {bId}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                data-testid="open-create-baseline-modal-btn"
+                onClick={openCreateBaselineModal}
+                className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-medium transition shadow-xs flex items-center gap-1"
+                title="Create Successor Baseline"
+              >
+                + Baseline
+              </button>
+            </div>
+
             {/* View Switcher */}
             <div className="flex bg-gray-100 p-1 rounded-lg border border-gray-200 text-xs">
               <button
@@ -234,13 +291,15 @@ export function ReviewWorkspace({ baselineId }: ReviewWorkspaceProps) {
           </div>
         ) : findingsView === 'projections' ? (
           <ProjectionsPanel
-            baselineId={data?.baseline?.id ?? baselineId}
+            baselineId={activeBaselineId}
             projections={projections}
             selectedProjectionId={selectedProjectionId}
             actorId={actorId}
             onSelectProjection={selectProjection}
             onGenerateProjection={handleGenerateProjection}
             onRefreshWorkspace={refresh}
+            onNavigateToRequirement={handleNavigateToRequirement}
+            onNavigateToFinding={handleNavigateToFinding}
           />
         ) : findingsView === 'all' ? (
           <AllFindingsPanel
@@ -249,6 +308,8 @@ export function ReviewWorkspace({ baselineId }: ReviewWorkspaceProps) {
             actorId={actorId}
             onDisposition={handleFindingDisposition}
             onReopen={handleFindingReopen}
+            onNavigateToProjection={handleNavigateToProjection}
+            onNavigateToRequirement={handleNavigateToRequirement}
           />
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -274,7 +335,7 @@ export function ReviewWorkspace({ baselineId }: ReviewWorkspaceProps) {
               {selectedRequirement ? (
                 <RequirementDetail
                   revision={selectedRequirement}
-                  baselineId={data?.baseline?.id ?? baselineId}
+                  baselineId={activeBaselineId}
                   evidenceByKey={evidenceByKey}
                   findings={findingsForSelectedRequirement}
                   historyRecords={historyForSelectedReq}
@@ -285,6 +346,8 @@ export function ReviewWorkspace({ baselineId }: ReviewWorkspaceProps) {
                   onRevise={handleRevise}
                   onFindingDisposition={handleFindingDisposition}
                   onFindingReopen={handleFindingReopen}
+                  onNavigateToProjection={handleNavigateToProjection}
+                  onNavigateToRequirement={handleNavigateToRequirement}
                 />
               ) : (
                 <div
@@ -296,6 +359,18 @@ export function ReviewWorkspace({ baselineId }: ReviewWorkspaceProps) {
               )}
             </div>
           </div>
+        )}
+
+        {/* Create Successor Baseline Modal */}
+        {isCreatingBaseline && (
+          <CreateBaselineModal
+            currentBaselineId={activeBaselineId}
+            requirementRevisions={data?.requirementRevisions ?? []}
+            findings={data?.findings ?? []}
+            actorId={actorId}
+            onSubmit={handleCreateBaseline}
+            onCancel={closeCreateBaselineModal}
+          />
         )}
       </main>
     </div>

@@ -14,13 +14,19 @@ export interface FindingItemProps {
     rationale: string
   ) => Promise<void>;
   onReopen: (findingId: string, rationale?: string) => Promise<void>;
+  onNavigateToProjection?: (projectionId: string) => void;
+  onNavigateToRequirement?: (requirementId: string) => void;
+  getRequirementIdForRevision?: (revId: string) => string | undefined;
 }
 
 export function FindingItem({
   finding,
   actorId: _actorId,
   onDisposition,
-  onReopen
+  onReopen,
+  onNavigateToProjection,
+  onNavigateToRequirement,
+  getRequirementIdForRevision
 }: FindingItemProps) {
   const [isActing, setIsActing] = useState(false);
   const [selectedDisposition, setSelectedDisposition] = useState<FindingDisposition>(
@@ -96,7 +102,44 @@ export function FindingItem({
       {finding.affectedRequirementRevisions.length > 0 && (
         <div className="text-[11px] text-gray-500 mb-2">
           <span className="font-medium">Attached Revisions: </span>
-          <span className="font-mono">{finding.affectedRequirementRevisions.join(', ')}</span>
+          <span className="font-mono">
+            {finding.affectedRequirementRevisions.map((revId, idx) => {
+              const reqId = getRequirementIdForRevision?.(revId) ?? revId;
+              return (
+                <span key={revId}>
+                  {idx > 0 && ', '}
+                  <button
+                    type="button"
+                    data-testid={`affected-rev-link-${revId}`}
+                    onClick={() => onNavigateToRequirement?.(reqId)}
+                    className="text-blue-600 hover:text-blue-800 underline font-mono cursor-pointer"
+                  >
+                    {revId}
+                  </button>
+                </span>
+              );
+            })}
+          </span>
+        </div>
+      )}
+
+      {finding.originatingProjectionId && (
+        <div
+          data-testid="finding-originating-projection"
+          className="mt-2 pt-2 border-t border-gray-100 flex items-center justify-between text-xs text-purple-700 bg-purple-50/50 p-2 rounded"
+        >
+          <span>
+            Discovered during review of projection:{' '}
+            <strong className="font-mono">{finding.originatingProjectionId}</strong>
+          </span>
+          <button
+            type="button"
+            data-testid="finding-back-to-projection-btn"
+            onClick={() => onNavigateToProjection?.(finding.originatingProjectionId!)}
+            className="text-purple-600 hover:text-purple-800 font-medium underline"
+          >
+            View Originating Projection →
+          </button>
         </div>
       )}
 

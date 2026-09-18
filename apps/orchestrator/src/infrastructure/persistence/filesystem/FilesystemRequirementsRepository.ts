@@ -982,6 +982,30 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
     });
   }
 
+  async listRequirementsBaselines(): Promise<readonly RequirementsBaseline[]> {
+    const dirPath = path.resolve(this.baseDir, 'baselines');
+    try {
+      const files = await fs.readdir(dirPath);
+      const jsonFiles = files.filter((f) => f.endsWith('.json')).sort();
+      const results: RequirementsBaseline[] = [];
+      for (const file of jsonFiles) {
+        const rawId = file.replace(/\.json$/, '');
+        assertSafeIdentifier(rawId, 'baselineId');
+        const baseline = await this.getRequirementsBaseline(createRequirementsBaselineId(rawId));
+        if (baseline) {
+          results.push(baseline);
+        }
+      }
+      results.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      return Object.freeze(results);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return Object.freeze([]);
+      }
+      throw err;
+    }
+  }
+
   async saveEvaluationRun(run: EvaluationRunRecord): Promise<void> {
     assertSafeIdentifier(run.id, 'runId');
     const validated = EvaluationRunRecordSchema.parse(run);

@@ -5,9 +5,10 @@ import type { ProjectionRecordDto } from '@solutions-studio/contracts';
 
 export interface MermaidViewerProps {
   projection: ProjectionRecordDto;
+  currentBaselineId?: string;
 }
 
-export function MermaidViewer({ projection }: MermaidViewerProps) {
+export function MermaidViewer({ projection, currentBaselineId }: MermaidViewerProps) {
   const [svgContent, setSvgContent] = useState<string>('');
   const [renderError, setRenderError] = useState<string | null>(null);
   const [isRendering, setIsRendering] = useState<boolean>(true);
@@ -147,6 +148,14 @@ export function MermaidViewer({ projection }: MermaidViewerProps) {
           >
             {declaredProvenance.baselineId}
           </span>
+          {currentBaselineId && projection.baselineId !== currentBaselineId && (
+            <span
+              data-testid="projection-staleness-badge"
+              className="font-mono bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-bold"
+            >
+              Prior Baseline ({projection.baselineId})
+            </span>
+          )}
 
           <span className="font-semibold text-gray-700 ml-2">Revisions:</span>
           <div data-testid="projection-revisions-list" className="flex flex-wrap gap-1">

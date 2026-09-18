@@ -10,6 +10,7 @@ import type {
 import type { ApiError } from '../api/client';
 import { getReviewState } from '../api/reviewStateApi';
 import { generateProjection } from '../api/projectionsApi';
+import { createBaseline } from '../api/baselinesApi';
 import {
   buildRevisionRequirementIndex,
   type RevisionRequirementIndex
@@ -20,6 +21,9 @@ export interface ReviewState {
   data?: RequirementsReviewStateDto;
   error?: ApiError | null;
   mutationError?: ApiError | null;
+  selectedBaselineId?: string;
+  availableBaselines?: readonly string[];
+  isCreatingBaseline?: boolean;
   selectedRequirementId?: string;
   selectedFindingId?: string;
   selectedProjectionId?: string;
@@ -30,6 +34,8 @@ export type ReviewAction =
   | { type: 'FETCH_START' }
   | { type: 'FETCH_SUCCESS'; payload: RequirementsReviewStateDto }
   | { type: 'FETCH_ERROR'; payload: ApiError }
+  | { type: 'SELECT_BASELINE'; payload: string }
+  | { type: 'SET_CREATING_BASELINE'; payload: boolean }
   | { type: 'SELECT_REQUIREMENT'; payload: string }
   | { type: 'SELECT_FINDING'; payload?: string }
   | { type: 'SELECT_PROJECTION'; payload: string }
@@ -73,6 +79,9 @@ export function reviewReducer(state: ReviewState, action: ReviewAction): ReviewS
       const projExists = combinedProjections.some((p) => p.id === currentSelectedProj);
       const selectedProjectionId = projExists ? currentSelectedProj : combinedProjections[0]?.id;
 
+      const availableBaselines = data.availableBaselines ?? state.availableBaselines ?? [];
+      const selectedBaselineId = state.selectedBaselineId ?? data.baseline?.id;
+
       return {
         ...state,
         status: 'ready',
@@ -80,6 +89,8 @@ export function reviewReducer(state: ReviewState, action: ReviewAction): ReviewS
           ...data,
           projections: combinedProjections
         },
+        availableBaselines,
+        selectedBaselineId,
         error: null,
         mutationError: null,
         selectedRequirementId,
@@ -92,6 +103,22 @@ export function reviewReducer(state: ReviewState, action: ReviewAction): ReviewS
         ...state,
         status: 'error',
         error: action.payload
+      };
+
+    case 'SELECT_BASELINE':
+      return {
+        ...state,
+        selectedBaselineId: action.payload,
+        selectedRequirementId: undefined,
+        selectedProjectionId: undefined,
+        selectedFindingId: undefined,
+        mutationError: null
+      };
+
+    case 'SET_CREATING_BASELINE':
+      return {
+        ...state,
+        isCreatingBaseline: action.payload
       };
 
     case 'SELECT_REQUIREMENT':
@@ -203,18 +230,29 @@ export function reviewReducer(state: ReviewState, action: ReviewAction): ReviewS
 export function useReviewState(baselineId?: string) {
   const [state, dispatch] = useReducer(reviewReducer, {
     status: 'idle',
-    findingsView: 'byRequirement'
+    findingsView: 'byRequirement',
+    selectedBaselineId: baselineId,
+    availableBaselines: [],
+    isCreatingBaseline: false
   });
+
+  useEffect(() => {
+    if (baselineId && baselineId !== state.selectedBaselineId) {
+      dispatch({ type: 'SELECT_BASELINE', payload: baselineId });
+    }
+  }, [baselineId]);
+
+  const activeBaselineId = state.selectedBaselineId ?? baselineId;
 
   const loadData = useCallback(async () => {
     dispatch({ type: 'FETCH_START' });
     try {
-      const data = await getReviewState(baselineId);
+      const data = await getReviewState(activeBaselineId);
       dispatch({ type: 'FETCH_SUCCESS', payload: data });
     } catch (err) {
       dispatch({ type: 'FETCH_ERROR', payload: err as ApiError });
     }
-  }, [baselineId]);
+  }, [activeBaselineId]);
 
   useEffect(() => {
     loadData();
@@ -274,6 +312,34 @@ export function useReviewState(baselineId?: string) {
     return revisionRequirementIndex.findingsByRequirementId.get(state.selectedRequirementId) ?? [];
   }, [revisionRequirementIndex, state.selectedRequirementId]);
 
+  const selectBaseline = useCallback((newBaselineId: string) => {
+    dispatch({ type: 'SELECT_BASELINE', payload: newBaselineId });
+  }, []);
+
+  const openCreateBaselineModal = useCallback(() => {
+    dispatch({ type: 'SET_CREATING_BASELINE', payload: true });
+  }, []);
+
+  const closeCreateBaselineModal = useCallback(() => {
+    dispatch({ type: 'SET_CREATING_BASELINE', payload: false });
+  }, []);
+
+  const handleCreateBaseline = useCallback(
+    async (params: { id?: string; requirementRevisions: string[]; createdBy: string }) => {
+      try {
+        const newBaseline = await createBaseline(params);
+        dispatch({ type: 'SELECT_BASELINE', payload: newBaseline.id });
+        dispatch({ type: 'SET_CREATING_BASELINE', payload: false });
+        const fresh = await getReviewState(newBaseline.id);
+        dispatch({ type: 'FETCH_SUCCESS', payload: fresh });
+      } catch (err) {
+        dispatch({ type: 'MUTATION_ERROR', payload: err as ApiError });
+        throw err;
+      }
+    },
+    []
+  );
+
   const selectRequirement = useCallback((requirementId: string) => {
     dispatch({ type: 'SELECT_REQUIREMENT', payload: requirementId });
   }, []);
@@ -299,13 +365,13 @@ export function useReviewState(baselineId?: string) {
       artifactType: 'process-diagram' | 'state-diagram' | 'prototype',
       prompt?: string
     ): Promise<ProjectionRecordDto> => {
-      if (!baselineId) {
+      if (!activeBaselineId) {
         throw new Error('Cannot generate projection without an active baseline');
       }
       try {
-        const projection = await generateProjection(baselineId, { artifactType, prompt });
+        const projection = await generateProjection(activeBaselineId, { artifactType, prompt });
         dispatch({ type: 'PROJECTION_GENERATED', payload: projection });
-        getReviewState(baselineId)
+        getReviewState(activeBaselineId)
           .then((fresh) => dispatch({ type: 'FETCH_SUCCESS', payload: fresh }))
           .catch(() => {});
         return projection;
@@ -314,7 +380,7 @@ export function useReviewState(baselineId?: string) {
         throw err;
       }
     },
-    [baselineId]
+    [activeBaselineId]
   );
 
   const handleRequirementMutation = useCallback(
@@ -323,7 +389,7 @@ export function useReviewState(baselineId?: string) {
         const successor = await mutationFn();
         dispatch({ type: 'MUTATION_SUCCESS_REQUIREMENT', payload: successor });
         // Background refresh to update evidence, history, and lineage
-        getReviewState(baselineId)
+        getReviewState(activeBaselineId)
           .then((fresh) => dispatch({ type: 'FETCH_SUCCESS', payload: fresh }))
           .catch(() => {});
         return successor;
@@ -332,7 +398,7 @@ export function useReviewState(baselineId?: string) {
         throw err;
       }
     },
-    [baselineId]
+    [activeBaselineId]
   );
 
   const handleFindingMutation = useCallback(
@@ -341,7 +407,7 @@ export function useReviewState(baselineId?: string) {
         const updated = await mutationFn();
         dispatch({ type: 'MUTATION_SUCCESS_FINDING', payload: updated });
         // Background refresh to update history
-        getReviewState(baselineId)
+        getReviewState(activeBaselineId)
           .then((fresh) => dispatch({ type: 'FETCH_SUCCESS', payload: fresh }))
           .catch(() => {});
         return updated;
@@ -350,7 +416,7 @@ export function useReviewState(baselineId?: string) {
         throw err;
       }
     },
-    [baselineId]
+    [activeBaselineId]
   );
 
   return {
@@ -358,6 +424,10 @@ export function useReviewState(baselineId?: string) {
     data: state.data,
     error: state.error,
     mutationError: state.mutationError,
+    activeBaselineId,
+    selectedBaselineId: state.selectedBaselineId,
+    availableBaselines: state.availableBaselines,
+    isCreatingBaseline: state.isCreatingBaseline,
     selectedRequirementId: state.selectedRequirementId,
     selectedFindingId: state.selectedFindingId,
     selectedProjectionId: state.selectedProjectionId,
@@ -370,6 +440,10 @@ export function useReviewState(baselineId?: string) {
     evidenceByKey,
     historyByEntityId,
     refresh: loadData,
+    selectBaseline,
+    openCreateBaselineModal,
+    closeCreateBaselineModal,
+    handleCreateBaseline,
     selectRequirement,
     selectFinding,
     selectProjection,

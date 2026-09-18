@@ -196,4 +196,43 @@ describe('HTTP Boundary: Baselines API', () => {
       expect(res.json().code).toBe('BASELINE_NOT_FOUND');
     });
   });
+
+  describe('GET /api/baselines', () => {
+    it('returns 200 with list of baselines ordered by createdAt', async () => {
+      const rev1 = await seedAuditedRequirement('REQ-001', 'REQ-001-R1');
+      const rev2 = await seedAuditedRequirement('REQ-002', 'REQ-002-R1');
+
+      await app.inject({
+        method: 'POST',
+        url: '/api/baselines',
+        payload: {
+          id: 'BASE-001',
+          requirementRevisions: [rev1.id],
+          createdBy: 'lead-reviewer'
+        }
+      });
+
+      await app.inject({
+        method: 'POST',
+        url: '/api/baselines',
+        payload: {
+          id: 'BASE-002',
+          requirementRevisions: [rev1.id, rev2.id],
+          createdBy: 'lead-reviewer'
+        }
+      });
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/baselines'
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(Array.isArray(body)).toBe(true);
+      expect(body.length).toBe(2);
+      expect(body[0].id).toBe('BASE-001');
+      expect(body[1].id).toBe('BASE-002');
+    });
+  });
 });

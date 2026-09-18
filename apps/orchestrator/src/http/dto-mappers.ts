@@ -142,6 +142,7 @@ export function mapReviewStateToDto(state: RequirementsReviewState): Requirement
     revisionLineage: state.revisionLineage.map((entry) => ({
       revisionId: entry.revisionId,
       requirementId: entry.requirementId
-    }))
+    })),
+    availableBaselines: state.availableBaselines ? [...state.availableBaselines] : undefined
   };
 }

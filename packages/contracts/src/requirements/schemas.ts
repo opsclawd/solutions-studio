@@ -74,6 +74,8 @@ export const RequirementsBaselineDtoSchema = z.object({
   createdBy: z.string().min(1)
 });
 
+export const ListRequirementsBaselinesResponseDtoSchema = z.array(RequirementsBaselineDtoSchema);
+
 export const CandidateFindingDtoSchema = z.object({
   id: z.string().min(1),
   type: z.enum(FINDING_TYPES),
@@ -344,7 +346,8 @@ export const RequirementsReviewStateDtoSchema = z.object({
   reconciliationHistory: z.array(ReconciliationRecordDtoSchema),
   evidenceExcerpts: z.array(EvidenceExcerptDtoSchema),
   projections: z.array(ProjectionRecordDtoSchema),
-  revisionLineage: z.array(RevisionLineageEntryDtoSchema)
+  revisionLineage: z.array(RevisionLineageEntryDtoSchema),
+  availableBaselines: z.array(z.string().min(1)).optional()
 });
 
 export const DiscoveryDiscoveredBySchema = z.enum(['human', 'artifact-validation']);

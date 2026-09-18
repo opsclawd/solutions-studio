@@ -41,6 +41,7 @@ export interface RequirementsReviewState {
   readonly evidenceExcerpts: readonly EvidenceExcerpt[];
   readonly projections: readonly ProjectionRecord[];
   readonly revisionLineage: readonly RevisionLineageEntry[];
+  readonly availableBaselines?: readonly string[];
 }
 
 export interface GetRequirementsReviewStateInput {
@@ -50,10 +51,15 @@ export interface GetRequirementsReviewStateInput {
 export class GetRequirementsReviewStateUseCase {
   constructor(private readonly repository: IRequirementsRepository) {}
 
+  async listBaselines(): Promise<readonly RequirementsBaseline[]> {
+    return this.repository.listRequirementsBaselines();
+  }
+
   async get(input: GetRequirementsReviewStateInput = {}): Promise<RequirementsReviewState> {
     let baseline: RequirementsBaseline | undefined = undefined;
     const revisions: RequirementRevision[] = [];
-    let projections: readonly ProjectionRecord[] = [];
+    const allBaselines = await this.repository.listRequirementsBaselines();
+    const allProjections = await this.repository.listProjectionRecords();
 
     if (input.baselineId) {
       const baselineId = createRequirementsBaselineId(input.baselineId);
@@ -63,29 +69,34 @@ export class GetRequirementsReviewStateUseCase {
       }
       baseline = foundBaseline;
 
+      const baselineMemberReqIds = new Set<string>();
       for (const revId of foundBaseline.requirementRevisions) {
         const rev = await this.repository.getRequirementRevision(revId);
         if (!rev) {
           throw new UnknownRequirementRevisionError(revId);
         }
-        revisions.push(rev);
+        baselineMemberReqIds.add(rev.requirementId);
+        const memberRevs = await this.repository.listRequirementRevisions(rev.requirementId);
+        const latest = memberRevs.length > 0 ? memberRevs[memberRevs.length - 1] : rev;
+        revisions.push(latest);
       }
 
-      projections = await this.repository.listProjectionRecords(baselineId);
-      const projectionIds = new Set(projections.map((p) => p.id));
+      const baselineProjections = allProjections.filter((p) => p.baselineId === baselineId);
+      const projectionIds = new Set(baselineProjections.map((p) => p.id));
 
       const reqIds = await this.repository.listRequirementIds();
       for (const reqId of reqIds) {
+        if (baselineMemberReqIds.has(reqId)) continue;
         const revs = await this.repository.listRequirementRevisions(reqId);
-        for (const rev of revs) {
-          if (
-            rev.reviewState === 'PENDING' &&
-            (rev.baselineId === baselineId ||
-              (rev.originatingProjectionId && projectionIds.has(rev.originatingProjectionId)))
-          ) {
-            if (!revisions.some((r) => r.id === rev.id)) {
-              revisions.push(rev);
-            }
+        const isAssociated = revs.some(
+          (r) =>
+            r.baselineId === baselineId ||
+            (r.originatingProjectionId && projectionIds.has(r.originatingProjectionId))
+        );
+        if (isAssociated && revs.length > 0) {
+          const latest = revs[revs.length - 1];
+          if (!revisions.some((r) => r.id === latest.id)) {
+            revisions.push(latest);
           }
         }
       }
@@ -106,8 +117,9 @@ export class GetRequirementsReviewStateUseCase {
         findings: Object.freeze([]),
         reconciliationHistory: Object.freeze([]),
         evidenceExcerpts: Object.freeze([]),
-        projections: Object.freeze([...projections]),
-        revisionLineage: Object.freeze([])
+        projections: Object.freeze([...allProjections]),
+        revisionLineage: Object.freeze([]),
+        availableBaselines: Object.freeze(allBaselines.map((b) => b.id))
       };
     }
 
@@ -201,8 +213,9 @@ export class GetRequirementsReviewStateUseCase {
       findings: Object.freeze(inScopeFindings),
       reconciliationHistory: Object.freeze(inScopeReconciliation),
       evidenceExcerpts: Object.freeze(evidenceExcerpts),
-      projections: Object.freeze([...projections]),
-      revisionLineage: Object.freeze(revisionLineage)
+      projections: Object.freeze([...allProjections]),
+      revisionLineage: Object.freeze(revisionLineage),
+      availableBaselines: Object.freeze(allBaselines.map((b) => b.id))
     };
   }
 }

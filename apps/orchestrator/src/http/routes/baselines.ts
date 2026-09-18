@@ -2,7 +2,8 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import {
   CreateRequirementsBaselineRequestDtoSchema,
-  GenerateProjectionRequestDtoSchema
+  GenerateProjectionRequestDtoSchema,
+  ListRequirementsBaselinesResponseDtoSchema
 } from '@solutions-studio/contracts';
 import type { CreateRequirementsBaselineUseCase } from '../../application/use-cases/CreateRequirementsBaselineUseCase.js';
 import type { ProjectBaselineUseCase } from '../../application/use-cases/ProjectBaselineUseCase.js';
@@ -43,6 +44,21 @@ export const baselinesRoutes: FastifyPluginAsync<BaselinesRoutesOptions> = async
         createdAt: request.body.createdAt
       });
       return reply.status(200).send(mapRequirementsBaselineToDto(result));
+    }
+  );
+
+  app.get(
+    '/api/baselines',
+    {
+      schema: {
+        response: {
+          200: ListRequirementsBaselinesResponseDtoSchema
+        }
+      }
+    },
+    async (_request, reply) => {
+      const baselines = await options.reviewStateUseCase.listBaselines();
+      return reply.status(200).send(baselines.map(mapRequirementsBaselineToDto));
     }
   );
 
@@ -106,7 +122,10 @@ export const baselinesRoutes: FastifyPluginAsync<BaselinesRoutesOptions> = async
       const reviewState = await options.reviewStateUseCase.get({
         baselineId: request.params.baselineId
       });
-      return reply.status(200).send(reviewState.projections.map(mapProjectionRecordToDto));
+      const baselineScoped = reviewState.projections.filter(
+        (p) => p.baselineId === request.params.baselineId
+      );
+      return reply.status(200).send(baselineScoped.map(mapProjectionRecordToDto));
     }
   );
 

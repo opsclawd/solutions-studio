@@ -450,4 +450,103 @@ describe('GetRequirementsReviewStateUseCase', () => {
     expect(revIds).toContain('REQ-DISC-002-R1');
     expect(revIds).not.toContain('REQ-OTHER-001-R1');
   });
+
+  it('hydrates candidate discoveries to their latest revision when reconciled', async () => {
+    const baseRev = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-001-R1'),
+      requirementId: createRequirementId('REQ-001'),
+      revision: 1,
+      statement: 'Base requirement',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR',
+      evidence: []
+    });
+    await repo.saveRequirementRevision(baseRev);
+
+    const baseline = createRequirementsBaseline({
+      id: createRequirementsBaselineId('BASE-001'),
+      requirements: [baseRev],
+      createdBy: createReviewerId('lead'),
+      createdAt: now()
+    });
+    await repo.saveRequirementsBaseline(baseline);
+
+    // Discovered R1
+    const candidateR1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-DISC-R1'),
+      requirementId: createRequirementId('REQ-DISC'),
+      revision: 1,
+      statement: 'Discovered candidate R1',
+      category: 'business-rule',
+      origin: 'REVIEWER_PROPOSAL',
+      reviewState: 'PENDING',
+      resolutionState: 'UNRESOLVED',
+      evidence: [],
+      baselineId: baseline.id
+    });
+    await repo.saveRequirementRevision(candidateR1);
+
+    // Reconciled R2 (ACCEPTED & CLEAR)
+    const candidateR2 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-DISC-R2'),
+      requirementId: createRequirementId('REQ-DISC'),
+      revision: 2,
+      statement: 'Reconciled candidate R2',
+      category: 'business-rule',
+      origin: 'REVIEWER_PROPOSAL',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR',
+      evidence: [],
+      supersedes: candidateR1.id,
+      baselineId: baseline.id
+    });
+    await repo.saveRequirementRevision(candidateR2);
+
+    const state = await useCase.get({ baselineId: 'BASE-001' });
+
+    const discRev = state.requirementRevisions.find((r) => r.requirementId === 'REQ-DISC');
+    expect(discRev).toBeDefined();
+    expect(discRev?.id).toBe('REQ-DISC-R2');
+    expect(discRev?.revision).toBe(2);
+    expect(discRev?.reviewState).toBe('ACCEPTED');
+    expect(discRev?.resolutionState).toBe('CLEAR');
+  });
+
+  it('lists all baselines through listBaselines() and includes availableBaselines in state', async () => {
+    const baseRev = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-001-R1'),
+      requirementId: createRequirementId('REQ-001'),
+      revision: 1,
+      statement: 'Base requirement',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR',
+      evidence: []
+    });
+    await repo.saveRequirementRevision(baseRev);
+
+    const base1 = createRequirementsBaseline({
+      id: createRequirementsBaselineId('BASE-001'),
+      requirements: [baseRev],
+      createdBy: createReviewerId('lead'),
+      createdAt: now()
+    });
+    const base2 = createRequirementsBaseline({
+      id: createRequirementsBaselineId('BASE-002'),
+      requirements: [baseRev],
+      createdBy: createReviewerId('lead'),
+      createdAt: now()
+    });
+    await repo.saveRequirementsBaseline(base1);
+    await repo.saveRequirementsBaseline(base2);
+
+    const baselines = await useCase.listBaselines();
+    expect(baselines.map((b) => b.id)).toEqual(['BASE-001', 'BASE-002']);
+
+    const state = await useCase.get({ baselineId: 'BASE-001' });
+    expect(state.availableBaselines).toEqual(['BASE-001', 'BASE-002']);
+  });
 });
