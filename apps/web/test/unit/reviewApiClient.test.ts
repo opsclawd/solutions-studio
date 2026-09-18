@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { apiClient, ApiError } from '../../src/features/review/api/client';
+import {
+  recordRequirementDiscovery,
+  recordFindingDiscovery
+} from '../../src/features/review/api/mutations';
 
 describe('Review API Client', () => {
   const originalFetch = global.fetch;
@@ -110,5 +114,85 @@ describe('Review API Client', () => {
       expect(apiErr.code).toBe('INTERNAL_ERROR');
       expect(apiErr.statusCode).toBe(502);
     }
+  });
+
+  it('recordRequirementDiscovery sends POST to /api/requirements/discoveries and returns parsed RequirementRevisionDto', async () => {
+    const mockResponse = {
+      id: 'REQ-100-R1',
+      requirementId: 'REQ-100',
+      revision: 1,
+      statement: 'SME proposed requirement',
+      category: 'business-rule',
+      origin: 'REVIEWER_PROPOSAL',
+      reviewState: 'PENDING',
+      resolutionState: 'UNRESOLVED',
+      evidence: [],
+      rationale: 'Discovered during prototype review',
+      actorId: 'sme-1'
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => mockResponse
+    } as Response);
+
+    const result = await recordRequirementDiscovery({
+      statement: 'SME proposed requirement',
+      category: 'business-rule',
+      rationale: 'Discovered during prototype review',
+      actorId: 'sme-1'
+    });
+
+    expect(result).toEqual(mockResponse);
+    expect(global.fetch).toHaveBeenCalledWith(
+      'http://localhost:4000/api/requirements/discoveries',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          statement: 'SME proposed requirement',
+          category: 'business-rule',
+          rationale: 'Discovered during prototype review',
+          actorId: 'sme-1'
+        })
+      })
+    );
+  });
+
+  it('recordFindingDiscovery sends POST to /api/findings/discoveries and returns parsed CandidateFindingDto', async () => {
+    const mockResponse = {
+      id: 'FINDING-100',
+      type: 'missing-authorization',
+      affectedRequirementRevisions: [],
+      evidence: [],
+      discoveredBy: 'artifact-validation',
+      disposition: 'OPEN',
+      rationale: 'Discovered during diagram review'
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => mockResponse
+    } as Response);
+
+    const result = await recordFindingDiscovery({
+      type: 'missing-authorization',
+      discoveredBy: 'artifact-validation',
+      rationale: 'Discovered during diagram review'
+    });
+
+    expect(result).toEqual(mockResponse);
+    expect(global.fetch).toHaveBeenCalledWith(
+      'http://localhost:4000/api/findings/discoveries',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'missing-authorization',
+          discoveredBy: 'artifact-validation',
+          rationale: 'Discovered during diagram review'
+        })
+      })
+    );
   });
 });

@@ -10,6 +10,7 @@ import { CreateRequirementsBaselineUseCase } from '../application/use-cases/Crea
 import { GenerateArtifactUseCase } from '../application/use-cases/GenerateArtifactUseCase.js';
 import { ProjectBaselineUseCase } from '../application/use-cases/ProjectBaselineUseCase.js';
 import { GetRequirementsReviewStateUseCase } from '../application/use-cases/GetRequirementsReviewStateUseCase.js';
+import { RecordRequirementsDiscoveryUseCase } from '../application/use-cases/RecordRequirementsDiscoveryUseCase.js';
 import { FilesystemRequirementsRepository } from '../infrastructure/persistence/filesystem/FilesystemRequirementsRepository.js';
 import {
   GatewayFactory,
@@ -37,6 +38,7 @@ export interface ComposeHttpServerOptions {
   readonly generateArtifactUseCase?: GenerateArtifactUseCase;
   readonly projectBaselineUseCase?: ProjectBaselineUseCase;
   readonly reviewStateUseCase?: GetRequirementsReviewStateUseCase;
+  readonly recordDiscoveryUseCase?: RecordRequirementsDiscoveryUseCase;
 }
 
 export interface ComposedHttpServer {
@@ -52,6 +54,7 @@ export interface ComposedHttpServer {
   readonly generateArtifactUseCase: GenerateArtifactUseCase;
   readonly projectBaselineUseCase: ProjectBaselineUseCase;
   readonly reviewStateUseCase: GetRequirementsReviewStateUseCase;
+  readonly recordDiscoveryUseCase: RecordRequirementsDiscoveryUseCase;
 }
 
 export function composeOrchestratorHttpServer(
@@ -108,12 +111,16 @@ export function composeOrchestratorHttpServer(
   const reviewStateUseCase =
     options.reviewStateUseCase ?? new GetRequirementsReviewStateUseCase(repository);
 
+  const recordDiscoveryUseCase =
+    options.recordDiscoveryUseCase ?? new RecordRequirementsDiscoveryUseCase(repository);
+
   const app = buildServer(
     {
       reviewStateUseCase,
       reconcileUseCase,
       baselineUseCase,
-      projectBaselineUseCase
+      projectBaselineUseCase,
+      recordDiscoveryUseCase
     },
     options.fastifyOptions
   );
@@ -130,6 +137,7 @@ export function composeOrchestratorHttpServer(
     baselineUseCase,
     generateArtifactUseCase,
     projectBaselineUseCase,
-    reviewStateUseCase
+    reviewStateUseCase,
+    recordDiscoveryUseCase
   };
 }

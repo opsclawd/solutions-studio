@@ -11,6 +11,8 @@ import {
   acceptRisk,
   reopenFinding,
   createEvidenceReference,
+  createActorId,
+  createRequirementsBaselineId,
   FINDING_DISPOSITIONS,
   FindingRationaleRequiredError,
   DomainError
@@ -196,6 +198,42 @@ describe('CandidateFinding', () => {
     expect(reopened.disposition).toBe('OPEN');
     expect(reopened.rationale).toBe('New evidence reveals failure case still exists');
     expect(resolved.disposition).toBe('RESOLVED');
+  });
+
+  it('accepts and preserves baselineId, originatingProjectionId, and actorId across disposition transitions and reopen', () => {
+    const finding = createCandidateFinding({
+      id: createFindingId('FINDING-CTX'),
+      type: 'missing-authorization',
+      discoveredBy: 'artifact-validation',
+      baselineId: createRequirementsBaselineId('BASELINE-001'),
+      originatingProjectionId: 'PROJ-001',
+      actorId: createActorId('auditor-1')
+    });
+
+    expect(finding.baselineId).toBe('BASELINE-001');
+    expect(finding.originatingProjectionId).toBe('PROJ-001');
+    expect(finding.actorId).toBe('auditor-1');
+    expect(Object.isFrozen(finding)).toBe(true);
+
+    const resolved = resolveFinding(finding, 'Resolution rationale');
+    expect(resolved.baselineId).toBe('BASELINE-001');
+    expect(resolved.originatingProjectionId).toBe('PROJ-001');
+    expect(resolved.actorId).toBe('auditor-1');
+
+    const reopened = reopenFinding(resolved, 'Reopen rationale');
+    expect(reopened.baselineId).toBe('BASELINE-001');
+    expect(reopened.originatingProjectionId).toBe('PROJ-001');
+    expect(reopened.actorId).toBe('auditor-1');
+
+    const dismissed = dismissAsFalsePositive(finding, 'Dismissal rationale');
+    expect(dismissed.baselineId).toBe('BASELINE-001');
+    expect(dismissed.originatingProjectionId).toBe('PROJ-001');
+    expect(dismissed.actorId).toBe('auditor-1');
+
+    const riskAccepted = acceptRisk(finding, 'Accept risk rationale');
+    expect(riskAccepted.baselineId).toBe('BASELINE-001');
+    expect(riskAccepted.originatingProjectionId).toBe('PROJ-001');
+    expect(riskAccepted.actorId).toBe('auditor-1');
   });
 
   it('rejects invalid finding type or discoveredBy values', () => {

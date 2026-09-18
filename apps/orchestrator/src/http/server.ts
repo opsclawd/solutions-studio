@@ -5,17 +5,20 @@ import type { GetRequirementsReviewStateUseCase } from '../application/use-cases
 import type { ReconcileRequirementsUseCase } from '../application/use-cases/ReconcileRequirementsUseCase.js';
 import type { CreateRequirementsBaselineUseCase } from '../application/use-cases/CreateRequirementsBaselineUseCase.js';
 import type { ProjectBaselineUseCase } from '../application/use-cases/ProjectBaselineUseCase.js';
+import type { RecordRequirementsDiscoveryUseCase } from '../application/use-cases/RecordRequirementsDiscoveryUseCase.js';
 import { mapErrorToResponse } from './errorMapper.js';
 import { reviewRoutes } from './routes/review.js';
 import { requirementsRoutes } from './routes/requirements.js';
 import { findingsRoutes } from './routes/findings.js';
 import { baselinesRoutes } from './routes/baselines.js';
+import { discoveriesRoutes } from './routes/discoveries.js';
 
 export interface OrchestratorServerDependencies {
   readonly reviewStateUseCase: GetRequirementsReviewStateUseCase;
   readonly reconcileUseCase: ReconcileRequirementsUseCase;
   readonly baselineUseCase: CreateRequirementsBaselineUseCase;
   readonly projectBaselineUseCase: ProjectBaselineUseCase;
+  readonly recordDiscoveryUseCase?: RecordRequirementsDiscoveryUseCase;
 }
 
 export function buildServer(
@@ -66,6 +69,12 @@ export function buildServer(
     projectBaselineUseCase: deps.projectBaselineUseCase,
     reviewStateUseCase: deps.reviewStateUseCase
   });
+
+  if (deps.recordDiscoveryUseCase) {
+    app.register(discoveriesRoutes, {
+      recordDiscoveryUseCase: deps.recordDiscoveryUseCase
+    });
+  }
 
   return app;
 }

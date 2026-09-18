@@ -6,7 +6,9 @@ import type {
   DispositionFindingRequestDto,
   ReopenFindingRequestDto,
   RequirementRevisionDto,
-  CandidateFindingDto
+  CandidateFindingDto,
+  RecordRequirementDiscoveryRequestDto,
+  RecordFindingDiscoveryRequestDto
 } from '@solutions-studio/contracts';
 import {
   RequirementRevisionDtoSchema,
@@ -95,5 +97,25 @@ export async function reopenFinding(
       body: JSON.stringify(body)
     }
   );
+  return CandidateFindingDtoSchema.parse(data);
+}
+
+export async function recordRequirementDiscovery(
+  body: RecordRequirementDiscoveryRequestDto
+): Promise<RequirementRevisionDto> {
+  const data = await apiClient<RequirementRevisionDto>('/api/requirements/discoveries', {
+    method: 'POST',
+    body: JSON.stringify(body)
+  });
+  return RequirementRevisionDtoSchema.parse(data);
+}
+
+export async function recordFindingDiscovery(
+  body: RecordFindingDiscoveryRequestDto
+): Promise<CandidateFindingDto> {
+  const data = await apiClient<CandidateFindingDto>('/api/findings/discoveries', {
+    method: 'POST',
+    body: JSON.stringify(body)
+  });
   return CandidateFindingDtoSchema.parse(data);
 }

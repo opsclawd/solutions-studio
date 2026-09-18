@@ -343,6 +343,9 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
         locator: createEvidenceLocator(e.locator)
       })),
       rationale: raw.rationale,
+      actorId: raw.actorId ? createActorId(raw.actorId) : undefined,
+      baselineId: raw.baselineId ? createRequirementsBaselineId(raw.baselineId) : undefined,
+      originatingProjectionId: raw.originatingProjectionId,
       affectedActors: raw.affectedActors?.map((a) => createActorId(a)),
       dependencies: raw.dependencies?.map((d) => createRequirementId(d)),
       supersedes: raw.supersedes ? createRequirementRevisionId(raw.supersedes) : undefined
@@ -420,7 +423,10 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
       })),
       discoveredBy: raw.discoveredBy,
       disposition: raw.disposition,
-      rationale: raw.rationale
+      rationale: raw.rationale,
+      actorId: raw.actorId ? createActorId(raw.actorId) : undefined,
+      baselineId: raw.baselineId ? createRequirementsBaselineId(raw.baselineId) : undefined,
+      originatingProjectionId: raw.originatingProjectionId
     });
   }
 

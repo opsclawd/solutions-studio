@@ -33,7 +33,10 @@ import type {
   GenerateProjectionRequestDtoSchema,
   EvidenceExcerptDtoSchema,
   RequirementsReviewStateDtoSchema,
-  RevisionLineageEntryDtoSchema
+  RevisionLineageEntryDtoSchema,
+  DiscoveryDiscoveredBySchema,
+  RecordRequirementDiscoveryRequestDtoSchema,
+  RecordFindingDiscoveryRequestDtoSchema
 } from './schemas.js';
 
 export type InstantDto = z.infer<typeof InstantDtoSchema>;
@@ -78,3 +81,11 @@ export type GenerateProjectionRequestDto = z.infer<typeof GenerateProjectionRequ
 export type EvidenceExcerptDto = z.infer<typeof EvidenceExcerptDtoSchema>;
 export type RevisionLineageEntryDto = z.infer<typeof RevisionLineageEntryDtoSchema>;
 export type RequirementsReviewStateDto = z.infer<typeof RequirementsReviewStateDtoSchema>;
+
+export type DiscoveryDiscoveredByDto = z.infer<typeof DiscoveryDiscoveredBySchema>;
+export type RecordRequirementDiscoveryRequestDto = z.infer<
+  typeof RecordRequirementDiscoveryRequestDtoSchema
+>;
+export type RecordFindingDiscoveryRequestDto = z.infer<
+  typeof RecordFindingDiscoveryRequestDtoSchema
+>;

@@ -36,6 +36,9 @@ export function mapRequirementRevisionToDto(revision: RequirementRevision): Requ
       locator: e.locator
     })),
     rationale: revision.rationale,
+    actorId: revision.actorId,
+    baselineId: revision.baselineId,
+    originatingProjectionId: revision.originatingProjectionId,
     affectedActors: revision.affectedActors ? [...revision.affectedActors] : undefined,
     dependencies: revision.dependencies ? [...revision.dependencies] : undefined,
     supersedes: revision.supersedes
@@ -53,7 +56,10 @@ export function mapCandidateFindingToDto(finding: CandidateFinding): CandidateFi
     })),
     discoveredBy: finding.discoveredBy,
     disposition: finding.disposition,
-    rationale: finding.rationale
+    rationale: finding.rationale,
+    actorId: finding.actorId,
+    baselineId: finding.baselineId,
+    originatingProjectionId: finding.originatingProjectionId
   };
 }
 

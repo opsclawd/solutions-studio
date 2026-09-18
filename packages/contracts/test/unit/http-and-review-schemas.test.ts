@@ -9,7 +9,11 @@ import {
   GenerateProjectionRequestDtoSchema,
   EvidenceExcerptDtoSchema,
   RequirementsReviewStateDtoSchema,
-  RevisionLineageEntryDtoSchema
+  RevisionLineageEntryDtoSchema,
+  RecordRequirementDiscoveryRequestDtoSchema,
+  RecordFindingDiscoveryRequestDtoSchema,
+  RequirementRevisionDtoSchema,
+  CandidateFindingDtoSchema
 } from '../../src/requirements/index.js';
 import { ApiErrorDtoSchema, API_ERROR_CODES } from '../../src/http/index.js';
 
@@ -264,6 +268,222 @@ describe('HTTP and Review Schemas', () => {
           message: 'Error'
         })
       ).toThrow();
+    });
+  });
+
+  describe('RecordRequirementDiscoveryRequestDtoSchema', () => {
+    it('accepts valid proposal discovery request with all fields', () => {
+      const parsed = RecordRequirementDiscoveryRequestDtoSchema.parse({
+        statement: 'Tenant purge must retain audit records for 90 days',
+        category: 'business-rule',
+        rationale: 'SME noted SOC2 requirement during prototype review',
+        actorId: 'reviewer-42',
+        baselineId: 'BASELINE-001',
+        originatingProjectionId: 'PROJ-001',
+        affectedActors: ['SecurityAuditor'],
+        dependencies: ['REQ-001'],
+        evidence: [{ sourceRevisionId: 'SRC-001-R1', locator: 'overview#1' }],
+        requirementId: 'REQ-NEW',
+        revisionId: 'REQ-NEW-R1'
+      });
+      expect(parsed.statement).toBe('Tenant purge must retain audit records for 90 days');
+      expect(parsed.category).toBe('business-rule');
+      expect(parsed.rationale).toBe('SME noted SOC2 requirement during prototype review');
+      expect(parsed.actorId).toBe('reviewer-42');
+      expect(parsed.baselineId).toBe('BASELINE-001');
+      expect(parsed.originatingProjectionId).toBe('PROJ-001');
+      expect(parsed.affectedActors).toEqual(['SecurityAuditor']);
+      expect(parsed.dependencies).toEqual(['REQ-001']);
+      expect(parsed.evidence).toHaveLength(1);
+    });
+
+    it('accepts minimal proposal discovery request', () => {
+      const parsed = RecordRequirementDiscoveryRequestDtoSchema.parse({
+        statement: 'Simple statement',
+        category: 'business-rule',
+        rationale: 'Discovered during SME review'
+      });
+      expect(parsed.statement).toBe('Simple statement');
+      expect(parsed.category).toBe('business-rule');
+      expect(parsed.rationale).toBe('Discovered during SME review');
+      expect(parsed.actorId).toBeUndefined();
+      expect(parsed.baselineId).toBeUndefined();
+      expect(parsed.originatingProjectionId).toBeUndefined();
+    });
+
+    it('rejects empty or whitespace-only statement', () => {
+      expect(() =>
+        RecordRequirementDiscoveryRequestDtoSchema.parse({
+          statement: '',
+          category: 'business-rule',
+          rationale: 'Valid rationale'
+        })
+      ).toThrow();
+
+      expect(() =>
+        RecordRequirementDiscoveryRequestDtoSchema.parse({
+          statement: '   ',
+          category: 'business-rule',
+          rationale: 'Valid rationale'
+        })
+      ).toThrow();
+    });
+
+    it('rejects empty or whitespace-only rationale', () => {
+      expect(() =>
+        RecordRequirementDiscoveryRequestDtoSchema.parse({
+          statement: 'Valid statement',
+          category: 'business-rule',
+          rationale: ''
+        })
+      ).toThrow();
+
+      expect(() =>
+        RecordRequirementDiscoveryRequestDtoSchema.parse({
+          statement: 'Valid statement',
+          category: 'business-rule',
+          rationale: '   '
+        })
+      ).toThrow();
+    });
+
+    it('rejects invalid category', () => {
+      expect(() =>
+        RecordRequirementDiscoveryRequestDtoSchema.parse({
+          statement: 'Valid statement',
+          category: 'invalid-cat',
+          rationale: 'Valid rationale'
+        })
+      ).toThrow();
+    });
+  });
+
+  describe('RecordFindingDiscoveryRequestDtoSchema', () => {
+    it('accepts valid human finding discovery request', () => {
+      const parsed = RecordFindingDiscoveryRequestDtoSchema.parse({
+        type: 'missing-authorization',
+        discoveredBy: 'human',
+        rationale: 'Admin role is missing required permissions check',
+        actorId: 'reviewer-1',
+        baselineId: 'BASELINE-001',
+        originatingProjectionId: 'PROJ-001',
+        affectedRequirementRevisions: ['REQ-001-R1'],
+        evidence: [{ sourceRevisionId: 'SRC-001-R1', locator: 'auth#1' }],
+        findingId: 'FINDING-CUSTOM'
+      });
+      expect(parsed.type).toBe('missing-authorization');
+      expect(parsed.discoveredBy).toBe('human');
+      expect(parsed.rationale).toBe('Admin role is missing required permissions check');
+      expect(parsed.actorId).toBe('reviewer-1');
+      expect(parsed.baselineId).toBe('BASELINE-001');
+      expect(parsed.originatingProjectionId).toBe('PROJ-001');
+    });
+
+    it('accepts valid artifact-validation finding discovery request', () => {
+      const parsed = RecordFindingDiscoveryRequestDtoSchema.parse({
+        type: 'incomplete-state-machine',
+        discoveredBy: 'artifact-validation',
+        rationale: 'Mermaid diagram review revealed terminal state with no exit transition',
+        originatingProjectionId: 'PROJ-002'
+      });
+      expect(parsed.type).toBe('incomplete-state-machine');
+      expect(parsed.discoveredBy).toBe('artifact-validation');
+      expect(parsed.originatingProjectionId).toBe('PROJ-002');
+    });
+
+    it('rejects disallowed discoveredBy values (model, heuristic, arbitrary)', () => {
+      expect(() =>
+        RecordFindingDiscoveryRequestDtoSchema.parse({
+          type: 'contradiction',
+          discoveredBy: 'model',
+          rationale: 'Generated by model'
+        })
+      ).toThrow();
+
+      expect(() =>
+        RecordFindingDiscoveryRequestDtoSchema.parse({
+          type: 'contradiction',
+          discoveredBy: 'heuristic',
+          rationale: 'Detected by heuristic'
+        })
+      ).toThrow();
+
+      expect(() =>
+        RecordFindingDiscoveryRequestDtoSchema.parse({
+          type: 'contradiction',
+          discoveredBy: 'bot',
+          rationale: 'Random bot'
+        })
+      ).toThrow();
+    });
+
+    it('rejects empty or whitespace-only rationale', () => {
+      expect(() =>
+        RecordFindingDiscoveryRequestDtoSchema.parse({
+          type: 'contradiction',
+          discoveredBy: 'human',
+          rationale: ''
+        })
+      ).toThrow();
+
+      expect(() =>
+        RecordFindingDiscoveryRequestDtoSchema.parse({
+          type: 'contradiction',
+          discoveredBy: 'human',
+          rationale: '   '
+        })
+      ).toThrow();
+    });
+
+    it('rejects invalid finding type', () => {
+      expect(() =>
+        RecordFindingDiscoveryRequestDtoSchema.parse({
+          type: 'invalid-finding-type',
+          discoveredBy: 'human',
+          rationale: 'Valid rationale'
+        })
+      ).toThrow();
+    });
+  });
+
+  describe('DTO context fields preservation in schemas', () => {
+    it('parses RequirementRevisionDtoSchema with context fields', () => {
+      const parsed = RequirementRevisionDtoSchema.parse({
+        id: 'REQ-001-R1',
+        requirementId: 'REQ-001',
+        revision: 1,
+        statement: 'Statement',
+        category: 'business-rule',
+        origin: 'REVIEWER_PROPOSAL',
+        reviewState: 'PENDING',
+        resolutionState: 'UNRESOLVED',
+        evidence: [],
+        rationale: 'Discovery rationale',
+        actorId: 'actor-1',
+        baselineId: 'BASELINE-1',
+        originatingProjectionId: 'PROJ-1'
+      });
+      expect(parsed.actorId).toBe('actor-1');
+      expect(parsed.baselineId).toBe('BASELINE-1');
+      expect(parsed.originatingProjectionId).toBe('PROJ-1');
+    });
+
+    it('parses CandidateFindingDtoSchema with context fields', () => {
+      const parsed = CandidateFindingDtoSchema.parse({
+        id: 'FINDING-001',
+        type: 'contradiction',
+        affectedRequirementRevisions: [],
+        evidence: [],
+        discoveredBy: 'artifact-validation',
+        disposition: 'OPEN',
+        rationale: 'Discovery rationale',
+        actorId: 'actor-1',
+        baselineId: 'BASELINE-1',
+        originatingProjectionId: 'PROJ-1'
+      });
+      expect(parsed.actorId).toBe('actor-1');
+      expect(parsed.baselineId).toBe('BASELINE-1');
+      expect(parsed.originatingProjectionId).toBe('PROJ-1');
     });
   });
 });
