@@ -1,17 +1,19 @@
-#!/usr/bin/env tsx
 import path from 'node:path';
 import { composeOrchestratorHttpServer } from '../src/http/composition.js';
+import type { ProviderType } from '../src/infrastructure/generation/GatewayFactory.js';
 
 export interface HttpServerArgs {
   readonly port: number;
   readonly host: string;
   readonly storeDir?: string;
+  readonly provider?: ProviderType;
 }
 
 export function parseArgs(args: string[]): HttpServerArgs {
   let port = Number(process.env.PORT) || 3000;
   let host = process.env.HOST || '0.0.0.0';
   let storeDir: string | undefined = undefined;
+  let provider: ProviderType | undefined = undefined;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -32,18 +34,25 @@ export function parseArgs(args: string[]): HttpServerArgs {
       host = args[++i];
     } else if (arg === '--store') {
       storeDir = path.resolve(process.cwd(), args[++i]);
+    } else if (arg === '--provider') {
+      const val = args[++i];
+      if (!['fake', 'agy', 'opencode', 'fixture-replay'].includes(val)) {
+        throw new Error(`Invalid provider: '${val}'`);
+      }
+      provider = val as ProviderType;
     } else {
       throw new Error(`Unknown option: '${arg}'`);
     }
   }
 
-  return { port, host, storeDir };
+  return { port, host, storeDir, provider };
 }
 
 export async function main() {
   const cliArgs = parseArgs(process.argv.slice(2));
   const server = composeOrchestratorHttpServer({
     storeDir: cliArgs.storeDir,
+    provider: cliArgs.provider,
     fastifyOptions: {
       logger: true
     }

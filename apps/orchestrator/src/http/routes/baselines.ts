@@ -7,6 +7,7 @@ import {
 import type { CreateRequirementsBaselineUseCase } from '../../application/use-cases/CreateRequirementsBaselineUseCase.js';
 import type { ProjectBaselineUseCase } from '../../application/use-cases/ProjectBaselineUseCase.js';
 import type { GetRequirementsReviewStateUseCase } from '../../application/use-cases/GetRequirementsReviewStateUseCase.js';
+import { UnknownProjectionError } from '../../application/use-cases/DiscoveryErrors.js';
 import { mapRequirementsBaselineToDto, mapProjectionRecordToDto } from '../dto-mappers.js';
 
 export interface BaselinesRoutesOptions {
@@ -17,6 +18,11 @@ export interface BaselinesRoutesOptions {
 
 const baselineParamsSchema = z.object({
   baselineId: z.string().min(1)
+});
+
+const baselineProjectionParamsSchema = z.object({
+  baselineId: z.string().min(1),
+  projectionId: z.string().min(1)
 });
 
 export const baselinesRoutes: FastifyPluginAsync<BaselinesRoutesOptions> = async (app, options) => {
@@ -101,6 +107,26 @@ export const baselinesRoutes: FastifyPluginAsync<BaselinesRoutesOptions> = async
         baselineId: request.params.baselineId
       });
       return reply.status(200).send(reviewState.projections.map(mapProjectionRecordToDto));
+    }
+  );
+
+  app.get<{
+    Params: z.infer<typeof baselineProjectionParamsSchema>;
+  }>(
+    '/api/baselines/:baselineId/projections/:projectionId',
+    {
+      schema: {
+        params: baselineProjectionParamsSchema
+      }
+    },
+    async (request, reply) => {
+      const projection = await options.projectBaselineUseCase.getProjection(
+        request.params.projectionId
+      );
+      if (!projection || projection.baselineId !== request.params.baselineId) {
+        throw new UnknownProjectionError(request.params.projectionId);
+      }
+      return reply.status(200).send(mapProjectionRecordToDto(projection));
     }
   );
 };

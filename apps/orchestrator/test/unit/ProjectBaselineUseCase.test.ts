@@ -204,4 +204,42 @@ describe('ProjectBaselineUseCase', () => {
     expect(result.metadata.requirementRevisionIds).not.toContain(rev2.id);
     expect(result.metadata.declaredProvenance.requirementRevisionIds).toEqual([rev1.id]);
   });
+
+  it('retrieves projection by ID using getProjection', async () => {
+    const rev1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-004-R1'),
+      requirementId: createRequirementId('REQ-004'),
+      revision: 1,
+      statement: 'Requirement for lookup',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR'
+    });
+    await repo.saveRequirementRevision(rev1);
+
+    const baseline = createRequirementsBaseline({
+      id: createRequirementsBaselineId('BASE-LOOKUP'),
+      requirements: [rev1],
+      createdBy: createReviewerId('REV-LOOKUP')
+    });
+    await repo.saveRequirementsBaseline(baseline);
+
+    fakeGateway.queueResponse('graph TD\n  LookupStart --> LookupEnd\n');
+
+    const result = await projectBaselineUseCase.project({
+      baselineId: baseline.id,
+      artifactType: 'process-diagram',
+      id: 'PROJ-TEST-LOOKUP'
+    });
+
+    const fetched = await projectBaselineUseCase.getProjection('PROJ-TEST-LOOKUP');
+    expect(fetched).toBeDefined();
+    expect(fetched?.id).toBe('PROJ-TEST-LOOKUP');
+    expect(fetched?.baselineId).toBe('BASE-LOOKUP');
+    expect(fetched?.content).toBe(result.content);
+
+    const nonExistent = await projectBaselineUseCase.getProjection('PROJ-NON-EXISTENT');
+    expect(nonExistent).toBeUndefined();
+  });
 });

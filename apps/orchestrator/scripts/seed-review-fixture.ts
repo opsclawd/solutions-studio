@@ -6,11 +6,15 @@ import {
   createRequirementId,
   createRequirementRevisionId,
   createFindingId,
+  createRequirementsBaselineId,
+  createReviewerId,
   createRequirementRevision,
   createCandidateFinding,
+  type RequirementsBaseline,
   now
 } from '@solutions-studio/domain';
 import { FilesystemRequirementsRepository } from '../src/infrastructure/persistence/filesystem/FilesystemRequirementsRepository.js';
+import type { ProjectionRecord } from '../src/application/ports/persistence/IRequirementsRepository.js';
 
 export function parseArgs(args: string[]): { outDir: string } {
   let outDir = '.review-fixture-store';
@@ -154,6 +158,51 @@ export async function seedReviewFixture(targetDir: string) {
       'Repository-wide security discovery: Emergency break-glass access procedure is unspecified.'
   });
   await repo.saveCandidateFinding(finding2);
+
+  // 6. Verified baseline BASE-001 containing REQ-002-R1
+  const baseline1: RequirementsBaseline = {
+    id: createRequirementsBaselineId('BASE-001'),
+    requirementRevisions: [req2Rev1.id],
+    createdBy: createReviewerId('lead-reviewer'),
+    createdAt: now()
+  };
+  await repo.saveRequirementsBaseline(baseline1);
+
+  // 7. Initial projection PROJ-001 bound to BASE-001
+  const proj1Content =
+    'graph TD\n' +
+    '  Start([Start Request]) --> Auth{Verify Admin MFA}\n' +
+    '  Auth -->|Authorized| Grant[Assign RBAC Role]\n' +
+    '  Auth -->|Denied| Reject[Deny Access]';
+
+  const proj1: ProjectionRecord = {
+    id: 'PROJ-001',
+    baselineId: baseline1.id,
+    requirementRevisionIds: [req2Rev1.id],
+    artifactType: 'process-diagram',
+    content: proj1Content,
+    metadata: {
+      baselineId: 'BASE-001',
+      requirementRevisionIds: ['REQ-002-R1'],
+      artifactType: 'process-diagram',
+      declaredProvenance: {
+        baselineId: 'BASE-001',
+        requirementRevisionIds: ['REQ-002-R1']
+      },
+      configuredExecution: {
+        provider: 'fake',
+        artifactType: 'process-diagram'
+      },
+      measuredVerification: {
+        repairsNeeded: 0,
+        attemptCount: 1,
+        contentHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+        verifiedAt: now()
+      }
+    },
+    createdAt: now()
+  };
+  await repo.saveProjectionRecord(proj1);
 
   console.log(`Seeded review fixture store at: ${targetDir}`);
 }

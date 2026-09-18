@@ -17,6 +17,7 @@ import {
   type ProviderType,
   type GatewayConfig
 } from '../infrastructure/generation/GatewayFactory.js';
+import { DeterministicFallbackGateway } from '../infrastructure/generation/DeterministicFallbackGateway.js';
 import { MermaidCliLinterAdapter } from '../infrastructure/validation/MermaidCliLinterAdapter.js';
 import { buildServer } from './server.js';
 
@@ -74,8 +75,13 @@ export function composeOrchestratorHttpServer(
     cwd: process.cwd()
   };
 
+  const fallbackGateway =
+    provider === 'fake' || provider === 'fixture-replay'
+      ? new DeterministicFallbackGateway()
+      : undefined;
+
   const generationGateway =
-    options.generationGateway ?? GatewayFactory.createGateway(gatewayConfig);
+    options.generationGateway ?? GatewayFactory.createGateway(gatewayConfig, fallbackGateway);
 
   const mmdcBinPath =
     process.env.MMDC_BIN_PATH ??

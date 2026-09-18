@@ -344,4 +344,110 @@ describe('GetRequirementsReviewStateUseCase', () => {
     expect(findingIds).toContain('FIND-ATTACHED-001');
     expect(findingIds).not.toContain('FIND-OUTOFSCOPE-001');
   });
+
+  it('hydrates candidate requirement revisions associated with baseline or its projections', async () => {
+    const baselineRev = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-002-R1'),
+      requirementId: createRequirementId('REQ-002'),
+      revision: 1,
+      statement: 'Base requirement',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR',
+      evidence: []
+    });
+    await repo.saveRequirementRevision(baselineRev);
+
+    const baseline = createRequirementsBaseline({
+      id: createRequirementsBaselineId('BASE-001'),
+      requirements: [baselineRev],
+      createdBy: createReviewerId('reviewer-1'),
+      createdAt: now()
+    });
+    await repo.saveRequirementsBaseline(baseline);
+
+    // Save a projection bound to BASE-001
+    await repo.saveProjectionRecord({
+      id: 'PROJ-001',
+      baselineId: baseline.id,
+      requirementRevisionIds: [baselineRev.id],
+      artifactType: 'process-diagram',
+      content: 'graph TD; A --> B;',
+      metadata: {
+        baselineId: 'BASE-001',
+        requirementRevisionIds: ['REQ-002-R1'],
+        artifactType: 'process-diagram',
+        declaredProvenance: {
+          baselineId: 'BASE-001',
+          requirementRevisionIds: ['REQ-002-R1']
+        },
+        configuredExecution: {
+          provider: 'fake',
+          artifactType: 'process-diagram'
+        },
+        measuredVerification: {
+          repairsNeeded: 0,
+          attemptCount: 1,
+          contentHash: 'hash-1',
+          verifiedAt: now()
+        }
+      },
+      createdAt: now()
+    });
+
+    // Candidate discovery 1: associated directly with baselineId
+    const candidateRev1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-DISC-001-R1'),
+      requirementId: createRequirementId('REQ-DISC-001'),
+      revision: 1,
+      statement: 'Discovered candidate 1',
+      category: 'business-rule',
+      origin: 'REVIEWER_PROPOSAL',
+      reviewState: 'PENDING',
+      resolutionState: 'UNRESOLVED',
+      evidence: [],
+      baselineId: baseline.id
+    });
+    await repo.saveRequirementRevision(candidateRev1);
+
+    // Candidate discovery 2: associated via originatingProjectionId
+    const candidateRev2 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-DISC-002-R1'),
+      requirementId: createRequirementId('REQ-DISC-002'),
+      revision: 1,
+      statement: 'Discovered candidate 2',
+      category: 'business-rule',
+      origin: 'REVIEWER_PROPOSAL',
+      reviewState: 'PENDING',
+      resolutionState: 'UNRESOLVED',
+      evidence: [],
+      originatingProjectionId: 'PROJ-001'
+    });
+    await repo.saveRequirementRevision(candidateRev2);
+
+    // Candidate discovery 3: associated with a different baseline BASE-002
+    const otherCandidateRev = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-OTHER-001-R1'),
+      requirementId: createRequirementId('REQ-OTHER-001'),
+      revision: 1,
+      statement: 'Other candidate',
+      category: 'business-rule',
+      origin: 'REVIEWER_PROPOSAL',
+      reviewState: 'PENDING',
+      resolutionState: 'UNRESOLVED',
+      evidence: [],
+      baselineId: createRequirementsBaselineId('BASE-002')
+    });
+    await repo.saveRequirementRevision(otherCandidateRev);
+
+    const state = await useCase.get({ baselineId: 'BASE-001' });
+
+    expect(state.baseline?.id).toBe('BASE-001');
+    const revIds = state.requirementRevisions.map((r) => r.id);
+    expect(revIds).toContain('REQ-002-R1');
+    expect(revIds).toContain('REQ-DISC-001-R1');
+    expect(revIds).toContain('REQ-DISC-002-R1');
+    expect(revIds).not.toContain('REQ-OTHER-001-R1');
+  });
 });

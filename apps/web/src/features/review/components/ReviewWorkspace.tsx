@@ -18,6 +18,7 @@ import { ErrorBanner } from './ErrorBanner';
 import { RequirementList } from './RequirementList';
 import { RequirementDetail } from './RequirementDetail';
 import { AllFindingsPanel } from './AllFindingsPanel';
+import { ProjectionsPanel } from './ProjectionsPanel';
 
 export interface ReviewWorkspaceProps {
   baselineId?: string;
@@ -40,6 +41,8 @@ export function ReviewWorkspace({ baselineId }: ReviewWorkspaceProps) {
     mutationError,
     selectedRequirementId,
     selectedRequirement,
+    selectedProjectionId,
+    projections,
     findingsView,
     findingsForSelectedRequirement,
     revisionRequirementIndex,
@@ -47,10 +50,12 @@ export function ReviewWorkspace({ baselineId }: ReviewWorkspaceProps) {
     historyByEntityId,
     refresh,
     selectRequirement,
+    selectProjection,
     setFindingsView,
     clearMutationError,
     handleRequirementMutation,
-    handleFindingMutation
+    handleFindingMutation,
+    handleGenerateProjection
   } = useReviewState(baselineId);
 
   // Handlers for requirements
@@ -178,6 +183,18 @@ export function ReviewWorkspace({ baselineId }: ReviewWorkspaceProps) {
               >
                 All Findings ({data?.findings.length ?? 0})
               </button>
+              <button
+                type="button"
+                data-testid="view-projections-btn"
+                onClick={() => setFindingsView('projections')}
+                className={`px-3 py-1 rounded-md font-medium transition ${
+                  findingsView === 'projections'
+                    ? 'bg-white text-gray-900 shadow-xs'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Diagram Projections ({projections.length})
+              </button>
             </div>
 
             <button
@@ -215,6 +232,16 @@ export function ReviewWorkspace({ baselineId }: ReviewWorkspaceProps) {
           <div data-testid="review-loading" className="p-12 text-center text-gray-500 font-medium">
             Loading requirements review state...
           </div>
+        ) : findingsView === 'projections' ? (
+          <ProjectionsPanel
+            baselineId={data?.baseline?.id ?? baselineId}
+            projections={projections}
+            selectedProjectionId={selectedProjectionId}
+            actorId={actorId}
+            onSelectProjection={selectProjection}
+            onGenerateProjection={handleGenerateProjection}
+            onRefreshWorkspace={refresh}
+          />
         ) : findingsView === 'all' ? (
           <AllFindingsPanel
             allFindings={data?.findings ?? []}

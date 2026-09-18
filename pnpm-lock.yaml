@@ -75,6 +75,9 @@ importers:
       '@solutions-studio/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      mermaid:
+        specifier: ^11.4.2
+        version: 11.17.2
       next:
         specifier: ^14.2.15
         version: 14.2.35(@playwright/test@1.63.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
