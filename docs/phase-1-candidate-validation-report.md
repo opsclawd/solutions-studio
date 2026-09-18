@@ -8,6 +8,7 @@
 - **Environment & Harness:** Real-provider evaluation via `scripts/run-evaluation.ts --provider agy --model gemini-3.8-flash-high`, run **three times independently** against the identical candidate SHA and corpus to characterize run-to-run variance (a single run was found to be misleading — see Section 2.1). A real-provider baseline projection (`ProjectBaselineUseCase` + `MermaidCliLinterAdapter`, real `agy` provider, real Mermaid linter — not the fake-gateway CI path) was validated earlier in this same release batch, against an ancestor candidate (`5894db7`) whose projection code path is unchanged by the later remediation issues (#34, #35, #36, #40) in this batch; it produced a syntactically valid diagram on the first attempt (0 repairs) tied to an exact `RequirementsBaselineId` and requirement-revision set. It was not independently re-run at the final SHA.
 
 This report supersedes two earlier real-provider validation rounds against this batch's release candidates, both of which resulted in a recorded **DESIGN CHANGE**:
+
 1. Candidate `5894db7` — rejected for 4/10 defect categories at 0% precision/recall; remediated by issues #34 (compiler prompt: cross-source reasoning + precision calibration), #35 (corpus coverage for two orphaned finding types), #36 (model-identity metadata tooling).
 2. Candidate `8c59566` — rejected because the #34 fix, while genuinely repairing `superseded-source-or-requirement`/`source-authority-conflict` (0%→100%), regressed `contradictory-approval-thresholds` to 0% and reused two corpus fixtures verbatim as few-shot examples; remediated by issue #40.
 
@@ -17,12 +18,12 @@ This report supersedes two earlier real-provider validation rounds against this 
 
 Aggregate requirement-extraction results across three independent runs of candidate `91fd4f8` (same model, same corpus v2.0, 16 fixtures):
 
-| Run | TP | FP | FN | Recall | Precision |
-| :-- | :-: | :-: | :-: | :-: | :-: |
-| Run 1 | 25 | 26 | 7 | 78% | 49% |
-| Run 2 | 20 | 29 | 12 | 62% | 41% |
-| Run 3 | 22 | 28 | 10 | 68% | 44% |
-| **Range** | | | | **62–78%** | **41–49%** |
+| Run       | TP  | FP  | FN  |   Recall   | Precision  |
+| :-------- | :-: | :-: | :-: | :--------: | :--------: |
+| Run 1     | 25  | 26  |  7  |    78%     |    49%     |
+| Run 2     | 20  | 29  | 12  |    62%     |    41%     |
+| Run 3     | 22  | 28  | 10  |    68%     |    44%     |
+| **Range** |     |     |     | **62–78%** | **41–49%** |
 
 For comparison, the pre-remediation baseline (`5894db7`, single run, corpus v1.0, 14 fixtures): 61% recall / 35% precision.
 
@@ -38,23 +39,23 @@ For comparison, the pre-remediation baseline (`5894db7`, single run, corpus v1.0
 
 Per-category results across the same three runs (format: TP/FP/FN):
 
-| Defect Category | Run 1 | Run 2 | Run 3 | Stability |
-| :--- | :-: | :-: | :-: | :--- |
-| `contradictory-approval-thresholds` | 3/0/0 | 0/3/3 | 2/1/1 | **Unstable — full range** |
-| `missing-actors-authorization` | 0/0/3 | 0/1/3 | 0/1/3 | Stable, consistently 0% |
-| `incomplete-state-transitions` | 1/0/1 | 1/0/1 | 1/0/1 | **Stable, below pre-remediation baseline (was 2/2/0)** |
-| `missing-failure-recovery` | 1/0/1 | 1/0/1 | 1/0/1 | **Stable, below pre-remediation baseline (was 2/3/0)** |
-| `temporal-ambiguity` | 2/0/0 | 0/2/2 | 0/2/2 | **Unstable — 1 good run of 3** |
-| `undefined-cardinality` | 1/0/1 | 1/0/1 | 1/0/1 | Stable, matches baseline |
-| `unsupported-assumptions` | 0/2/2 | 0/2/2 | 0/2/2 | **Stable, below pre-remediation baseline (was 1/1/1)** |
-| `superseded-source-or-requirement` | 2/0/0 | 2/0/0 | 2/0/0 | **Stable — 100%/100%, was 0%/0% pre-remediation. Confirmed fix.** |
-| `source-authority-conflict` | 2/0/0 | 2/0/0 | 2/0/0 | **Stable — 100%/100%, was 0%/0% pre-remediation. Confirmed fix.** |
-| `false-positive-near-conflict` | 0/0/0 | 0/0/0 | 0/0/0 | No findings expected or produced |
-| `data-boundary-ambiguity` | 0/2/2 | 0/2/2 | 0/2/2 | Stable, 0% (new category from #35, never fixed by any issue) |
-| `subjective-normative-language` | 0/2/2 | 0/2/2 | 0/2/2 | Stable, 0% (same) |
+| Defect Category                     | Run 1 | Run 2 | Run 3 | Stability                                                         |
+| :---------------------------------- | :---: | :---: | :---: | :---------------------------------------------------------------- |
+| `contradictory-approval-thresholds` | 3/0/0 | 0/3/3 | 2/1/1 | **Unstable — full range**                                         |
+| `missing-actors-authorization`      | 0/0/3 | 0/1/3 | 0/1/3 | Stable, consistently 0%                                           |
+| `incomplete-state-transitions`      | 1/0/1 | 1/0/1 | 1/0/1 | **Stable, below pre-remediation baseline (was 2/2/0)**            |
+| `missing-failure-recovery`          | 1/0/1 | 1/0/1 | 1/0/1 | **Stable, below pre-remediation baseline (was 2/3/0)**            |
+| `temporal-ambiguity`                | 2/0/0 | 0/2/2 | 0/2/2 | **Unstable — 1 good run of 3**                                    |
+| `undefined-cardinality`             | 1/0/1 | 1/0/1 | 1/0/1 | Stable, matches baseline                                          |
+| `unsupported-assumptions`           | 0/2/2 | 0/2/2 | 0/2/2 | **Stable, below pre-remediation baseline (was 1/1/1)**            |
+| `superseded-source-or-requirement`  | 2/0/0 | 2/0/0 | 2/0/0 | **Stable — 100%/100%, was 0%/0% pre-remediation. Confirmed fix.** |
+| `source-authority-conflict`         | 2/0/0 | 2/0/0 | 2/0/0 | **Stable — 100%/100%, was 0%/0% pre-remediation. Confirmed fix.** |
+| `false-positive-near-conflict`      | 0/0/0 | 0/0/0 | 0/0/0 | No findings expected or produced                                  |
+| `data-boundary-ambiguity`           | 0/2/2 | 0/2/2 | 0/2/2 | Stable, 0% (new category from #35, never fixed by any issue)      |
+| `subjective-normative-language`     | 0/2/2 | 0/2/2 | 0/2/2 | Stable, 0% (same)                                                 |
 
-- **Unclassified false positives across 3 runs: 28 total (6, 12, 10 per run)** — down from 31 in a single pre-remediation run, and now the *dominant contributor has shifted*: `unsupported-assumption`/`data-boundary-ambiguity`/`subjective-normative-language` (structurally uncovered or weak categories) together account for 18/28 (64%), while `contradiction`/`temporal-ambiguity` (the categories that regressed in some runs) account for 8/28 (29%).
-- **Root cause of the `contradictory-approval-thresholds` / `temporal-ambiguity` instability, traced directly, not inferred:** in the low-scoring runs, the compiler detected the *same* contradiction with *byte-identical* evidence citations as the high-scoring run, but classified the underlying requirements as `actors-permissions` instead of the fixture's expected `business-rule`. Because the scorer's matching is two-hop (a finding can only match if its underlying requirements matched on category+origin+evidence first), this single category-boundary judgment call turns a substantively-correct contradiction detection into a full miss. **This is a genuine, diagnosable compiler weakness — an ambiguous category boundary between "who may act" (`actors-permissions`) and "what the rule states" (`business-rule`) for approval-threshold requirements — not scoring brittleness and not random noise.**
+- **Unclassified false positives across 3 runs: 28 total (6, 12, 10 per run)** — down from 31 in a single pre-remediation run, and now the _dominant contributor has shifted_: `unsupported-assumption`/`data-boundary-ambiguity`/`subjective-normative-language` (structurally uncovered or weak categories) together account for 18/28 (64%), while `contradiction`/`temporal-ambiguity` (the categories that regressed in some runs) account for 8/28 (29%).
+- **Root cause of the `contradictory-approval-thresholds` / `temporal-ambiguity` instability, traced directly, not inferred:** in the low-scoring runs, the compiler detected the _same_ contradiction with _byte-identical_ evidence citations as the high-scoring run, but classified the underlying requirements as `actors-permissions` instead of the fixture's expected `business-rule`. Because the scorer's matching is two-hop (a finding can only match if its underlying requirements matched on category+origin+evidence first), this single category-boundary judgment call turns a substantively-correct contradiction detection into a full miss. **This is a genuine, diagnosable compiler weakness — an ambiguous category boundary between "who may act" (`actors-permissions`) and "what the rule states" (`business-rule`) for approval-threshold requirements — not scoring brittleness and not random noise.**
 - **`superseded-source-or-requirement` and `source-authority-conflict` are the one part of this report with zero variance across three independent runs**, up from 0%/0% before #34. This is the strongest, most reliable result in the whole validation: the cross-source reasoning fix works and is stable.
 
 ---
