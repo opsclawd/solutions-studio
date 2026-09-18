@@ -18,6 +18,16 @@ import {
   UnknownRequirementsBaselineError
 } from '../application/use-cases/ReconciliationErrors.js';
 import { RepairRetryExhaustionError } from '../application/use-cases/RepairErrors.js';
+import {
+  UnknownProjectionError,
+  ProjectionBaselineMismatchError,
+  RequirementAlreadyExistsError
+} from '../application/use-cases/DiscoveryErrors.js';
+import {
+  UnknownSourceRevisionError,
+  UnresolvedLocatorError
+} from '../application/use-cases/CompileRequirementsErrors.js';
+import { ImmutableRecordConflictError } from '../application/ports/persistence/IRequirementsRepository.js';
 
 export interface MappedErrorResponse {
   readonly statusCode: number;
@@ -103,6 +113,57 @@ export function mapErrorToResponse(error: unknown): MappedErrorResponse {
     };
   }
 
+  if (error instanceof UnknownProjectionError) {
+    return {
+      statusCode: 404,
+      body: {
+        code: 'PROJECTION_NOT_FOUND',
+        message: error.message,
+        details: { projectionId: error.projectionId }
+      }
+    };
+  }
+
+  if (error instanceof UnknownSourceRevisionError) {
+    return {
+      statusCode: 404,
+      body: {
+        code: 'SOURCE_REVISION_NOT_FOUND',
+        message: error.message,
+        details: { sourceRevisionId: error.sourceRevisionId }
+      }
+    };
+  }
+
+  if (error instanceof ProjectionBaselineMismatchError) {
+    return {
+      statusCode: 400,
+      body: {
+        code: 'VALIDATION_ERROR',
+        message: error.message,
+        details: {
+          projectionId: error.projectionId,
+          baselineId: error.expectedBaselineId,
+          projectionBaselineId: error.projectionBaselineId
+        }
+      }
+    };
+  }
+
+  if (error instanceof UnresolvedLocatorError) {
+    return {
+      statusCode: 400,
+      body: {
+        code: 'VALIDATION_ERROR',
+        message: error.message,
+        details: {
+          sourceRevisionId: error.sourceRevisionId,
+          locator: error.locator
+        }
+      }
+    };
+  }
+
   if (error instanceof StaleRevisionTargetError) {
     return {
       statusCode: 409,
@@ -113,6 +174,28 @@ export function mapErrorToResponse(error: unknown): MappedErrorResponse {
           revisionId: error.revisionId,
           latestRevisionId: error.latestRevisionId
         }
+      }
+    };
+  }
+
+  if (error instanceof RequirementAlreadyExistsError) {
+    return {
+      statusCode: 409,
+      body: {
+        code: 'INVALID_TRANSITION',
+        message: error.message,
+        details: { requirementId: error.requirementId }
+      }
+    };
+  }
+
+  if (error instanceof ImmutableRecordConflictError) {
+    return {
+      statusCode: 409,
+      body: {
+        code: 'INVALID_TRANSITION',
+        message: error.message,
+        details: { recordPath: error.recordPath }
       }
     };
   }

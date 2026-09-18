@@ -59,6 +59,9 @@ export const RequirementRevisionDtoSchema = z.object({
   resolutionState: z.enum(REQUIREMENT_RESOLUTION_STATES),
   evidence: z.array(EvidenceReferenceDtoSchema),
   rationale: z.string().optional(),
+  actorId: z.string().min(1).optional(),
+  baselineId: z.string().min(1).optional(),
+  originatingProjectionId: z.string().min(1).optional(),
   affectedActors: z.array(z.string().min(1)).optional(),
   dependencies: z.array(z.string().min(1)).optional(),
   supersedes: z.string().min(1).optional()
@@ -78,7 +81,10 @@ export const CandidateFindingDtoSchema = z.object({
   evidence: z.array(EvidenceReferenceDtoSchema),
   discoveredBy: z.enum(DISCOVERED_BY),
   disposition: z.enum(FINDING_DISPOSITIONS),
-  rationale: z.string().optional()
+  rationale: z.string().optional(),
+  actorId: z.string().min(1).optional(),
+  baselineId: z.string().min(1).optional(),
+  originatingProjectionId: z.string().min(1).optional()
 });
 
 export const CandidateEvidenceRefDtoSchema = EvidenceReferenceDtoSchema;
@@ -339,4 +345,41 @@ export const RequirementsReviewStateDtoSchema = z.object({
   evidenceExcerpts: z.array(EvidenceExcerptDtoSchema),
   projections: z.array(ProjectionRecordDtoSchema),
   revisionLineage: z.array(RevisionLineageEntryDtoSchema)
+});
+
+export const DiscoveryDiscoveredBySchema = z.enum(['human', 'artifact-validation']);
+
+export const RecordRequirementDiscoveryRequestDtoSchema = z.object({
+  statement: z
+    .string()
+    .min(1)
+    .refine((s) => s.trim().length > 0, { message: 'Statement must be non-empty' }),
+  category: RequirementCategorySchema,
+  rationale: z
+    .string()
+    .min(1)
+    .refine((s) => s.trim().length > 0, { message: 'Rationale must be non-empty' }),
+  actorId: z.string().min(1).optional(),
+  baselineId: z.string().min(1).optional(),
+  originatingProjectionId: z.string().min(1).optional(),
+  affectedActors: z.array(z.string().min(1)).optional(),
+  dependencies: z.array(z.string().min(1)).optional(),
+  evidence: z.array(EvidenceReferenceDtoSchema).optional(),
+  requirementId: z.string().min(1).optional(),
+  revisionId: z.string().min(1).optional()
+});
+
+export const RecordFindingDiscoveryRequestDtoSchema = z.object({
+  type: z.enum(FINDING_TYPES),
+  discoveredBy: DiscoveryDiscoveredBySchema,
+  rationale: z
+    .string()
+    .min(1)
+    .refine((s) => s.trim().length > 0, { message: 'Rationale must be non-empty' }),
+  actorId: z.string().min(1).optional(),
+  baselineId: z.string().min(1).optional(),
+  originatingProjectionId: z.string().min(1).optional(),
+  affectedRequirementRevisions: z.array(z.string().min(1)).optional(),
+  evidence: z.array(EvidenceReferenceDtoSchema).optional(),
+  findingId: z.string().min(1).optional()
 });

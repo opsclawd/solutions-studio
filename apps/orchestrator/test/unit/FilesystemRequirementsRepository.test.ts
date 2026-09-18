@@ -353,6 +353,54 @@ describe('FilesystemRequirementsRepository', () => {
     expect(list).toEqual([reqRev]);
   });
 
+  it('persists and round-trips discovery context fields (baselineId, originatingProjectionId, actorId) on RequirementRevision and CandidateFinding', async () => {
+    const reqRev = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-DISC-R1'),
+      requirementId: createRequirementId('REQ-DISC'),
+      revision: 1,
+      statement: 'Discovered requirement statement',
+      category: 'business-rule',
+      origin: 'REVIEWER_PROPOSAL',
+      reviewState: 'PENDING',
+      resolutionState: 'UNRESOLVED',
+      evidence: [],
+      rationale: 'Reviewer rationale',
+      actorId: createActorId('reviewer-sme-1'),
+      baselineId: createRequirementsBaselineId('BASELINE-DISC-01'),
+      originatingProjectionId: 'PROJ-DISC-01'
+    });
+
+    await repo.saveRequirementRevision(reqRev);
+
+    const reloadedReq = await repo.getRequirementRevision(reqRev.id);
+    expect(reloadedReq).toBeDefined();
+    expect(reloadedReq?.actorId).toBe('reviewer-sme-1');
+    expect(reloadedReq?.baselineId).toBe('BASELINE-DISC-01');
+    expect(reloadedReq?.originatingProjectionId).toBe('PROJ-DISC-01');
+    expect(reloadedReq?.rationale).toBe('Reviewer rationale');
+
+    const finding = createCandidateFinding({
+      id: createFindingId('FINDING-DISC-01'),
+      type: 'missing-authorization',
+      discoveredBy: 'artifact-validation',
+      disposition: 'OPEN',
+      rationale: 'Finding discovery rationale',
+      actorId: createActorId('validator-1'),
+      baselineId: createRequirementsBaselineId('BASELINE-DISC-01'),
+      originatingProjectionId: 'PROJ-DISC-01'
+    });
+
+    await repo.saveCandidateFinding(finding);
+
+    const reloadedFinding = await repo.getCandidateFinding(finding.id);
+    expect(reloadedFinding).toBeDefined();
+    expect(reloadedFinding?.actorId).toBe('validator-1');
+    expect(reloadedFinding?.baselineId).toBe('BASELINE-DISC-01');
+    expect(reloadedFinding?.originatingProjectionId).toBe('PROJ-DISC-01');
+    expect(reloadedFinding?.rationale).toBe('Finding discovery rationale');
+    expect(reloadedFinding?.discoveredBy).toBe('artifact-validation');
+  });
+
   it('lists all requirement IDs and handles empty repository', async () => {
     const emptyList = await repo.listRequirementIds();
     expect(emptyList).toEqual([]);
