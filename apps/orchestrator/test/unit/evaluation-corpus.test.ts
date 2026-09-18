@@ -16,10 +16,22 @@ describe('Adversarial Requirements Evaluation Corpus Integrity', () => {
   it('1. Manifest and every fixture parse against their Zod schemas without error', () => {
     expect(corpus.manifest).toBeDefined();
     expect(() => EvaluationManifestDtoSchema.parse(corpus.manifest)).not.toThrow();
-    expect(corpus.manifest.corpusVersion).toBe('v1.0');
+    expect(corpus.manifest.corpusVersion).toBe('v2.0');
     expect(corpus.fixtures.size).toBe(16);
 
     for (const [fixtureId, loaded] of corpus.fixtures) {
+      expect(() => EvaluationFixtureDtoSchema.parse(loaded.fixture)).not.toThrow();
+      expect(loaded.fixture.fixtureId).toBe(fixtureId);
+    }
+  });
+
+  it('1b. Historical corpus.v1.json manifest loads cleanly and validates against 10-category v1 snapshot', () => {
+    const v1Corpus = loadManifest('corpus.v1.json');
+    expect(v1Corpus.manifest).toBeDefined();
+    expect(() => EvaluationManifestDtoSchema.parse(v1Corpus.manifest)).not.toThrow();
+    expect(v1Corpus.manifest.corpusVersion).toBe('v1.0');
+    expect(v1Corpus.fixtures.size).toBe(14);
+    for (const [fixtureId, loaded] of v1Corpus.fixtures) {
       expect(() => EvaluationFixtureDtoSchema.parse(loaded.fixture)).not.toThrow();
       expect(loaded.fixture.fixtureId).toBe(fixtureId);
     }

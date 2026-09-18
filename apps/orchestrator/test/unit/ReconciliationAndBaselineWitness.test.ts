@@ -53,7 +53,7 @@ describe('Phase 1.7 — End-to-End Baseline Projection & Exit Gate Witness', () 
     expect(result.projectionResult.repairHistory).toHaveLength(1);
 
     // 7. Evaluation runner report assertions
-    expect(result.evaluationReport.corpusVersion).toBe('v1.0');
+    expect(result.evaluationReport.corpusVersion).toBe('v2.0');
     expect(result.evaluationReport.corpusIdentity).toMatch(/^[a-f0-9]{64}$/);
     expect(result.evaluationReport.aggregateScores.totalFixtures).toBe(16);
     expect(result.evaluationReport.aggregateScores.completedFixtures).toBe(16);
@@ -71,7 +71,7 @@ describe('Phase 1.7 — End-to-End Baseline Projection & Exit Gate Witness', () 
 
     // 8. Durability of evaluation run
     expect(result.reloadedEvaluationRun.id).toBe(result.evaluationReport.runId);
-    expect(result.reloadedEvaluationRun.corpusVersion).toBe('v1.0');
+    expect(result.reloadedEvaluationRun.corpusVersion).toBe('v2.0');
   });
 
   it('evaluation runner produces deterministic/versioned Phase 1 JSON/MD reports and persisted record reloads cleanly', async () => {
@@ -91,7 +91,7 @@ describe('Phase 1.7 — End-to-End Baseline Projection & Exit Gate Witness', () 
       });
 
       expect(evalResult.success).toBe(true);
-      expect(evalResult.report.corpusVersion).toBe('v1.0');
+      expect(evalResult.report.corpusVersion).toBe('v2.0');
       expect(evalResult.report.candidateSha.status).toBe('available');
       if (evalResult.report.candidateSha.status === 'available') {
         expect(evalResult.report.candidateSha.value).toBe('abc1234def5678');
@@ -100,7 +100,7 @@ describe('Phase 1.7 — End-to-End Baseline Projection & Exit Gate Witness', () 
       // Assert JSON file on disk
       const rawJson = await fs.readFile(reportJsonPath, 'utf-8');
       const parsedJson = JSON.parse(rawJson);
-      expect(parsedJson.corpusVersion).toBe('v1.0');
+      expect(parsedJson.corpusVersion).toBe('v2.0');
       expect(parsedJson.aggregateScores.totalFixtures).toBe(16);
       expect(parsedJson.aggregateScores.completedFixtures).toBe(16);
 

@@ -41,7 +41,7 @@ describe('Evaluation CLI options and reload integration', () => {
 
     expect(reloaded).toBeDefined();
     expect(reloaded!.id).toBe(runId);
-    expect(reloaded!.corpusVersion).toBe('v1.0');
+    expect(reloaded!.corpusVersion).toBe('v2.0');
     expect(reloaded!.fixtureResults).toHaveLength(16);
     expect(reloaded!.report.candidateSha).toEqual({
       status: 'available',

@@ -226,7 +226,7 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
     }
 
     return Object.freeze({
-      sourceType: (raw as { sourceType?: SourceType }).sourceType ?? ('sop' as SourceType),
+      sourceType: (raw as { sourceType?: SourceType }).sourceType,
       revision: createSourceRevision({
         id: createSourceRevisionId(raw.revision.id),
         sourceId: createSourceId(raw.revision.sourceId),

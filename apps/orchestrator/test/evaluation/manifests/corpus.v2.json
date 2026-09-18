@@ -1,5 +1,5 @@
 {
-  "corpusVersion": "v1.0",
+  "corpusVersion": "v2.0",
   "generatedAt": "2026-09-16T12:00:00.000Z",
   "fixtures": [
     {
@@ -81,8 +81,20 @@
       "canonicalMessyPackage": false
     },
     {
+      "fixtureId": "data-boundary-ambiguity-basic",
+      "path": "fixtures/data-boundary-ambiguity-basic",
+      "categories": ["data-boundary-ambiguity"],
+      "canonicalMessyPackage": false
+    },
+    {
+      "fixtureId": "subjective-normative-language-basic",
+      "path": "fixtures/subjective-normative-language-basic",
+      "categories": ["subjective-normative-language"],
+      "canonicalMessyPackage": false
+    },
+    {
       "fixtureId": "canonical-messy-discovery-package",
-      "path": "fixtures/canonical-messy-discovery-package-v1",
+      "path": "fixtures/canonical-messy-discovery-package",
       "categories": [
         "contradictory-approval-thresholds",
         "missing-actors-authorization",
@@ -93,7 +105,9 @@
         "unsupported-assumptions",
         "superseded-source-or-requirement",
         "source-authority-conflict",
-        "false-positive-near-conflict"
+        "false-positive-near-conflict",
+        "data-boundary-ambiguity",
+        "subjective-normative-language"
       ],
       "canonicalMessyPackage": true
     }
