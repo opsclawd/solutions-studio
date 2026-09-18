@@ -119,3 +119,44 @@ Items 1–4 were addressed by this batch's remediation issues (#34, #35, #36, #4
 
 - **Reviewing Authority (Sign-off):** opsclawd (operator)
 - **Date Signed:** 2026-09-18
+
+---
+
+## 7. Post-GO Audit Addendum — Phase 1 Terminal State
+
+This section records the repository state after the Phase 1 promotion decision without rewriting the historical evaluation evidence above.
+
+### Promotion Decision vs. Terminal Implementation State
+
+- **Phase 1 promotion candidate:** `91fd4f819c5b1c9273af8a83b19f026db686c899`
+- **Recorded promotion decision:** **GO**, as documented in Section 6.
+- **Post-GO compiler-quality remediation:** issue #42 / PR #43.
+- **PR #43 merge commit:** `69fa4f129553606c6f2b4a00aa93b6c148e5fb1b`.
+- **Phase 1 terminal implementation SHA:** `69fa4f129553606c6f2b4a00aa93b6c148e5fb1b`.
+
+PR #43 addressed the category-boundary weakness identified in Sections 2.1, 3, 4, and Section 5 item 5: approval-threshold requirements could alternate between `business-rule` and `actors-permissions`, causing substantively correct findings to score as misses.
+
+The remediation added explicit category-classification guidance and regression coverage. Its targeted real-provider validation ran three independent evaluations on the 16-fixture corpus using `agy` with `gemini-3.8-flash-high`:
+
+- `contradictory-approval-thresholds`: **3/0/0** in all three runs;
+- `temporal-ambiguity`: **2/0/0** in all three runs.
+
+The full validation suite passed, including **281 orchestrator tests across 24 files**. CI run #62 for merge commit `69fa4f1` completed successfully.
+
+The original Phase 1 GO decision is therefore preserved as the promotion decision for candidate `91fd4f8`, while `69fa4f1` is the authoritative terminal Phase 1 implementation state after the evidence-backed post-GO quality fix.
+
+### Subsequent Phase 2 Prerequisite Hardening
+
+Issue #15 / PR #44 was merged afterward at `c142d908925d79730553b3e4f83c1e9d1901efdf` to add dependency-cruiser enforcement for the documented domain/contracts/application/infrastructure boundaries.
+
+That change is treated as **Phase 2 prerequisite hardening**, not as a change to the Phase 1 promotion decision or evaluation evidence. It mechanically enforces architectural boundaries already established by Phase 1 and provides the protected baseline from which Phase 2 planning and implementation proceed.
+
+### Audit Interpretation
+
+For future traceability:
+
+1. Use `91fd4f8` when referring to the exact candidate that received the recorded Phase 1 **GO** decision.
+2. Use `69fa4f1` when referring to the final Phase 1 implementation state.
+3. Treat PR #44 / `c142d90` and later commits as post-Phase-1 changes unless explicitly documented otherwise.
+4. Preserve Sections 1–6 as the historical evaluation record; this addendum supersedes only the previously open category-classification follow-up described in Section 5 item 5.
+
