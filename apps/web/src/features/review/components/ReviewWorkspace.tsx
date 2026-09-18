@@ -193,7 +193,7 @@ export function ReviewWorkspace({ baselineId }: ReviewWorkspaceProps) {
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
-                Diagram Projections ({projections.length})
+                Projections ({projections.length})
               </button>
             </div>
 

@@ -18,6 +18,7 @@ import {
   UnknownRequirementsBaselineError
 } from '../application/use-cases/ReconciliationErrors.js';
 import { RepairRetryExhaustionError } from '../application/use-cases/RepairErrors.js';
+import { PrototypeProvenanceValidationError } from '../application/use-cases/PrototypeProjectionErrors.js';
 import {
   UnknownProjectionError,
   ProjectionBaselineMismatchError,
@@ -238,6 +239,21 @@ export function mapErrorToResponse(error: unknown): MappedErrorResponse {
       body: {
         code: 'UNAUDITED_RECONCILIATION',
         message: error.message
+      }
+    };
+  }
+
+  if (error instanceof PrototypeProvenanceValidationError) {
+    return {
+      statusCode: 400,
+      body: {
+        code: 'VALIDATION_ERROR',
+        message: error.message,
+        details: {
+          baselineId: error.baselineId,
+          invalidRequirementRevisionIds: error.invalidRequirementRevisionIds,
+          allowedRequirementRevisionIds: error.allowedRequirementRevisionIds
+        }
       }
     };
   }

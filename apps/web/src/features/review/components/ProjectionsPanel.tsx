@@ -4,6 +4,8 @@ import React, { useState } from 'react';
 import type { ProjectionRecordDto } from '@solutions-studio/contracts';
 import { MermaidViewer } from './MermaidViewer';
 import { DiagramDiscoveryPanel } from './DiagramDiscoveryPanel';
+import { PrototypeViewer } from './PrototypeViewer';
+import { PrototypeDiscoveryPanel } from './PrototypeDiscoveryPanel';
 import type { ApiError } from '../api/client';
 
 export interface ProjectionsPanelProps {
@@ -13,7 +15,7 @@ export interface ProjectionsPanelProps {
   actorId?: string;
   onSelectProjection: (id: string) => void;
   onGenerateProjection: (
-    artifactType: 'process-diagram' | 'state-diagram',
+    artifactType: 'process-diagram' | 'state-diagram' | 'prototype',
     prompt?: string
   ) => Promise<ProjectionRecordDto>;
   onRefreshWorkspace: () => void | Promise<void>;
@@ -28,9 +30,9 @@ export function ProjectionsPanel({
   onGenerateProjection,
   onRefreshWorkspace
 }: ProjectionsPanelProps) {
-  const [artifactType, setArtifactType] = useState<'process-diagram' | 'state-diagram'>(
-    'process-diagram'
-  );
+  const [artifactType, setArtifactType] = useState<
+    'process-diagram' | 'state-diagram' | 'prototype'
+  >('process-diagram');
   const [prompt, setPrompt] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
@@ -110,12 +112,13 @@ export function ProjectionsPanel({
               data-testid="projection-type-select"
               value={artifactType}
               onChange={(e) =>
-                setArtifactType(e.target.value as 'process-diagram' | 'state-diagram')
+                setArtifactType(e.target.value as 'process-diagram' | 'state-diagram' | 'prototype')
               }
               className="w-full text-xs p-2.5 bg-white border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-hidden font-medium"
             >
               <option value="process-diagram">Process Diagram</option>
               <option value="state-diagram">State Diagram</option>
+              <option value="prototype">Interactive Prototype (TSX)</option>
             </select>
           </div>
 
@@ -197,14 +200,25 @@ export function ProjectionsPanel({
 
       {/* Viewer & Discovery Area */}
       {activeProjection ? (
-        <div>
-          <MermaidViewer projection={activeProjection} />
-          <DiagramDiscoveryPanel
-            projection={activeProjection}
-            actorId={actorId}
-            onDiscoveryRecorded={onRefreshWorkspace}
-          />
-        </div>
+        activeProjection.artifactType === 'prototype' ? (
+          <div>
+            <PrototypeViewer projection={activeProjection} />
+            <PrototypeDiscoveryPanel
+              projection={activeProjection}
+              actorId={actorId}
+              onDiscoveryRecorded={onRefreshWorkspace}
+            />
+          </div>
+        ) : (
+          <div>
+            <MermaidViewer projection={activeProjection} />
+            <DiagramDiscoveryPanel
+              projection={activeProjection}
+              actorId={actorId}
+              onDiscoveryRecorded={onRefreshWorkspace}
+            />
+          </div>
+        )
       ) : (
         <div
           data-testid="no-projections-message"

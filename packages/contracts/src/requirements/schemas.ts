@@ -317,7 +317,7 @@ export const ReopenFindingRequestDtoSchema = z.object({
 });
 
 export const GenerateProjectionRequestDtoSchema = z.object({
-  artifactType: z.enum(['process-diagram', 'state-diagram']),
+  artifactType: z.enum(['process-diagram', 'state-diagram', 'prototype']),
   prompt: z.string().min(1).optional()
 });
 

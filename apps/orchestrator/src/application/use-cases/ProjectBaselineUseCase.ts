@@ -13,9 +13,12 @@ import type {
 } from '../ports/persistence/IRequirementsRepository.js';
 import type {
   GenerateArtifactUseCase,
-  GenerateArtifactOptions,
-  RepairAttemptRecord
+  GenerateArtifactOptions
 } from './GenerateArtifactUseCase.js';
+import type {
+  BaselineProjectionResult,
+  GeneratePrototypeProjectionUseCase
+} from './GeneratePrototypeProjectionUseCase.js';
 import {
   UnknownRequirementRevisionError,
   UnknownRequirementsBaselineError
@@ -23,27 +26,37 @@ import {
 
 export interface ProjectBaselineInput {
   readonly baselineId: RequirementsBaselineId | string;
-  readonly artifactType: 'process-diagram' | 'state-diagram';
+  readonly artifactType: 'process-diagram' | 'state-diagram' | 'prototype';
   readonly prompt?: string;
   readonly options?: GenerateArtifactOptions;
   readonly id?: string;
 }
 
-export interface BaselineProjectionResult {
-  readonly projectionId: string;
-  readonly content: string;
-  readonly metadata: ProjectionMetadataDto;
-  readonly repairHistory: readonly RepairAttemptRecord[];
-}
+export type { BaselineProjectionResult };
 
 export class ProjectBaselineUseCase {
   constructor(
     private readonly generateArtifactUseCase: GenerateArtifactUseCase,
     private readonly repository: IRequirementsRepository,
-    private readonly providerName: string = 'fake'
+    private readonly providerName: string = 'fake',
+    private readonly generatePrototypeProjectionUseCase?: GeneratePrototypeProjectionUseCase
   ) {}
 
   async project(input: ProjectBaselineInput): Promise<BaselineProjectionResult> {
+    if (input.artifactType === 'prototype') {
+      if (!this.generatePrototypeProjectionUseCase) {
+        throw new Error(
+          'GeneratePrototypeProjectionUseCase not configured on ProjectBaselineUseCase'
+        );
+      }
+      return this.generatePrototypeProjectionUseCase.execute({
+        baselineId: input.baselineId,
+        prompt: input.prompt,
+        options: input.options,
+        id: input.id
+      });
+    }
+
     const baselineId = createRequirementsBaselineId(input.baselineId);
     const baseline = await this.repository.getRequirementsBaseline(baselineId);
     if (!baseline) {

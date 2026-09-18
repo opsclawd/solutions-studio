@@ -12,12 +12,14 @@ import type {
 } from '../src/infrastructure/generation/GatewayFactory.js';
 import { MermaidCliLinterAdapter } from '../src/infrastructure/validation/MermaidCliLinterAdapter.js';
 import { GenerateArtifactUseCase } from '../src/application/use-cases/GenerateArtifactUseCase.js';
+import { GeneratePrototypeProjectionUseCase } from '../src/application/use-cases/GeneratePrototypeProjectionUseCase.js';
+import { BabelTsxValidatorAdapter } from '../src/infrastructure/validation/BabelTsxValidatorAdapter.js';
 import {
   ProjectBaselineUseCase,
   type BaselineProjectionResult
 } from '../src/application/use-cases/ProjectBaselineUseCase.js';
 
-export type ArtifactType = 'process-diagram' | 'state-diagram';
+export type ArtifactType = 'process-diagram' | 'state-diagram' | 'prototype';
 export type CliProviderType = 'agy' | 'opencode';
 export const VALID_CLI_PROVIDERS: readonly CliProviderType[] = ['agy', 'opencode'];
 
@@ -118,7 +120,7 @@ export function parseArgs(args: string[]): CliArgs {
     throw new Error("Option '--artifact-type' is required");
   }
 
-  const validArtifactTypes: ArtifactType[] = ['process-diagram', 'state-diagram'];
+  const validArtifactTypes: ArtifactType[] = ['process-diagram', 'state-diagram', 'prototype'];
   if (!validArtifactTypes.includes(artifactType)) {
     throw new Error(
       `Invalid artifact type '${artifactType}'. Allowed values: ${validArtifactTypes.join(', ')}`
@@ -220,10 +222,19 @@ export function composeProjectBaselineComponents(
 
   const generateArtifactUseCase = new GenerateArtifactUseCase(generationGateway, linterGateway);
 
+  const prototypeValidator = new BabelTsxValidatorAdapter();
+  const generatePrototypeProjectionUseCase = new GeneratePrototypeProjectionUseCase(
+    generationGateway,
+    prototypeValidator,
+    repository,
+    provider
+  );
+
   const projectBaselineUseCase = new ProjectBaselineUseCase(
     generateArtifactUseCase,
     repository,
-    provider
+    provider,
+    generatePrototypeProjectionUseCase
   );
 
   return {

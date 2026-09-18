@@ -16,6 +16,7 @@ import { ProjectionRecordDtoSchema } from '@solutions-studio/contracts';
 import { FilesystemRequirementsRepository } from '../../../src/infrastructure/persistence/filesystem/FilesystemRequirementsRepository.js';
 import { FakeGenerationGateway } from '../../fakes/FakeGenerationGateway.js';
 import { FakeMermaidLinterGateway } from '../../fakes/FakeMermaidLinterGateway.js';
+import { FakePrototypeValidatorGateway } from '../../fakes/FakePrototypeValidatorGateway.js';
 import { composeOrchestratorHttpServer } from '../../../src/http/composition.js';
 
 describe('HTTP Boundary: Projections API', () => {
@@ -23,6 +24,7 @@ describe('HTTP Boundary: Projections API', () => {
   let repo: FilesystemRequirementsRepository;
   let fakeGen: FakeGenerationGateway;
   let fakeLinter: FakeMermaidLinterGateway;
+  let fakeValidator: FakePrototypeValidatorGateway;
   let app: FastifyInstance;
 
   beforeEach(async () => {
@@ -30,10 +32,12 @@ describe('HTTP Boundary: Projections API', () => {
     repo = new FilesystemRequirementsRepository({ baseDir: tempDir });
     fakeGen = new FakeGenerationGateway();
     fakeLinter = new FakeMermaidLinterGateway();
+    fakeValidator = new FakePrototypeValidatorGateway();
     const composed = composeOrchestratorHttpServer({
       repository: repo,
       generationGateway: fakeGen,
-      linterGateway: fakeLinter
+      linterGateway: fakeLinter,
+      prototypeValidatorGateway: fakeValidator
     });
     app = composed.app;
     await app.ready();
@@ -96,6 +100,39 @@ describe('HTTP Boundary: Projections API', () => {
       expect(validated.metadata.measuredVerification.repairsNeeded).toBe(0);
     });
 
+    it('generates prototype projection and returns 200 with verified metadata', async () => {
+      await seedBaseline('BASE-001', 'REQ-001', 'REQ-001-R1');
+
+      const validTsx = [
+        '/**',
+        ' * @baseline BASE-001',
+        ' * @requirements REQ-001-R1',
+        ' */',
+        "import React, { useState } from 'react';",
+        'export default function Component() { return <div>Proto</div>; }'
+      ].join('\n');
+
+      fakeGen.setDefaultResponse(validTsx);
+      fakeValidator.setDefaultResult({ isValid: true });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/baselines/BASE-001/projections',
+        payload: {
+          artifactType: 'prototype'
+        }
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      const validated = ProjectionRecordDtoSchema.parse(body);
+      expect(validated.baselineId).toBe('BASE-001');
+      expect(validated.artifactType).toBe('prototype');
+      expect(validated.content).toContain('export default function Component()');
+      expect(validated.metadata.declaredProvenance.baselineId).toBe('BASE-001');
+      expect(validated.metadata.declaredProvenance.requirementRevisionIds).toEqual(['REQ-001-R1']);
+    });
+
     it('returns 400 VALIDATION_ERROR on invalid artifactType', async () => {
       await seedBaseline('BASE-001');
 
@@ -135,6 +172,26 @@ describe('HTTP Boundary: Projections API', () => {
         url: '/api/baselines/BASE-001/projections',
         payload: {
           artifactType: 'process-diagram'
+        }
+      });
+
+      expect(res.statusCode).toBe(502);
+      const body = res.json();
+      expect(body.code).toBe('ARTIFACT_GENERATION_FAILED');
+      expect(body.details.errors).toBeDefined();
+    });
+
+    it('returns 502 ARTIFACT_GENERATION_FAILED when prototype repair retries are exhausted', async () => {
+      await seedBaseline('BASE-001', 'REQ-001', 'REQ-001-R1');
+
+      fakeGen.setDefaultResponse('broken code without provenance header');
+      fakeValidator.setDefaultResult({ isValid: false, errorMessage: 'Invalid syntax' });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/baselines/BASE-001/projections',
+        payload: {
+          artifactType: 'prototype'
         }
       });
 

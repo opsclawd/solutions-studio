@@ -4,10 +4,12 @@ import type { FastifyInstance, FastifyServerOptions } from 'fastify';
 import type { IRequirementsRepository } from '../application/ports/persistence/IRequirementsRepository.js';
 import type { IGenerationGateway } from '../application/ports/generation/IGenerationGateway.js';
 import type { IMermaidLinterGateway } from '../application/ports/validation/IMermaidLinterGateway.js';
+import type { IPrototypeValidatorGateway } from '../application/ports/validation/IPrototypeValidatorGateway.js';
 import { CompileRequirementsUseCase } from '../application/use-cases/CompileRequirementsUseCase.js';
 import { ReconcileRequirementsUseCase } from '../application/use-cases/ReconcileRequirementsUseCase.js';
 import { CreateRequirementsBaselineUseCase } from '../application/use-cases/CreateRequirementsBaselineUseCase.js';
 import { GenerateArtifactUseCase } from '../application/use-cases/GenerateArtifactUseCase.js';
+import { GeneratePrototypeProjectionUseCase } from '../application/use-cases/GeneratePrototypeProjectionUseCase.js';
 import { ProjectBaselineUseCase } from '../application/use-cases/ProjectBaselineUseCase.js';
 import { GetRequirementsReviewStateUseCase } from '../application/use-cases/GetRequirementsReviewStateUseCase.js';
 import { RecordRequirementsDiscoveryUseCase } from '../application/use-cases/RecordRequirementsDiscoveryUseCase.js';
@@ -19,6 +21,7 @@ import {
 } from '../infrastructure/generation/GatewayFactory.js';
 import { DeterministicFallbackGateway } from '../infrastructure/generation/DeterministicFallbackGateway.js';
 import { MermaidCliLinterAdapter } from '../infrastructure/validation/MermaidCliLinterAdapter.js';
+import { BabelTsxValidatorAdapter } from '../infrastructure/validation/BabelTsxValidatorAdapter.js';
 import { buildServer } from './server.js';
 
 export interface ComposeHttpServerOptions {
@@ -31,12 +34,14 @@ export interface ComposeHttpServerOptions {
   readonly repository?: IRequirementsRepository;
   readonly generationGateway?: IGenerationGateway;
   readonly linterGateway?: IMermaidLinterGateway;
+  readonly prototypeValidatorGateway?: IPrototypeValidatorGateway;
   readonly fastifyOptions?: FastifyServerOptions;
   // Use cases overrides (e.g. for testing)
   readonly compileUseCase?: CompileRequirementsUseCase;
   readonly reconcileUseCase?: ReconcileRequirementsUseCase;
   readonly baselineUseCase?: CreateRequirementsBaselineUseCase;
   readonly generateArtifactUseCase?: GenerateArtifactUseCase;
+  readonly generatePrototypeProjectionUseCase?: GeneratePrototypeProjectionUseCase;
   readonly projectBaselineUseCase?: ProjectBaselineUseCase;
   readonly reviewStateUseCase?: GetRequirementsReviewStateUseCase;
   readonly recordDiscoveryUseCase?: RecordRequirementsDiscoveryUseCase;
@@ -49,10 +54,12 @@ export interface ComposedHttpServer {
   readonly provider: ProviderType;
   readonly generationGateway: IGenerationGateway;
   readonly linterGateway: IMermaidLinterGateway;
+  readonly prototypeValidatorGateway: IPrototypeValidatorGateway;
   readonly compileUseCase: CompileRequirementsUseCase;
   readonly reconcileUseCase: ReconcileRequirementsUseCase;
   readonly baselineUseCase: CreateRequirementsBaselineUseCase;
   readonly generateArtifactUseCase: GenerateArtifactUseCase;
+  readonly generatePrototypeProjectionUseCase: GeneratePrototypeProjectionUseCase;
   readonly projectBaselineUseCase: ProjectBaselineUseCase;
   readonly reviewStateUseCase: GetRequirementsReviewStateUseCase;
   readonly recordDiscoveryUseCase: RecordRequirementsDiscoveryUseCase;
@@ -98,6 +105,9 @@ export function composeOrchestratorHttpServer(
       executablePath: mmdcBinPath
     });
 
+  const prototypeValidatorGateway =
+    options.prototypeValidatorGateway ?? new BabelTsxValidatorAdapter();
+
   const compileUseCase =
     options.compileUseCase ?? new CompileRequirementsUseCase(generationGateway, repository);
 
@@ -110,9 +120,23 @@ export function composeOrchestratorHttpServer(
     options.generateArtifactUseCase ??
     new GenerateArtifactUseCase(generationGateway, linterGateway);
 
+  const generatePrototypeProjectionUseCase =
+    options.generatePrototypeProjectionUseCase ??
+    new GeneratePrototypeProjectionUseCase(
+      generationGateway,
+      prototypeValidatorGateway,
+      repository,
+      provider
+    );
+
   const projectBaselineUseCase =
     options.projectBaselineUseCase ??
-    new ProjectBaselineUseCase(generateArtifactUseCase, repository, provider);
+    new ProjectBaselineUseCase(
+      generateArtifactUseCase,
+      repository,
+      provider,
+      generatePrototypeProjectionUseCase
+    );
 
   const reviewStateUseCase =
     options.reviewStateUseCase ?? new GetRequirementsReviewStateUseCase(repository);
@@ -138,10 +162,12 @@ export function composeOrchestratorHttpServer(
     provider,
     generationGateway,
     linterGateway,
+    prototypeValidatorGateway,
     compileUseCase,
     reconcileUseCase,
     baselineUseCase,
     generateArtifactUseCase,
+    generatePrototypeProjectionUseCase,
     projectBaselineUseCase,
     reviewStateUseCase,
     recordDiscoveryUseCase

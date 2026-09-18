@@ -296,7 +296,7 @@ export function useReviewState(baselineId?: string) {
 
   const handleGenerateProjection = useCallback(
     async (
-      artifactType: 'process-diagram' | 'state-diagram',
+      artifactType: 'process-diagram' | 'state-diagram' | 'prototype',
       prompt?: string
     ): Promise<ProjectionRecordDto> => {
       if (!baselineId) {
