@@ -626,4 +626,34 @@ describe('Threshold conflict vs compatible nested rules semantic validation', ()
     expect(resultCross.isContradiction).toBe(true);
     expect(resultCross.reason).toContain('Mutually exclusive cross-actor approval authority');
   });
+
+  it('21. Approval threshold and temporal fixtures explicitly document category classification as business-rule', () => {
+    const corpus = loadManifest();
+    const basicFixture = corpus.fixtures.get('approval-threshold-contradiction-basic');
+    expect(basicFixture).toBeDefined();
+    for (const req of basicFixture!.fixture.expectedRequirements) {
+      expect(
+        req.category,
+        `approval-threshold-contradiction-basic requirement '${req.requirementKey}' must be classified as 'business-rule'`
+      ).toBe('business-rule');
+    }
+
+    const crossFixture = corpus.fixtures.get('approval-threshold-contradiction-cross-source');
+    expect(crossFixture).toBeDefined();
+    for (const req of crossFixture!.fixture.expectedRequirements) {
+      expect(
+        req.category,
+        `approval-threshold-contradiction-cross-source requirement '${req.requirementKey}' must be classified as 'business-rule'`
+      ).toBe('business-rule');
+    }
+
+    const temporalFixture = corpus.fixtures.get('temporal-ambiguity-basic');
+    expect(temporalFixture).toBeDefined();
+    for (const req of temporalFixture!.fixture.expectedRequirements) {
+      expect(
+        req.category,
+        `temporal-ambiguity-basic requirement '${req.requirementKey}' must be classified as 'business-rule'`
+      ).toBe('business-rule');
+    }
+  });
 });

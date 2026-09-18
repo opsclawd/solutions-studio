@@ -1281,4 +1281,35 @@ Hope this meets your requirements!`;
       expect(prompt).not.toContain(id);
     }
   });
+
+  it('26. buildPrompt() includes explicit category classification guidelines and approval threshold contrastive guidance', async () => {
+    const rec = await repo.captureSourceRevision({
+      sourceId: createSourceId('CORP-POL-001'),
+      sourceType: 'policy',
+      markdownText: '# Test Doc\n\nSome requirement text.'
+    });
+
+    fakeGateway.queueResponse(
+      JSON.stringify({
+        requirements: [],
+        findings: []
+      })
+    );
+
+    await useCase.compile({
+      sourceRevisionIds: [rec.revision.id]
+    });
+
+    expect(fakeGateway.recordedRequests).toHaveLength(1);
+    const prompt = fakeGateway.recordedRequests[0].prompt;
+
+    expect(prompt).toContain('## Requirement Category Classification Guidelines');
+    expect(prompt).toContain('Approval & Authorization Thresholds');
+    expect(prompt).toContain('MUST be classified as `business-rule`');
+    expect(prompt).toContain('Do NOT Split Threshold Requirements');
+    expect(prompt).toContain('Automated Schedules & Workers');
+    expect(prompt).toContain('Example 6: Category Classification Contrast');
+    expect(prompt).toContain('REQ-DISBURSEMENT-LIMITS');
+    expect(prompt).toContain('REQ-PROVISION-AUTHORITY');
+  });
 });
