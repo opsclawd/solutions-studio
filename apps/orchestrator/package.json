@@ -16,6 +16,7 @@
     "serve": "tsx scripts/run-http-server.ts"
   },
   "dependencies": {
+    "@fastify/cors": "^10.0.1",
     "@mermaid-js/mermaid-cli": "^11.4.2",
     "@solutions-studio/contracts": "workspace:*",
     "@solutions-studio/domain": "workspace:*",

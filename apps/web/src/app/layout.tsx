@@ -1,8 +1,8 @@
 import React from 'react';
 
 export const metadata = {
-  title: 'Solutions Studio — Prototype Sandbox',
-  description: 'Isolated client-side React prototype sandbox'
+  title: 'Solutions Studio',
+  description: 'Interactive Requirements Review & Reconciliation Workspace'
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

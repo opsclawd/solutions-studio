@@ -1,0 +1,18 @@
+{
+  "id": "REQ-002-R2",
+  "requirementId": "REQ-002",
+  "revision": 2,
+  "statement": "Mutated statement from concurrent reviewer",
+  "category": "actors-permissions",
+  "origin": "EXPLICIT",
+  "reviewState": "PENDING",
+  "resolutionState": "UNRESOLVED",
+  "evidence": [
+    {
+      "sourceRevisionId": "SRC-001-R1",
+      "locator": "enterprise-security-standard/role-based-access-control#1"
+    }
+  ],
+  "rationale": "Concurrent edit from automated background agent",
+  "supersedes": "REQ-002-R1"
+}

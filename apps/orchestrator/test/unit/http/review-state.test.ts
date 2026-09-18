@@ -66,6 +66,7 @@ describe('HTTP Boundary: Review State API', () => {
     expect(validated.reconciliationHistory).toEqual([]);
     expect(validated.evidenceExcerpts).toEqual([]);
     expect(validated.projections).toEqual([]);
+    expect(validated.revisionLineage).toEqual([]);
     expect(validated.baseline).toBeUndefined();
   });
 
@@ -123,6 +124,9 @@ describe('HTTP Boundary: Review State API', () => {
     expect(validated.findings[0].id).toBe('FIND-001');
     expect(validated.evidenceExcerpts).toHaveLength(1);
     expect(validated.evidenceExcerpts[0].text).toContain('All secrets must be rotated');
+    expect(validated.revisionLineage).toEqual([
+      { revisionId: 'REQ-001-R1', requirementId: 'REQ-001' }
+    ]);
   });
 
   it('GET /api/requirements/review-state?baselineId=... returns baseline-anchored state', async () => {

@@ -1,0 +1,18 @@
+{
+  "id": "REQ-001-R2",
+  "requirementId": "REQ-001",
+  "revision": 2,
+  "statement": "All relational and object databases storing customer data must employ AES-256 encryption at rest.",
+  "category": "business-rule",
+  "origin": "EXPLICIT",
+  "reviewState": "ACCEPTED",
+  "resolutionState": "UNRESOLVED",
+  "evidence": [
+    {
+      "sourceRevisionId": "SRC-001-R1",
+      "locator": "enterprise-security-standard/encryption-at-rest#1"
+    }
+  ],
+  "rationale": "Accepted per compliance audit",
+  "supersedes": "REQ-001-R1"
+}

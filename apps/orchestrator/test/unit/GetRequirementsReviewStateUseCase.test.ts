@@ -41,6 +41,7 @@ describe('GetRequirementsReviewStateUseCase', () => {
     expect(state.reconciliationHistory).toEqual([]);
     expect(state.evidenceExcerpts).toEqual([]);
     expect(state.projections).toEqual([]);
+    expect(state.revisionLineage).toEqual([]);
   });
 
   it('throws UnknownRequirementsBaselineError when baseline is not found', async () => {
@@ -240,5 +241,107 @@ describe('GetRequirementsReviewStateUseCase', () => {
     expect(state.requirementRevisions[0].id).toBe('REQ-001-R1');
     expect(state.projections).toHaveLength(1);
     expect(state.projections[0].id).toBe('PROJ-001');
+  });
+
+  it('includes ancestor revision in revisionLineage even if not in latest revisions or reconciliation history', async () => {
+    const req1Rev1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-001-R1'),
+      requirementId: createRequirementId('REQ-001'),
+      revision: 1,
+      statement: 'First version',
+      category: 'business-rule',
+      origin: 'EXPLICIT',
+      reviewState: 'PENDING',
+      resolutionState: 'UNRESOLVED',
+      evidence: []
+    });
+    const req1Rev2 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-001-R2'),
+      requirementId: createRequirementId('REQ-001'),
+      revision: 2,
+      statement: 'Second version',
+      category: 'business-rule',
+      origin: 'EXPLICIT',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR',
+      evidence: [],
+      supersedes: req1Rev1.id
+    });
+    await repo.saveRequirementRevision(req1Rev1);
+    await repo.saveRequirementRevision(req1Rev2);
+
+    // Append a reconciliation record only pointing to successor R2
+    await repo.appendReconciliationRecord({
+      id: 'rec-1',
+      entityType: 'requirement',
+      entityId: createRequirementId('REQ-001'),
+      requirementRevisionId: req1Rev2.id,
+      action: 'ACCEPT',
+      previousReviewState: undefined,
+      newReviewState: 'ACCEPTED',
+      rationale: 'Accepted revision 2',
+      recordedAt: now()
+    });
+
+    const state = await useCase.get();
+    expect(state.requirementRevisions.map((r) => r.id)).toEqual(['REQ-001-R2']);
+    // Both R1 and R2 are in revisionLineage, mapped to REQ-001
+    expect(state.revisionLineage).toEqual(
+      expect.arrayContaining([
+        { revisionId: 'REQ-001-R1', requirementId: 'REQ-001' },
+        { revisionId: 'REQ-001-R2', requirementId: 'REQ-001' }
+      ])
+    );
+  });
+
+  it('includes candidate findings with zero affectedRequirementRevisions in findings array', async () => {
+    const req1Rev1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-001-R1'),
+      requirementId: createRequirementId('REQ-001'),
+      revision: 1,
+      statement: 'First version',
+      category: 'business-rule',
+      origin: 'EXPLICIT',
+      reviewState: 'PENDING',
+      resolutionState: 'UNRESOLVED',
+      evidence: []
+    });
+    await repo.saveRequirementRevision(req1Rev1);
+
+    const repoWideFinding = createCandidateFinding({
+      id: createFindingId('FIND-UNATTACHED-001'),
+      type: 'missing-authorization',
+      affectedRequirementRevisions: [],
+      evidence: [],
+      discoveredBy: 'model',
+      disposition: 'OPEN'
+    });
+    await repo.saveCandidateFinding(repoWideFinding);
+
+    const attachedFinding = createCandidateFinding({
+      id: createFindingId('FIND-ATTACHED-001'),
+      type: 'missing-authorization',
+      affectedRequirementRevisions: [req1Rev1.id],
+      evidence: [],
+      discoveredBy: 'model',
+      disposition: 'OPEN'
+    });
+    await repo.saveCandidateFinding(attachedFinding);
+
+    const outOfScopeFinding = createCandidateFinding({
+      id: createFindingId('FIND-OUTOFSCOPE-001'),
+      type: 'missing-authorization',
+      affectedRequirementRevisions: [createRequirementRevisionId('REQ-OTHER-R1')],
+      evidence: [],
+      discoveredBy: 'model',
+      disposition: 'OPEN'
+    });
+    await repo.saveCandidateFinding(outOfScopeFinding);
+
+    const state = await useCase.get();
+    const findingIds = state.findings.map((f) => f.id);
+    expect(findingIds).toContain('FIND-UNATTACHED-001');
+    expect(findingIds).toContain('FIND-ATTACHED-001');
+    expect(findingIds).not.toContain('FIND-OUTOFSCOPE-001');
   });
 });

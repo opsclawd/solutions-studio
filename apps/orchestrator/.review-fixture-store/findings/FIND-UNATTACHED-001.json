@@ -1,0 +1,9 @@
+{
+  "id": "FIND-UNATTACHED-001",
+  "type": "missing-authorization",
+  "affectedRequirementRevisions": [],
+  "evidence": [],
+  "discoveredBy": "model",
+  "disposition": "OPEN",
+  "rationale": "Repository-wide security discovery: Emergency break-glass access procedure is unspecified."
+}

@@ -1,0 +1,2 @@
+{"id":"434cbbc9-e38a-482e-970c-bbfa086a5b08","entityType":"finding","entityId":"FIND-001","previousDisposition":"OPEN","newDisposition":"ACCEPTED_RISK","rationale":"Risk accepted by InfoSec director for maintenance portal.","recordedAt":"2026-09-18T19:45:00.839Z"}
+{"id":"2e27f878-99db-48c8-a622-8cadf6287780","entityType":"finding","entityId":"FIND-001","previousDisposition":"ACCEPTED_RISK","newDisposition":"OPEN","rationale":"Reopening finding following annual compliance reassessment.","recordedAt":"2026-09-18T19:45:00.956Z"}

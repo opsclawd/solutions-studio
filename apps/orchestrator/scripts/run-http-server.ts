@@ -17,7 +17,8 @@ export function parseArgs(args: string[]): HttpServerArgs {
     const arg = args[i];
     if (arg === '--help' || arg === '-h') {
       console.log(
-        'Usage: tsx scripts/run-http-server.ts [--port <number>] [--host <string>] [--store <path>]'
+        'Usage: tsx scripts/run-http-server.ts [--port <number>] [--host <string>] [--store <path>]\n' +
+          'Note: Recommended port is 4000 when running alongside Next.js web app (PORT=4000 or --port 4000).'
       );
       process.exit(0);
     } else if (arg === '--port') {
