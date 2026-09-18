@@ -1210,6 +1210,75 @@ Hope this meets your requirements!`;
     expect(prompt).toContain('Source Authority Conflict (Policy vs. Interview)');
     expect(prompt).toContain('Superseded Source Revision');
     expect(prompt).toContain('Distinct Geographically Scoped Thresholds');
+    expect(prompt).toContain('Same-Authority Threshold Conflict');
     expect(prompt).toContain('Paraphrased / Semantically Equivalent Timeframes');
+  });
+
+  it('does not reproduce any corpus fixture identifiers in few-shot prompt examples (AC-3)', async () => {
+    const rec = await repo.captureSourceRevision({
+      sourceId: createSourceId('TEST-SRC'),
+      sourceType: 'policy',
+      markdownText: '# Test Doc\n\nSome requirement text.'
+    });
+
+    fakeGateway.queueResponse(
+      JSON.stringify({
+        requirements: [],
+        findings: []
+      })
+    );
+
+    await useCase.compile({
+      sourceRevisionIds: [rec.revision.id]
+    });
+
+    expect(fakeGateway.recordedRequests).toHaveLength(1);
+    const prompt = fakeGateway.recordedRequests[0].prompt;
+
+    // Fixture identifiers that must NEVER appear in compiler few-shot prompt
+    const retiredFixtureIdentifiers = [
+      // Example 1 / source-authority-conflict fixture
+      'INT-FIELD-001',
+      'POL-SEC-001',
+      'REQ-INTERVIEW-PRACTICE',
+      'REQ-POLICY-RULE',
+      'telemetry-retrieval#3.2',
+      'removable-media-standards#1.1',
+      // Example 2 / superseded-source-revision fixture
+      'SOP-DISCOUNT-001',
+      'REQ-DISC-CURRENT',
+      'discretionary-approval-limits#2.1',
+      // Example 3 / false-positive-near-conflict-scoped-thresholds fixture
+      'TRAVEL-POL-001',
+      'REQ-PERDIEM-DOM',
+      'REQ-PERDIEM-INT',
+      'meal-reimbursement-tiers#4.1',
+      'meal-reimbursement-tiers#4.2',
+      // Example 4 / false-positive-near-conflict-paraphrase fixture
+      'ONBOARD-DOC-001',
+      'SEC-CHECK-001',
+      'REQ-MFA-ONBOARD',
+      'REQ-MFA-SEC',
+      'security-setup#2.2',
+      'mfa-compliance#1.3',
+      // Approval threshold contradiction fixtures
+      'SOP-PROC-001',
+      'REQ-APP-01',
+      'REQ-APP-02',
+      'FINDING-APP-01',
+      'procurement-thresholds#2.1',
+      'department-sign-off-rules#4.3',
+      'FIN-POL-002',
+      'OPS-SOP-004',
+      'REQ-FIN-01',
+      'REQ-OPS-01',
+      'FINDING-CROSS-01',
+      'executive-approval-limits#3.2',
+      'field-equipment-acquisition-workflow#1.5'
+    ];
+
+    for (const id of retiredFixtureIdentifiers) {
+      expect(prompt).not.toContain(id);
+    }
   });
 });

@@ -10,12 +10,12 @@ const __dirname = path.dirname(__filename);
 
 export function findDefaultManifestPath(): string {
   const candidates = [
-    path.resolve(__dirname, '../../../../test/evaluation/manifests/corpus.v1.json'),
-    path.resolve(__dirname, '../../../test/evaluation/manifests/corpus.v1.json'),
-    path.resolve(__dirname, '../../test/evaluation/manifests/corpus.v1.json'),
-    path.resolve(__dirname, '../manifests/corpus.v1.json'),
-    path.resolve(process.cwd(), 'apps/orchestrator/test/evaluation/manifests/corpus.v1.json'),
-    path.resolve(process.cwd(), 'test/evaluation/manifests/corpus.v1.json')
+    path.resolve(__dirname, '../../../../test/evaluation/manifests/corpus.v2.json'),
+    path.resolve(__dirname, '../../../test/evaluation/manifests/corpus.v2.json'),
+    path.resolve(__dirname, '../../test/evaluation/manifests/corpus.v2.json'),
+    path.resolve(__dirname, '../manifests/corpus.v2.json'),
+    path.resolve(process.cwd(), 'apps/orchestrator/test/evaluation/manifests/corpus.v2.json'),
+    path.resolve(process.cwd(), 'test/evaluation/manifests/corpus.v2.json')
   ];
 
   for (const cand of candidates) {
@@ -23,7 +23,7 @@ export function findDefaultManifestPath(): string {
       return cand;
     }
   }
-  return path.resolve(process.cwd(), 'apps/orchestrator/test/evaluation/manifests/corpus.v1.json');
+  return path.resolve(process.cwd(), 'apps/orchestrator/test/evaluation/manifests/corpus.v2.json');
 }
 
 export function loadManifest(manifestPathOrFilename?: string): LoadedCorpus {

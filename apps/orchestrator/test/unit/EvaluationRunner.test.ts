@@ -42,7 +42,7 @@ describe('EvaluationRunner and EvaluateRequirementsCompilerUseCase', () => {
     });
 
     expect(success).toBe(true);
-    expect(runRecord.corpusVersion).toBe('v1.0');
+    expect(runRecord.corpusVersion).toBe('v2.0');
     expect(runRecord.fixtureResults.length).toBe(16);
     expect(report.candidateSha).toEqual({ status: 'available', value: 'test-sha-12345' });
     expect(report.summary.totalFixtures).toBe(16);
@@ -82,14 +82,14 @@ describe('EvaluationRunner and EvaluateRequirementsCompilerUseCase', () => {
     // Verify persisted in repository and reloaded
     const persisted = await repo.getEvaluationRun(runRecord.id);
     expect(persisted).toBeDefined();
-    expect(persisted!.corpusVersion).toBe('v1.0');
+    expect(persisted!.corpusVersion).toBe('v2.0');
     expect(persisted!.fixtureResults.length).toBe(16);
     expect(persisted!.report.provenance.verified.persistenceVerified).toBe(true);
 
     // Verify report written to disk
     const reportFile = await fs.readFile(reportPath, 'utf8');
     const parsed = JSON.parse(reportFile);
-    expect(parsed.corpusVersion).toBe('v1.0');
+    expect(parsed.corpusVersion).toBe('v2.0');
     expect(parsed.candidateSha).toEqual({ status: 'available', value: 'test-sha-12345' });
     expect(parsed.aggregateScores.totalFixtures).toBe(16);
 

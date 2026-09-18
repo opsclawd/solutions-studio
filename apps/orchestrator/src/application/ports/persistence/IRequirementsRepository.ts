@@ -35,7 +35,7 @@ export interface LocatorIndexEntry {
 }
 
 export interface SourceRevisionRecord {
-  readonly sourceType: SourceType;
+  readonly sourceType: SourceType | undefined;
   readonly revision: SourceRevision;
   readonly rawText: string;
   readonly locatorIndex: readonly LocatorIndexEntry[];

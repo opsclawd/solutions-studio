@@ -99,6 +99,46 @@ describe('FilesystemRequirementsRepository', () => {
     }
   });
 
+  it('loads legacy source revision with missing sourceType as undefined without fabricating fallback', async () => {
+    const revId = 'LEGACY-SRC-001-R1';
+    const sourceId = createSourceId('LEGACY-SRC-001');
+    const rawRecordWithoutSourceType = {
+      revision: {
+        id: revId,
+        sourceId: sourceId as string,
+        revision: 1,
+        contentHash: 'hash-legacy-123',
+        capturedAt: '2026-09-01T00:00:00.000Z',
+        verifiedAt: '2026-09-01T00:00:00.000Z'
+      },
+      rawText: '# Legacy Document\n\nSome text.',
+      locatorIndex: [
+        {
+          locator: 'legacy-document#1',
+          headingPath: 'Legacy Document',
+          blockLabel: '1',
+          blockLabelSource: 'sequential-ordinal',
+          text: 'Some text.',
+          startLine: 3,
+          endLine: 3
+        }
+      ]
+    };
+
+    const dir = path.join(tempDir, 'source-revisions');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(
+      path.join(dir, `${revId}.json`),
+      JSON.stringify(rawRecordWithoutSourceType, null, 2),
+      'utf8'
+    );
+
+    const loaded = await repo.getSourceRevision(createSourceRevisionId(revId));
+    expect(loaded).toBeDefined();
+    expect(loaded?.sourceType).toBeUndefined();
+    expect(loaded?.revision.id).toBe(revId);
+  });
+
   it('idempotently recaptures byte-identical latest content without creating a new revision', async () => {
     const md = `# Overview\n\nContent body.`;
     const sourceId = createSourceId('SRC-002');

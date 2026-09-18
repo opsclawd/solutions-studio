@@ -1,4 +1,4 @@
-# Adversarial Requirements Evaluation Corpus (v1.0)
+# Adversarial Requirements Evaluation Corpus (v2.0)
 
 This directory contains the versioned adversarial synthetic evaluation corpus used by Phase 1 to benchmark requirement extraction, finding discovery, and provenance attribution prior to compiler tuning.
 
@@ -12,7 +12,8 @@ apps/orchestrator/test/evaluation/
       source.<n>.md       # Multi-source and multi-revision fixtures
       expected.json       # Structural ground truth (conforms to EvaluationFixtureDtoSchema)
   manifests/
-    corpus.v1.json        # Corpus manifest (corpusVersion: "v1.0") listing all fixtures and category tags
+    corpus.v2.json        # Current corpus manifest (corpusVersion: "v2.0") listing 16 fixtures and category tags
+    corpus.v1.json        # Historical baseline manifest (corpusVersion: "v1.0") listing 14 fixtures
   support/
     loadFixture.ts        # Fixture loading and SHA-256 content hashing utility
     loadManifest.ts       # Manifest loading and fixture cross-validation utility

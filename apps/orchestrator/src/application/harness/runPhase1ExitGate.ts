@@ -700,9 +700,9 @@ export async function runPhase1ExitGate(
       throw new Error('Evaluation runner execution failed with non-zero failures');
     }
 
-    if (evalResult.report.corpusVersion !== 'v1.0') {
+    if (evalResult.report.corpusVersion !== 'v2.0') {
       throw new Error(
-        `Corpus version mismatch: expected 'v1.0', got '${evalResult.report.corpusVersion}'`
+        `Corpus version mismatch: expected 'v2.0', got '${evalResult.report.corpusVersion}'`
       );
     }
 

@@ -374,7 +374,7 @@ When compiling across multiple source revisions, you MUST perform pairwise cross
 ## Evidence Standard & Precision Calibration (Preventing False Positives)
 To maintain high precision and avoid spurious findings:
 1. Direct Unambiguous Textual Evidence Required: Only emit a finding when there is direct, unambiguous textual evidence of an actual conflict or defect. Do NOT emit findings based on speculation, plausible inferences, out-of-scope assumptions, or slight differences in phrasing.
-2. Scoped & Partitioned Thresholds Are NOT Contradictions: When differing limits, numbers, or rules apply to distinct, mutually exclusive domains, territories, or tiers (e.g., domestic travel max $75 vs. international travel max $150), they are complementary domain rules, NOT a contradiction. Do NOT emit a finding when conditions/scopes do not overlap.
+2. Scoped & Partitioned Thresholds Are NOT Contradictions: When differing limits, numbers, or rules apply to distinct, explicitly and exhaustively partitioned, mutually exclusive domains, territories, or tiers (e.g., Standard Ground delivery cap $5,000 vs. Express Air delivery cap $25,000), they are complementary domain rules, NOT a contradiction. Do NOT emit a finding when conditions/scopes do not overlap. Differing thresholds applying to the same approval authority, role, or action without an explicit and exhaustive scope partition ARE genuine contradictions.
 3. Paraphrased & Semantically Equivalent Phrasing Is NOT a Contradiction: When two sources express the same underlying requirement using different phrasing (e.g., "within 48 hours of initial provisioning" vs. "no later than 48 hours following initial account provisioning"), they are semantically consistent. Do NOT emit a contradiction finding for paraphrasing.
 4. Presumption of Validity: When an authoritative document does not mention an operational detail, do NOT assume a defect exists unless the text explicitly creates a gap or contradiction.
 
@@ -382,55 +382,69 @@ To maintain high precision and avoid spurious findings:
 
 ### Example 1: Genuine Contradiction — Source Authority Conflict (Policy vs. Interview)
 Sources:
-- \`INT-FIELD-001-R1\` (Source Type: INTERVIEW, Locator: \`telemetry-retrieval#3.2\`):
-  "Field engineers regularly use unencrypted consumer USB flash drives to copy diagnostic logs from remote substations..."
-- \`POL-SEC-001-R1\` (Source Type: POLICY, Locator: \`removable-media-standards#1.1\`):
-  "Under no circumstances may unencrypted removable storage devices be connected to company systems. All data transfer in transit must use encrypted, corporate-managed channels..."
+- \`INT-OPS-002-R1\` (Source Type: INTERVIEW, Locator: \`facility-access-notes#5.1\`):
+  "Operations staff routinely share badge access or prop open exterior loading dock doors during overnight inventory shifts..."
+- \`POL-ACCESS-002-R1\` (Source Type: POLICY, Locator: \`physical-security-standards#2.4\`):
+  "Under no circumstances may exterior doors be propped open or access badges shared between personnel. All entries to company facilities require individual electronic badge authentication..."
 Compiler Output:
 - Requirements:
-  - \`REQ-INTERVIEW-PRACTICE\` (category: \`exception\`, origin: \`EXPLICIT\`, evidence: \`[{"sourceRevisionId": "INT-FIELD-001-R1", "locator": "telemetry-retrieval#3.2"}]\`)
-  - \`REQ-POLICY-RULE\` (category: \`business-rule\`, origin: \`EXPLICIT\`, evidence: \`[{"sourceRevisionId": "POL-SEC-001-R1", "locator": "removable-media-standards#1.1"}]\`)
+  - \`REQ-AFTERHOURS-PRACTICE\` (category: \`exception\`, origin: \`EXPLICIT\`, evidence: \`[{"sourceRevisionId": "INT-OPS-002-R1", "locator": "facility-access-notes#5.1"}]\`)
+  - \`REQ-ACCESS-POLICY\` (category: \`business-rule\`, origin: \`EXPLICIT\`, evidence: \`[{"sourceRevisionId": "POL-ACCESS-002-R1", "locator": "physical-security-standards#2.4"}]\`)
 - Findings:
-  - Emit finding: \`type: "contradiction"\`, \`relatedRequirementKeys: ["REQ-INTERVIEW-PRACTICE", "REQ-POLICY-RULE"]\`, \`evidence: [{"sourceRevisionId": "INT-FIELD-001-R1", "locator": "telemetry-retrieval#3.2"}, {"sourceRevisionId": "POL-SEC-001-R1", "locator": "removable-media-standards#1.1"}]\`, \`rationale: "Field engineering interview describes routine use of unencrypted USB drives to transfer logs, directly violating authoritative corporate security policy prohibiting unencrypted removable media."\`
-Explanation: Genuine contradiction between field practice reported in an interview and corporate policy. Evidence spans both sources.
+  - Emit finding: \`type: "contradiction"\`, \`relatedRequirementKeys: ["REQ-AFTERHOURS-PRACTICE", "REQ-ACCESS-POLICY"]\`, \`evidence: [{"sourceRevisionId": "INT-OPS-002-R1", "locator": "facility-access-notes#5.1"}, {"sourceRevisionId": "POL-ACCESS-002-R1", "locator": "physical-security-standards#2.4"}]\`, \`rationale: "Operations interview describes staff propping open loading dock doors and sharing badges during overnight shifts, directly violating authoritative physical security policy requiring individual badge authentication and prohibiting propping exterior doors."\`
+Explanation: Genuine contradiction between facility practice reported in an interview and corporate policy. Evidence spans both sources.
 
 ### Example 2: Genuine Contradiction — Superseded Source Revision
 Sources:
-- \`SOP-DISCOUNT-001-R1\` (Source Type: SOP, Revision: 1, Locator: \`discretionary-approval-limits#2.1\`):
-  "Commercial sales managers may approve discretionary customer pricing discounts of up to 25% off list price without executive escalation."
-- \`SOP-DISCOUNT-001-R2\` (Source Type: SOP, Revision: 2, Supersedes: \`SOP-DISCOUNT-001-R1\`, Locator: \`discretionary-approval-limits#2.1\`):
-  "Commercial sales managers may approve discretionary customer pricing discounts of up to 15% off list price without executive escalation."
+- \`SOP-WRITEOFF-004-R1\` (Source Type: SOP, Revision: 1, Locator: \`writeoff-approval-limits#3.1\`):
+  "Warehouse supervisors may authorize inventory write-offs of damaged stock up to $10,000 per incident without regional manager sign-off."
+- \`SOP-WRITEOFF-004-R2\` (Source Type: SOP, Revision: 2, Supersedes: \`SOP-WRITEOFF-004-R1\`, Locator: \`writeoff-approval-limits#3.1\`):
+  "Warehouse supervisors may authorize inventory write-offs of damaged stock up to $2,500 per incident without regional manager sign-off."
 Compiler Output:
 - Requirements:
-  - \`REQ-DISC-CURRENT\` (category: \`business-rule\`, origin: \`EXPLICIT\`, evidence: \`[{"sourceRevisionId": "SOP-DISCOUNT-001-R2", "locator": "discretionary-approval-limits#2.1"}]\`)
+  - \`REQ-WRITEOFF-CURRENT\` (category: \`business-rule\`, origin: \`EXPLICIT\`, evidence: \`[{"sourceRevisionId": "SOP-WRITEOFF-004-R2", "locator": "writeoff-approval-limits#3.1"}]\`)
 - Findings:
-  - Emit finding: \`type: "contradiction"\`, \`relatedRequirementKeys: ["REQ-DISC-CURRENT"]\`, \`evidence: [{"sourceRevisionId": "SOP-DISCOUNT-001-R1", "locator": "discretionary-approval-limits#2.1"}, {"sourceRevisionId": "SOP-DISCOUNT-001-R2", "locator": "discretionary-approval-limits#2.1"}]\`, \`rationale: "Revision 1 permitted sales managers to grant 25% discounts autonomously, which was subsequently superseded by Revision 2 restricting unescalated discretion to 15%."\`
+  - Emit finding: \`type: "contradiction"\`, \`relatedRequirementKeys: ["REQ-WRITEOFF-CURRENT"]\`, \`evidence: [{"sourceRevisionId": "SOP-WRITEOFF-004-R1", "locator": "writeoff-approval-limits#3.1"}, {"sourceRevisionId": "SOP-WRITEOFF-004-R2", "locator": "writeoff-approval-limits#3.1"}]\`, \`rationale: "Revision 1 permitted warehouse supervisors to authorize write-offs up to $10,000 autonomously, which was subsequently superseded by Revision 2 restricting unescalated supervisor authority to $2,500."\`
 Explanation: Genuine supersession conflict where prior revision's authorized threshold contradicts the active superseding revision.
 
 ### Example 3: Near-Miss Non-Finding — Distinct Geographically Scoped Thresholds
 Sources:
-- \`TRAVEL-POL-001-R1\` (Source Type: POLICY):
-  - Locator \`meal-reimbursement-tiers#4.1\`: "For domestic travel within North America, meal expenses are reimbursed up to a maximum per diem of $75 USD."
-  - Locator \`meal-reimbursement-tiers#4.2\`: "For international travel outside North America, meal expenses are reimbursed up to a maximum per diem of $150 USD."
+- \`COURIER-POL-002-R1\` (Source Type: POLICY):
+  - Locator \`courier-insurance-caps#6.1\`: "For Standard Ground courier dispatches, maximum package liability coverage is capped at $5,000 per shipment."
+  - Locator \`courier-insurance-caps#6.2\`: "For Express Air courier dispatches, maximum package liability coverage is capped at $25,000 per shipment."
 Compiler Output:
 - Requirements:
-  - \`REQ-PERDIEM-DOM\` (category: \`business-rule\`, statement: "...domestic travel within North America... maximum per diem of $75 USD...")
-  - \`REQ-PERDIEM-INT\` (category: \`business-rule\`, statement: "...international travel outside North America... maximum per diem of $150 USD...")
+  - \`REQ-COURIER-GROUND\` (category: \`business-rule\`, statement: "...Standard Ground courier dispatches... maximum package liability coverage is capped at $5,000 per shipment...")
+  - \`REQ-COURIER-AIR\` (category: \`business-rule\`, statement: "...Express Air courier dispatches... maximum package liability coverage is capped at $25,000 per shipment...")
 - Findings: NONE (\`[]\`).
-Explanation: Distinct dollar thresholds ($75 vs $150) are explicitly partitioned by geographic scope (domestic vs international). This is NOT a contradiction. Do NOT emit a finding.
+Explanation: Distinct dollar limits ($5,000 vs $25,000) are explicitly and exhaustively partitioned by named mutually-exclusive delivery tiers (Standard Ground vs Express Air). Because the scopes are separate and non-overlapping, this is NOT a contradiction. Do NOT emit a finding.
+
+### Example: Genuine Contradiction — Same-Authority Threshold Conflict
+Sources:
+- \`SOP-CAPEX-005-R1\` (Source Type: SOP, Locator: \`capex-approval-matrix#1.2\`):
+  "Department managers may authorize capital expenditure equipment leases up to $75,000 without Executive Committee approval."
+- \`POL-CAPEX-005-R1\` (Source Type: POLICY, Locator: \`capital-expenditure-governance#3.1\`):
+  "All capital expenditure commitments, including equipment leases, exceeding $30,000 require formal Executive Committee approval prior to execution."
+Compiler Output:
+- Requirements:
+  - \`REQ-CAPEX-MANAGER\` (category: \`business-rule\`, origin: \`EXPLICIT\`, evidence: \`[{"sourceRevisionId": "SOP-CAPEX-005-R1", "locator": "capex-approval-matrix#1.2"}]\`)
+  - \`REQ-CAPEX-DIRECTOR\` (category: \`business-rule\`, origin: \`EXPLICIT\`, evidence: \`[{"sourceRevisionId": "POL-CAPEX-005-R1", "locator": "capital-expenditure-governance#3.1"}]\`)
+- Findings:
+  - Emit finding: \`type: "contradiction"\`, \`relatedRequirementKeys: ["REQ-CAPEX-MANAGER", "REQ-CAPEX-DIRECTOR"]\`, \`evidence: [{"sourceRevisionId": "SOP-CAPEX-005-R1", "locator": "capex-approval-matrix#1.2"}, {"sourceRevisionId": "POL-CAPEX-005-R1", "locator": "capital-expenditure-governance#3.1"}]\`, \`rationale: "SOP permits department managers to authorize equipment leases up to $75,000 without Executive Committee approval, whereas Policy mandates Executive Committee approval for any lease exceeding $30,000. Both apply to the same expenditure action without an explicit scope partition, creating a direct threshold contradiction for amounts between $30,000 and $75,000."\`
+Explanation: Genuine contradiction between two conflicting dollar thresholds applying to the same action/authority without an explicit and exhaustive scope partition. Unlike scoped partitions, these thresholds directly conflict over the same transaction range.
 
 ### Example 4: Near-Miss Non-Finding — Paraphrased / Semantically Equivalent Timeframes
 Sources:
-- \`ONBOARD-DOC-001-R1\` (Source Type: SOP, Locator: \`security-setup#2.2\`):
-  "New employees must complete enrollment in multi-factor authentication within 48 hours of initial account provisioning."
-- \`SEC-CHECK-001-R1\` (Source Type: POLICY, Locator: \`mfa-compliance#1.3\`):
-  "For all newly created user accounts, multi-factor authentication registration must be completed no later than 48 hours following initial account provisioning."
+- \`IT-ONBOARD-003-R1\` (Source Type: SOP, Locator: \`credential-hygiene#4.4\`):
+  "System administrators must rotate administrative database credentials every 90 calendar days."
+- \`SEC-STD-003-R1\` (Source Type: POLICY, Locator: \`password-policy#2.1\`):
+  "For all privileged database accounts, credential rotation is required at least once per 90-day cycle."
 Compiler Output:
 - Requirements:
-  - \`REQ-MFA-ONBOARD\` (category: \`actors-permissions\`, statement: "...enrollment in multi-factor authentication within 48 hours...")
-  - \`REQ-MFA-SEC\` (category: \`actors-permissions\`, statement: "...multi-factor authentication registration must be completed no later than 48 hours...")
+  - \`REQ-ROTATION-ONBOARD\` (category: \`actors-permissions\`, statement: "...rotate administrative database credentials every 90 calendar days...")
+  - \`REQ-ROTATION-POLICY\` (category: \`actors-permissions\`, statement: "...credential rotation is required at least once per 90-day cycle...")
 - Findings: NONE (\`[]\`).
-Explanation: "within 48 hours" and "no later than 48 hours" express the exact same timing constraint using different words. They are semantically equivalent paraphrases, NOT a contradiction. Do NOT emit a finding.
+Explanation: "every 90 calendar days" and "at least once per 90-day cycle" express the exact same cadence constraint using different words. They are semantically equivalent paraphrases, NOT a contradiction. Do NOT emit a finding.
 
 ## Output Format
 You must respond with ONLY a JSON object conforming to the following structure:
