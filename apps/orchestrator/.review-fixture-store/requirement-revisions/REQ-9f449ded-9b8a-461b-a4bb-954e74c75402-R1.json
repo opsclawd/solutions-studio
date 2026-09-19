@@ -1,6 +1,6 @@
 {
-  "id": "REQ-67b30eb3-3752-418b-bc4c-4108210d6189-R1",
-  "requirementId": "REQ-67b30eb3-3752-418b-bc4c-4108210d6189",
+  "id": "REQ-9f449ded-9b8a-461b-a4bb-954e74c75402-R1",
+  "requirementId": "REQ-9f449ded-9b8a-461b-a4bb-954e74c75402",
   "revision": 1,
   "statement": "Administrative override sessions must be automatically revoked after 20 minutes of user inactivity.",
   "category": "business-rule",
