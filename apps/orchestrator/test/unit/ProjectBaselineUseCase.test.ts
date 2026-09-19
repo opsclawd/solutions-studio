@@ -19,7 +19,9 @@ import { FakePrototypeValidatorGateway } from '../fakes/FakePrototypeValidatorGa
 import { GenerateArtifactUseCase } from '../../src/application/use-cases/GenerateArtifactUseCase.js';
 import { GeneratePrototypeProjectionUseCase } from '../../src/application/use-cases/GeneratePrototypeProjectionUseCase.js';
 import { GenerateSqlSchemaProjectionUseCase } from '../../src/application/use-cases/GenerateSqlSchemaProjectionUseCase.js';
+import { GenerateOpenApiProjectionUseCase } from '../../src/application/use-cases/GenerateOpenApiProjectionUseCase.js';
 import { FakeSqlValidatorGateway } from '../fakes/FakeSqlValidatorGateway.js';
+import { FakeOpenApiValidatorGateway } from '../fakes/FakeOpenApiValidatorGateway.js';
 import { ProjectBaselineUseCase } from '../../src/application/use-cases/ProjectBaselineUseCase.js';
 import { UnknownRequirementsBaselineError } from '../../src/application/use-cases/ReconciliationErrors.js';
 
@@ -30,9 +32,11 @@ describe('ProjectBaselineUseCase', () => {
   let fakeLinter: FakeMermaidLinterGateway;
   let fakeValidator: FakePrototypeValidatorGateway;
   let fakeSqlValidator: FakeSqlValidatorGateway;
+  let fakeOpenApiValidator: FakeOpenApiValidatorGateway;
   let generateArtifactUseCase: GenerateArtifactUseCase;
   let generatePrototypeProjectionUseCase: GeneratePrototypeProjectionUseCase;
   let generateSqlSchemaProjectionUseCase: GenerateSqlSchemaProjectionUseCase;
+  let generateOpenApiProjectionUseCase: GenerateOpenApiProjectionUseCase;
   let projectBaselineUseCase: ProjectBaselineUseCase;
 
   beforeEach(async () => {
@@ -42,6 +46,7 @@ describe('ProjectBaselineUseCase', () => {
     fakeLinter = new FakeMermaidLinterGateway();
     fakeValidator = new FakePrototypeValidatorGateway();
     fakeSqlValidator = new FakeSqlValidatorGateway();
+    fakeOpenApiValidator = new FakeOpenApiValidatorGateway();
     generateArtifactUseCase = new GenerateArtifactUseCase(fakeGateway, fakeLinter);
     generatePrototypeProjectionUseCase = new GeneratePrototypeProjectionUseCase(
       fakeGateway,
@@ -55,12 +60,19 @@ describe('ProjectBaselineUseCase', () => {
       repo,
       'fake'
     );
+    generateOpenApiProjectionUseCase = new GenerateOpenApiProjectionUseCase(
+      fakeGateway,
+      fakeOpenApiValidator,
+      repo,
+      'fake'
+    );
     projectBaselineUseCase = new ProjectBaselineUseCase(
       generateArtifactUseCase,
       repo,
       'fake',
       generatePrototypeProjectionUseCase,
-      generateSqlSchemaProjectionUseCase
+      generateSqlSchemaProjectionUseCase,
+      generateOpenApiProjectionUseCase
     );
   });
 
@@ -361,5 +373,58 @@ describe('ProjectBaselineUseCase', () => {
     const reloaded = await repo.getProjectionRecord(result.projectionId);
     expect(reloaded).toBeDefined();
     expect(reloaded?.artifactType).toBe('sql-schema');
+  });
+
+  it('delegates openapi artifactType to GenerateOpenApiProjectionUseCase and returns projection result', async () => {
+    const rev1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-007-R1'),
+      requirementId: createRequirementId('REQ-007'),
+      revision: 1,
+      statement: 'Expose REST API for user retrieval',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR'
+    });
+    await repo.saveRequirementRevision(rev1);
+
+    const baseline = createRequirementsBaseline({
+      id: createRequirementsBaselineId('BASE-OAS-01'),
+      requirements: [rev1],
+      createdBy: createReviewerId('REV-LEAD')
+    });
+    await repo.saveRequirementsBaseline(baseline);
+
+    const openApiCode = [
+      '# @baseline BASE-OAS-01',
+      '# @requirements REQ-007-R1',
+      'openapi: 3.1.0',
+      'info:',
+      '  title: Test API',
+      '  version: 1.0.0',
+      'paths:',
+      '  /users:',
+      '    get:',
+      '      responses:',
+      "        '200':",
+      '          description: OK'
+    ].join('\n');
+
+    fakeGateway.queueResponse(openApiCode);
+
+    const result = await projectBaselineUseCase.project({
+      baselineId: baseline.id,
+      artifactType: 'openapi'
+    });
+
+    expect(result.content).toBe(openApiCode);
+    expect(result.metadata.artifactType).toBe('openapi');
+    expect(result.metadata.baselineId).toBe('BASE-OAS-01');
+    expect(result.metadata.declaredProvenance.baselineId).toBe('BASE-OAS-01');
+    expect(result.metadata.declaredProvenance.requirementRevisionIds).toEqual(['REQ-007-R1']);
+
+    const reloaded = await repo.getProjectionRecord(result.projectionId);
+    expect(reloaded).toBeDefined();
+    expect(reloaded?.artifactType).toBe('openapi');
   });
 });

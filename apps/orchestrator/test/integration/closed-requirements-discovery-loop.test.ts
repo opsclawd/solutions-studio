@@ -180,7 +180,7 @@ describe('Integration: Closed Requirements Discovery Loop (Phase 2.6)', () => {
       }
     });
     expect(earlyBaselineProposalRes.statusCode).toBe(400);
-    expect(earlyBaselineProposalRes.json().code).toBe('VALIDATION_ERROR');
+    expect(earlyBaselineProposalRes.json().code).toBe('INVALID_BASELINE_MEMBERSHIP');
 
     const earlyBaselineFindingBlockRes = await app.inject({
       method: 'POST',
