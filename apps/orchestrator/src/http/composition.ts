@@ -7,6 +7,7 @@ import type { IMermaidLinterGateway } from '../application/ports/validation/IMer
 import type { IPrototypeValidatorGateway } from '../application/ports/validation/IPrototypeValidatorGateway.js';
 import type { ISqlValidatorGateway } from '../application/ports/validation/ISqlValidatorGateway.js';
 import type { IOpenApiValidatorGateway } from '../application/ports/validation/IOpenApiValidatorGateway.js';
+import type { IGherkinValidatorGateway } from '../application/ports/validation/IGherkinValidatorGateway.js';
 import { CompileRequirementsUseCase } from '../application/use-cases/CompileRequirementsUseCase.js';
 import { ReconcileRequirementsUseCase } from '../application/use-cases/ReconcileRequirementsUseCase.js';
 import { CreateRequirementsBaselineUseCase } from '../application/use-cases/CreateRequirementsBaselineUseCase.js';
@@ -14,6 +15,8 @@ import { GenerateArtifactUseCase } from '../application/use-cases/GenerateArtifa
 import { GeneratePrototypeProjectionUseCase } from '../application/use-cases/GeneratePrototypeProjectionUseCase.js';
 import { GenerateSqlSchemaProjectionUseCase } from '../application/use-cases/GenerateSqlSchemaProjectionUseCase.js';
 import { GenerateOpenApiProjectionUseCase } from '../application/use-cases/GenerateOpenApiProjectionUseCase.js';
+import { GenerateStoriesProjectionUseCase } from '../application/use-cases/GenerateStoriesProjectionUseCase.js';
+import { GetStoriesUseCase } from '../application/use-cases/GetStoriesUseCase.js';
 import { ProjectBaselineUseCase } from '../application/use-cases/ProjectBaselineUseCase.js';
 import { GetRequirementsReviewStateUseCase } from '../application/use-cases/GetRequirementsReviewStateUseCase.js';
 import { RecordRequirementsDiscoveryUseCase } from '../application/use-cases/RecordRequirementsDiscoveryUseCase.js';
@@ -34,6 +37,7 @@ import { MermaidCliLinterAdapter } from '../infrastructure/validation/MermaidCli
 import { BabelTsxValidatorAdapter } from '../infrastructure/validation/BabelTsxValidatorAdapter.js';
 import { PGliteSqlValidatorAdapter } from '../infrastructure/validation/PGliteSqlValidatorAdapter.js';
 import { OpenApiStructuralValidatorAdapter } from '../infrastructure/validation/OpenApiStructuralValidatorAdapter.js';
+import { GherkinValidatorAdapter } from '../infrastructure/validation/GherkinValidatorAdapter.js';
 import { buildServer } from './server.js';
 
 export interface ComposeHttpServerOptions {
@@ -49,6 +53,7 @@ export interface ComposeHttpServerOptions {
   readonly prototypeValidatorGateway?: IPrototypeValidatorGateway;
   readonly sqlValidatorGateway?: ISqlValidatorGateway;
   readonly openApiValidatorGateway?: IOpenApiValidatorGateway;
+  readonly gherkinValidatorGateway?: IGherkinValidatorGateway;
   readonly fastifyOptions?: FastifyServerOptions;
   // Use cases overrides (e.g. for testing)
   readonly compileUseCase?: CompileRequirementsUseCase;
@@ -58,6 +63,8 @@ export interface ComposeHttpServerOptions {
   readonly generatePrototypeProjectionUseCase?: GeneratePrototypeProjectionUseCase;
   readonly generateSqlSchemaProjectionUseCase?: GenerateSqlSchemaProjectionUseCase;
   readonly generateOpenApiProjectionUseCase?: GenerateOpenApiProjectionUseCase;
+  readonly generateStoriesProjectionUseCase?: GenerateStoriesProjectionUseCase;
+  readonly getStoriesUseCase?: GetStoriesUseCase;
   readonly projectBaselineUseCase?: ProjectBaselineUseCase;
   readonly reviewStateUseCase?: GetRequirementsReviewStateUseCase;
   readonly recordDiscoveryUseCase?: RecordRequirementsDiscoveryUseCase;
@@ -79,6 +86,7 @@ export interface ComposedHttpServer {
   readonly prototypeValidatorGateway: IPrototypeValidatorGateway;
   readonly sqlValidatorGateway: ISqlValidatorGateway;
   readonly openApiValidatorGateway: IOpenApiValidatorGateway;
+  readonly gherkinValidatorGateway: IGherkinValidatorGateway;
   readonly compileUseCase: CompileRequirementsUseCase;
   readonly reconcileUseCase: ReconcileRequirementsUseCase;
   readonly baselineUseCase: CreateRequirementsBaselineUseCase;
@@ -86,6 +94,8 @@ export interface ComposedHttpServer {
   readonly generatePrototypeProjectionUseCase: GeneratePrototypeProjectionUseCase;
   readonly generateSqlSchemaProjectionUseCase: GenerateSqlSchemaProjectionUseCase;
   readonly generateOpenApiProjectionUseCase: GenerateOpenApiProjectionUseCase;
+  readonly generateStoriesProjectionUseCase: GenerateStoriesProjectionUseCase;
+  readonly getStoriesUseCase: GetStoriesUseCase;
   readonly projectBaselineUseCase: ProjectBaselineUseCase;
   readonly reviewStateUseCase: GetRequirementsReviewStateUseCase;
   readonly recordDiscoveryUseCase: RecordRequirementsDiscoveryUseCase;
@@ -145,6 +155,8 @@ export function composeOrchestratorHttpServer(
   const openApiValidatorGateway =
     options.openApiValidatorGateway ?? new OpenApiStructuralValidatorAdapter();
 
+  const gherkinValidatorGateway = options.gherkinValidatorGateway ?? new GherkinValidatorAdapter();
+
   const compileUseCase =
     options.compileUseCase ?? new CompileRequirementsUseCase(generationGateway, repository);
 
@@ -184,6 +196,17 @@ export function composeOrchestratorHttpServer(
       provider
     );
 
+  const generateStoriesProjectionUseCase =
+    options.generateStoriesProjectionUseCase ??
+    new GenerateStoriesProjectionUseCase(
+      generationGateway,
+      gherkinValidatorGateway,
+      repository,
+      provider
+    );
+
+  const getStoriesUseCase = options.getStoriesUseCase ?? new GetStoriesUseCase(repository);
+
   const projectBaselineUseCase =
     options.projectBaselineUseCase ??
     new ProjectBaselineUseCase(
@@ -192,7 +215,8 @@ export function composeOrchestratorHttpServer(
       provider,
       generatePrototypeProjectionUseCase,
       generateSqlSchemaProjectionUseCase,
-      generateOpenApiProjectionUseCase
+      generateOpenApiProjectionUseCase,
+      generateStoriesProjectionUseCase
     );
 
   const reviewStateUseCase =
@@ -234,7 +258,9 @@ export function composeOrchestratorHttpServer(
       getAuthorityBundleUseCase,
       recordEngineeringDecisionUseCase,
       transitionEngineeringDecisionUseCase,
-      getEngineeringDecisionsUseCase
+      getEngineeringDecisionsUseCase,
+      generateStoriesProjectionUseCase,
+      getStoriesUseCase
     },
     options.fastifyOptions
   );
@@ -249,6 +275,7 @@ export function composeOrchestratorHttpServer(
     prototypeValidatorGateway,
     sqlValidatorGateway,
     openApiValidatorGateway,
+    gherkinValidatorGateway,
     compileUseCase,
     reconcileUseCase,
     baselineUseCase,
@@ -256,6 +283,8 @@ export function composeOrchestratorHttpServer(
     generatePrototypeProjectionUseCase,
     generateSqlSchemaProjectionUseCase,
     generateOpenApiProjectionUseCase,
+    generateStoriesProjectionUseCase,
+    getStoriesUseCase,
     projectBaselineUseCase,
     reviewStateUseCase,
     recordDiscoveryUseCase,

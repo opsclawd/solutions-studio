@@ -26,7 +26,11 @@ import {
   EngineeringDecisionDtoSchema,
   CreateEngineeringDecisionRequestDtoSchema,
   TransitionEngineeringDecisionRequestDtoSchema,
-  AuthorityBundleDtoSchema
+  AuthorityBundleDtoSchema,
+  GenerateProjectionRequestDtoSchema,
+  StoryDtoSchema,
+  GenerateStoryRequestDtoSchema,
+  ListStoriesResponseDtoSchema
 } from '../../src/requirements/index.js';
 
 describe('Requirements Contract Schemas', () => {
@@ -960,6 +964,76 @@ describe('Requirements Contract Schemas', () => {
       expect(EngineeringDecisionStateSchema.parse('ACCEPTED')).toBe('ACCEPTED');
       expect(EngineeringDecisionStateSchema.parse('REJECTED')).toBe('REJECTED');
       expect(() => EngineeringDecisionStateSchema.parse('UNKNOWN')).toThrow();
+    });
+  });
+
+  describe('GenerateProjectionRequestDtoSchema', () => {
+    it('accepts stories as valid artifactType', () => {
+      const parsed = GenerateProjectionRequestDtoSchema.parse({
+        artifactType: 'stories',
+        prompt: 'Generate user stories'
+      });
+      expect(parsed.artifactType).toBe('stories');
+      expect(parsed.prompt).toBe('Generate user stories');
+    });
+  });
+
+  describe('StoryDtoSchema', () => {
+    it('validates a complete StoryDto object', () => {
+      const rawStory = {
+        id: 'STORY-001',
+        baselineId: 'BASE-001',
+        projectionId: 'PROJ-001',
+        title: 'User Story Title',
+        narrative: {
+          role: 'Admin',
+          feature: 'Manage permissions',
+          benefit: 'Ensure security'
+        },
+        requirementRevisionIds: ['REQ-001-R1'],
+        policyConstraintRevisionIds: ['POL-001-R1'],
+        scenarios: [
+          {
+            title: 'Scenario 1',
+            requirementRevisionIds: ['REQ-001-R1'],
+            steps: [{ keyword: 'Given' as const, text: 'step 1' }]
+          }
+        ],
+        acceptanceCriteria: ['Scenario 1'],
+        gherkinText: 'Feature: F\n  Scenario: S',
+        createdAt: '2026-09-18T12:00:00.000Z'
+      };
+      const parsed = StoryDtoSchema.parse(rawStory);
+      expect(parsed.id).toBe('STORY-001');
+      expect(parsed.scenarios[0].steps[0].keyword).toBe('Given');
+    });
+
+    it('rejects story with empty scenarios array', () => {
+      const invalid = {
+        id: 'STORY-001',
+        baselineId: 'BASE-001',
+        title: 'Title',
+        narrative: { role: 'A', feature: 'B', benefit: 'C' },
+        requirementRevisionIds: ['REQ-001-R1'],
+        scenarios: [],
+        acceptanceCriteria: [],
+        gherkinText: 'Feature: F',
+        createdAt: '2026-09-18T12:00:00.000Z'
+      };
+      expect(() => StoryDtoSchema.parse(invalid)).toThrow();
+    });
+  });
+
+  describe('GenerateStoryRequestDtoSchema and ListStoriesResponseDtoSchema', () => {
+    it('validates request and list response', () => {
+      const req = GenerateStoryRequestDtoSchema.parse({
+        prompt: 'Focus on auth',
+        autoRecordDiscoveries: true
+      });
+      expect(req.autoRecordDiscoveries).toBe(true);
+
+      const list = ListStoriesResponseDtoSchema.parse([]);
+      expect(list).toEqual([]);
     });
   });
 });

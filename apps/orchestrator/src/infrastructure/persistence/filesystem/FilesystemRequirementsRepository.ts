@@ -19,6 +19,7 @@ import {
   createEngineeringDecisionId,
   createPolicyConstraintRevision,
   createEngineeringDecision,
+  createStoryId,
   now,
   FINDING_DISPOSITIONS,
   REQUIREMENT_REVIEW_STATES,
@@ -30,6 +31,7 @@ import {
   type RequirementRevisionId,
   type FindingId,
   type RequirementsBaselineId,
+  type StoryId,
   type SourceRevision,
   type RequirementRevision,
   type CandidateFinding,
@@ -52,7 +54,8 @@ import type {
   EvaluationRunRecord,
   FindingReconciliationRecord,
   RequirementReconciliationRecord,
-  ProjectionRecord
+  ProjectionRecord,
+  StoryRecord
 } from '../../../application/ports/persistence/IRequirementsRepository.js';
 import {
   StaleRevisionTargetError,
@@ -1421,6 +1424,69 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
           }
         }
       }
+      return Object.freeze(result);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return Object.freeze([]);
+      }
+      throw err;
+    }
+  }
+
+  async saveStory(story: StoryRecord): Promise<void> {
+    assertSafeIdentifier(story.id, 'storyId');
+    assertSafeIdentifier(story.baselineId, 'baselineId');
+    const filePath = resolveStorePath(this.baseDir, 'stories', `${story.id}.json`);
+    await writeJsonExclusive(filePath, story);
+  }
+
+  async getStory(id: StoryId): Promise<StoryRecord | undefined> {
+    assertSafeIdentifier(id, 'storyId');
+    const filePath = resolveStorePath(this.baseDir, 'stories', `${id}.json`);
+    const record = await readJson<StoryRecord>(filePath);
+    if (!record) {
+      return undefined;
+    }
+    return Object.freeze({
+      ...record,
+      requirementRevisionIds: Object.freeze(record.requirementRevisionIds),
+      policyConstraintRevisionIds: record.policyConstraintRevisionIds
+        ? Object.freeze(record.policyConstraintRevisionIds)
+        : undefined,
+      scenarios: Object.freeze(
+        record.scenarios.map((s) =>
+          Object.freeze({
+            ...s,
+            requirementRevisionIds: Object.freeze(s.requirementRevisionIds),
+            policyConstraintRevisionIds: s.policyConstraintRevisionIds
+              ? Object.freeze(s.policyConstraintRevisionIds)
+              : undefined,
+            steps: Object.freeze(s.steps.map((st) => Object.freeze(st)))
+          })
+        )
+      ),
+      acceptanceCriteria: Object.freeze(record.acceptanceCriteria)
+    });
+  }
+
+  async listStories(baselineId?: RequirementsBaselineId): Promise<readonly StoryRecord[]> {
+    const dirPath = path.resolve(this.baseDir, 'stories');
+    try {
+      const files = await fs.readdir(dirPath);
+      const jsonFiles = files.filter((f) => f.endsWith('.json')).sort();
+      const result: StoryRecord[] = [];
+      for (const file of jsonFiles) {
+        const rawId = file.replace(/\.json$/, '');
+        assertSafeIdentifier(rawId, 'storyId');
+        const storyId = createStoryId(rawId);
+        const story = await this.getStory(storyId);
+        if (story) {
+          if (!baselineId || story.baselineId === baselineId) {
+            result.push(story);
+          }
+        }
+      }
+      result.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
       return Object.freeze(result);
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {

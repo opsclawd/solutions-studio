@@ -15,6 +15,12 @@ export class DeterministicFallbackGateway implements IGenerationGateway {
   }
 
   async generate(request: GenerationRequest): Promise<GenerationResult> {
+    const isStory =
+      request.prompt.toLowerCase().includes('gherkin') ||
+      request.prompt.toLowerCase().includes('user story') ||
+      request.prompt.toLowerCase().includes('story projection') ||
+      request.prompt.toLowerCase().includes('acceptance criteria');
+
     const isOpenApi =
       request.prompt.toLowerCase().includes('openapi') ||
       request.prompt.toLowerCase().includes('api specification') ||
@@ -34,7 +40,55 @@ export class DeterministicFallbackGateway implements IGenerationGateway {
       request.prompt.toLowerCase().includes('state diagram');
 
     let text: string;
-    if (isOpenApi) {
+    if (isStory) {
+      const baselineMatch = request.prompt.match(/baseline\s+([A-Za-z0-9_-]+)/i);
+      const baselineId = baselineMatch ? baselineMatch[1] : 'BASE-001';
+      const reqMatches = [...request.prompt.matchAll(/-\s*\[([A-Za-z0-9_-]+)\]/g)].map((m) => m[1]);
+      const revisions = reqMatches.length > 0 ? reqMatches : ['REQ-001-R1'];
+
+      const polMatches = [
+        ...request.prompt.matchAll(/(?:#|--)?\s*@policy-constraints\s+([^\r\n]+)/g)
+      ];
+      let polHeader = '';
+      let firstPol = '';
+      if (polMatches.length > 0) {
+        const rawPols = polMatches[0][1].trim();
+        polHeader = `\n# @policy-constraints ${rawPols}`;
+        firstPol = rawPols.split(/[\s,]+/)[0];
+      }
+
+      const edMatches = [
+        ...request.prompt.matchAll(/(?:#|--)?\s*@engineering-decisions\s+([^\r\n]+)/g)
+      ];
+      let edHeader = '';
+      if (edMatches.length > 0) {
+        edHeader = `\n# @engineering-decisions ${edMatches[0][1].trim()}`;
+      }
+
+      const polTag = firstPol ? ` @policy-constraints:${firstPol}` : '';
+      const scenario2 =
+        revisions.length > 1
+          ? `\n  @requirements:${revisions[1]}\n  Scenario: Secondary execution path\n    Given the prerequisites are satisfied\n    When the secondary operation is requested\n    Then the operation completes without error`
+          : '';
+
+      text = [
+        '```gherkin',
+        `# @baseline ${baselineId}`,
+        `# @requirements ${revisions.join(', ')}${polHeader}${edHeader}`,
+        '',
+        'Feature: Auto-Generated Baseline Story',
+        '  As a verified actor',
+        '  I want to execute required baseline capabilities',
+        '  So that business intent and constraints are fulfilled',
+        '',
+        `  @requirements:${revisions[0]}${polTag}`,
+        '  Scenario: Primary execution path',
+        '    Given the system is in a valid state',
+        '    When the primary workflow is triggered',
+        '    Then expected results are produced successfully' + scenario2,
+        '```'
+      ].join('\n');
+    } else if (isOpenApi) {
       const baselineMatch = request.prompt.match(/baseline\s+([A-Za-z0-9_-]+)/i);
       const baselineId = baselineMatch ? baselineMatch[1] : 'BASE-001';
       const reqMatches = [...request.prompt.matchAll(/-\s*\[([A-Za-z0-9_-]+)\]/g)].map((m) => m[1]);

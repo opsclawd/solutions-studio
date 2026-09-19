@@ -23,12 +23,14 @@ import {
   createEngineeringDecisionId,
   createPolicyConstraintRevision,
   createEngineeringDecision,
-  transitionEngineeringDecision
+  transitionEngineeringDecision,
+  createStoryId
 } from '@solutions-studio/domain';
 import { FilesystemRequirementsRepository } from '../../src/infrastructure/persistence/filesystem/FilesystemRequirementsRepository.js';
 import {
   ImmutableRecordConflictError,
-  type EvaluationRunRecord
+  type EvaluationRunRecord,
+  type StoryRecord
 } from '../../src/application/ports/persistence/IRequirementsRepository.js';
 import {
   StaleRevisionTargetError,
@@ -2364,6 +2366,86 @@ describe('FilesystemRequirementsRepository', () => {
           StaleRevisionTargetError
         );
       }
+    });
+  });
+
+  describe('Story persistence', () => {
+    it('saves, retrieves, lists, and enforces immutability on StoryRecord', async () => {
+      const storyId = createStoryId('STORY-REPO-001');
+      const baselineId = createRequirementsBaselineId('BASE-REPO-001');
+      const reqId = createRequirementRevisionId('REQ-001-R1');
+
+      const storyRecord: StoryRecord = {
+        id: storyId,
+        baselineId,
+        projectionId: 'PROJ-001',
+        title: 'Story Repo Test',
+        narrative: {
+          role: 'Admin',
+          feature: 'Manage Settings',
+          benefit: 'Maintain system integrity'
+        },
+        requirementRevisionIds: [reqId],
+        scenarios: [
+          {
+            title: 'Update setting',
+            requirementRevisionIds: [reqId],
+            steps: [
+              { keyword: 'Given', text: 'an admin user' },
+              { keyword: 'When', text: 'they update the setting' },
+              { keyword: 'Then', text: 'the setting is updated' }
+            ]
+          }
+        ],
+        acceptanceCriteria: ['Update setting'],
+        gherkinText: 'Feature: Story Repo Test\n  Scenario: Update setting',
+        metadata: {
+          baselineId: 'BASE-REPO-001',
+          requirementRevisionIds: ['REQ-001-R1'],
+          artifactType: 'stories',
+          declaredProvenance: {
+            baselineId: 'BASE-REPO-001',
+            requirementRevisionIds: ['REQ-001-R1']
+          },
+          configuredExecution: {
+            provider: 'fake',
+            artifactType: 'stories'
+          },
+          measuredVerification: {
+            repairsNeeded: 0,
+            attemptCount: 1,
+            contentHash: 'abc123hash',
+            verifiedAt: createInstant('2026-09-18T12:00:00.000Z')
+          }
+        },
+        createdAt: createInstant('2026-09-18T12:00:00.000Z')
+      };
+
+      await repo.saveStory(storyRecord);
+
+      // Attempting to overwrite must throw ImmutableRecordConflictError
+      await expect(repo.saveStory(storyRecord)).rejects.toThrow(ImmutableRecordConflictError);
+
+      // Retrieve by ID
+      const retrieved = await repo.getStory(storyId);
+      expect(retrieved).toBeDefined();
+      expect(retrieved?.id).toBe(storyId);
+      expect(retrieved?.title).toBe('Story Repo Test');
+      expect(retrieved?.scenarios).toHaveLength(1);
+      expect(retrieved?.scenarios[0].steps).toHaveLength(3);
+
+      // List stories
+      const allStories = await repo.listStories();
+      expect(allStories).toHaveLength(1);
+      expect(allStories[0].id).toBe(storyId);
+
+      // Filter by matching baseline
+      const matchingStories = await repo.listStories(baselineId);
+      expect(matchingStories).toHaveLength(1);
+
+      // Filter by non-matching baseline
+      const otherStories = await repo.listStories(createRequirementsBaselineId('BASE-OTHER'));
+      expect(otherStories).toHaveLength(0);
     });
   });
 });
