@@ -51,7 +51,10 @@ jobs:
         run: pnpm -r --if-present test
 
       - name: Run Phase 1 Exit Gate Integration
-        run: pnpm --filter @solutions-studio/orchestrator exit-gate
+        run: pnpm --filter @solutions-studio/orchestrator exit-gate:phase1
+
+      - name: Run Phase 2 Exit Gate Integration
+        run: pnpm --filter @solutions-studio/orchestrator exit-gate:phase2
 
       - name: Install Playwright Browsers
         run: pnpm --filter @solutions-studio/web exec playwright install --with-deps chromium

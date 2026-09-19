@@ -48,6 +48,13 @@ describe('ProjectBaseline CLI and composition', () => {
       expect(parsed.provider).toBe('agy');
     });
 
+    it('parses prototype artifact type option successfully', () => {
+      const parsed = parseArgs(['--baseline', 'BASE-PROTO-001', '--artifact-type', 'prototype']);
+
+      expect(parsed.baselineId).toBe('BASE-PROTO-001');
+      expect(parsed.artifactType).toBe('prototype');
+    });
+
     it('parses all valid options successfully', () => {
       const parsed = parseArgs([
         '--baseline',

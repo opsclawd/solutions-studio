@@ -1,4 +1,9 @@
-import type { RequirementId, RequirementRevisionId, ActorId } from './ids.js';
+import type {
+  RequirementId,
+  RequirementRevisionId,
+  ActorId,
+  RequirementsBaselineId
+} from './ids.js';
 import type { EvidenceReference } from './EvidenceReference.js';
 import type { RequirementCategory } from './Requirement.js';
 import { REQUIREMENT_CATEGORIES } from './Requirement.js';
@@ -21,6 +26,9 @@ export interface RequirementRevision {
   readonly resolutionState: RequirementResolutionState;
   readonly evidence: readonly EvidenceReference[];
   readonly rationale?: string;
+  readonly actorId?: ActorId;
+  readonly baselineId?: RequirementsBaselineId;
+  readonly originatingProjectionId?: string;
   readonly affectedActors?: readonly ActorId[];
   readonly dependencies?: readonly RequirementId[];
   readonly supersedes?: RequirementRevisionId;
@@ -37,6 +45,9 @@ export function createRequirementRevision(params: {
   resolutionState?: RequirementResolutionState;
   evidence?: readonly EvidenceReference[];
   rationale?: string;
+  actorId?: ActorId;
+  baselineId?: RequirementsBaselineId;
+  originatingProjectionId?: string;
   affectedActors?: readonly ActorId[];
   dependencies?: readonly RequirementId[];
   supersedes?: RequirementRevisionId;
@@ -95,6 +106,11 @@ export function createRequirementRevision(params: {
     resolutionState,
     evidence,
     ...(params.rationale !== undefined ? { rationale: params.rationale } : {}),
+    ...(params.actorId !== undefined ? { actorId: params.actorId } : {}),
+    ...(params.baselineId !== undefined ? { baselineId: params.baselineId } : {}),
+    ...(params.originatingProjectionId !== undefined
+      ? { originatingProjectionId: params.originatingProjectionId }
+      : {}),
     ...(affectedActors !== undefined ? { affectedActors } : {}),
     ...(dependencies !== undefined ? { dependencies } : {}),
     ...(params.supersedes !== undefined ? { supersedes: params.supersedes } : {})
@@ -138,6 +154,9 @@ export function reviseRequirement(
     resolutionState?: RequirementResolutionState;
     evidence?: readonly EvidenceReference[];
     rationale?: string;
+    actorId?: ActorId;
+    baselineId?: RequirementsBaselineId;
+    originatingProjectionId?: string;
     affectedActors?: readonly ActorId[];
     dependencies?: readonly RequirementId[];
   }
@@ -186,6 +205,12 @@ export function reviseRequirement(
     resolutionState,
     evidence: changes.evidence ?? previous.evidence,
     rationale: changes.rationale !== undefined ? changes.rationale : previous.rationale,
+    actorId: changes.actorId !== undefined ? changes.actorId : previous.actorId,
+    baselineId: changes.baselineId !== undefined ? changes.baselineId : previous.baselineId,
+    originatingProjectionId:
+      changes.originatingProjectionId !== undefined
+        ? changes.originatingProjectionId
+        : previous.originatingProjectionId,
     affectedActors: changes.affectedActors ?? previous.affectedActors,
     dependencies: changes.dependencies ?? previous.dependencies,
     supersedes: previous.id

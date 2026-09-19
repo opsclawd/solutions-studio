@@ -228,3 +228,14 @@ The Playwright browser suite (`apps/web/test/browser/prototype-sandbox.spec.ts`)
 ### Exit Gate Verdict: **GO**
 
 The sandboxed React/Tailwind runtime is validated, battle-tested, and production-ready. **Phase 3 (Interactive Prototype Generation)** can promote this runtime directly without relocation or re-architecture.
+
+---
+
+## Phase 2.2 — Interactive Requirements Review & Reconciliation Workspace
+
+Implemented under Issue #47. The primary web entry point (`/` -> `/review`) provides an interactive reviewer workspace for business analysts and architects to inspect evidence, candidate requirements, findings, and review state, and execute reconciliation operations through the application layer.
+
+### Configuration
+
+- `NEXT_PUBLIC_ORCHESTRATOR_URL`: Base URL for the backend orchestrator service (defaults to `http://localhost:4000` in local development). See `.env.local.example`.
+- Route: `/review` (supports optional `?baselineId=...` query parameter to anchor review state to a specific baseline).

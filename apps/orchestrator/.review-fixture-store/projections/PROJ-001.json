@@ -1,0 +1,27 @@
+{
+  "id": "PROJ-001",
+  "baselineId": "BASE-001",
+  "requirementRevisionIds": ["REQ-002-R1"],
+  "artifactType": "process-diagram",
+  "content": "graph TD\n  Start([Start Request]) --> Auth{Verify Admin MFA}\n  Auth -->|Authorized| Grant[Assign RBAC Role]\n  Auth -->|Denied| Reject[Deny Access]",
+  "metadata": {
+    "baselineId": "BASE-001",
+    "requirementRevisionIds": ["REQ-002-R1"],
+    "artifactType": "process-diagram",
+    "declaredProvenance": {
+      "baselineId": "BASE-001",
+      "requirementRevisionIds": ["REQ-002-R1"]
+    },
+    "configuredExecution": {
+      "provider": "fake",
+      "artifactType": "process-diagram"
+    },
+    "measuredVerification": {
+      "repairsNeeded": 0,
+      "attemptCount": 1,
+      "contentHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "verifiedAt": "2026-09-18T23:00:28.996Z"
+    }
+  },
+  "createdAt": "2026-09-18T23:00:28.996Z"
+}

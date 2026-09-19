@@ -327,6 +327,43 @@ describe('Requirement and RequirementRevision', () => {
       expect(identicalDeps.reviewState).toBe('ACCEPTED');
       expect(identicalDeps.resolutionState).toBe('CLEAR');
     });
+
+    it('accepts and preserves baselineId, originatingProjectionId, and actorId across revisions', () => {
+      const rev1 = createRequirementRevision({
+        id: createRequirementRevisionId('R-CTX@r1'),
+        requirementId: createRequirementId('R-CTX'),
+        revision: 1,
+        statement: 'Statement with context',
+        category: 'business-rule',
+        origin: 'REVIEWER_PROPOSAL',
+        baselineId: createRequirementsBaselineId('BASELINE-001'),
+        originatingProjectionId: 'PROJ-001',
+        actorId: createActorId('reviewer-1')
+      });
+
+      expect(rev1.baselineId).toBe('BASELINE-001');
+      expect(rev1.originatingProjectionId).toBe('PROJ-001');
+      expect(rev1.actorId).toBe('reviewer-1');
+      expect(Object.isFrozen(rev1)).toBe(true);
+
+      // reviseRequirement preserves them by default
+      const rev2 = reviseRequirement(rev1, {
+        id: createRequirementRevisionId('R-CTX@r2'),
+        statement: 'Updated statement'
+      });
+
+      expect(rev2.baselineId).toBe('BASELINE-001');
+      expect(rev2.originatingProjectionId).toBe('PROJ-001');
+      expect(rev2.actorId).toBe('reviewer-1');
+
+      // reviseRequirement allows overriding them
+      const rev3 = reviseRequirement(rev2, {
+        id: createRequirementRevisionId('R-CTX@r3'),
+        actorId: createActorId('reviewer-2')
+      });
+      expect(rev3.actorId).toBe('reviewer-2');
+      expect(rev3.baselineId).toBe('BASELINE-001');
+    });
   });
 
   describe('Validation rules', () => {

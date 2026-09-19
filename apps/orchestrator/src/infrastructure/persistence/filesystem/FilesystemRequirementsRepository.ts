@@ -343,6 +343,9 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
         locator: createEvidenceLocator(e.locator)
       })),
       rationale: raw.rationale,
+      actorId: raw.actorId ? createActorId(raw.actorId) : undefined,
+      baselineId: raw.baselineId ? createRequirementsBaselineId(raw.baselineId) : undefined,
+      originatingProjectionId: raw.originatingProjectionId,
       affectedActors: raw.affectedActors?.map((a) => createActorId(a)),
       dependencies: raw.dependencies?.map((d) => createRequirementId(d)),
       supersedes: raw.supersedes ? createRequirementRevisionId(raw.supersedes) : undefined
@@ -367,6 +370,26 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
       }
     }
     return Object.freeze(result);
+  }
+
+  async listRequirementIds(): Promise<readonly RequirementId[]> {
+    const dirPath = path.resolve(this.baseDir, 'requirement-index');
+    try {
+      const files = await fs.readdir(dirPath);
+      const jsonFiles = files.filter((f) => f.endsWith('.json')).sort();
+      const result: RequirementId[] = [];
+      for (const file of jsonFiles) {
+        const rawId = file.replace(/\.json$/, '');
+        assertSafeIdentifier(rawId, 'requirementId');
+        result.push(createRequirementId(rawId));
+      }
+      return Object.freeze(result);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return Object.freeze([]);
+      }
+      throw err;
+    }
   }
 
   async saveCandidateFinding(finding: CandidateFinding): Promise<void> {
@@ -400,7 +423,10 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
       })),
       discoveredBy: raw.discoveredBy,
       disposition: raw.disposition,
-      rationale: raw.rationale
+      rationale: raw.rationale,
+      actorId: raw.actorId ? createActorId(raw.actorId) : undefined,
+      baselineId: raw.baselineId ? createRequirementsBaselineId(raw.baselineId) : undefined,
+      originatingProjectionId: raw.originatingProjectionId
     });
   }
 
@@ -954,6 +980,30 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
       createdAt: createInstant(raw.createdAt),
       createdBy: createReviewerId(raw.createdBy)
     });
+  }
+
+  async listRequirementsBaselines(): Promise<readonly RequirementsBaseline[]> {
+    const dirPath = path.resolve(this.baseDir, 'baselines');
+    try {
+      const files = await fs.readdir(dirPath);
+      const jsonFiles = files.filter((f) => f.endsWith('.json')).sort();
+      const results: RequirementsBaseline[] = [];
+      for (const file of jsonFiles) {
+        const rawId = file.replace(/\.json$/, '');
+        assertSafeIdentifier(rawId, 'baselineId');
+        const baseline = await this.getRequirementsBaseline(createRequirementsBaselineId(rawId));
+        if (baseline) {
+          results.push(baseline);
+        }
+      }
+      results.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      return Object.freeze(results);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return Object.freeze([]);
+      }
+      throw err;
+    }
   }
 
   async saveEvaluationRun(run: EvaluationRunRecord): Promise<void> {

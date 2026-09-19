@@ -20,6 +20,11 @@
       "types": "./src/evaluation/index.ts",
       "import": "./dist/src/evaluation/index.js",
       "default": "./dist/src/evaluation/index.js"
+    },
+    "./http": {
+      "types": "./src/http/index.ts",
+      "import": "./dist/src/http/index.js",
+      "default": "./dist/src/http/index.js"
     }
   },
   "scripts": {

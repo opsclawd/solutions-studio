@@ -22,10 +22,22 @@ export default defineConfig({
       }
     }
   ],
-  webServer: {
-    command: 'pnpm start',
-    url: 'http://localhost:3000/dev/sandbox',
-    reuseExistingServer: !process.env.CI,
-    timeout: 120000
-  }
+  webServer: [
+    {
+      command:
+        'pnpm --filter @solutions-studio/orchestrator exec tsx scripts/seed-review-fixture.ts --out .review-fixture-store && pnpm --filter @solutions-studio/orchestrator exec tsx scripts/run-http-server.ts --store .review-fixture-store --port 4000',
+      url: 'http://localhost:4000/api/health',
+      reuseExistingServer: !process.env.CI,
+      timeout: 120000
+    },
+    {
+      command: 'pnpm start',
+      url: 'http://localhost:3000/dev/sandbox',
+      reuseExistingServer: !process.env.CI,
+      timeout: 120000,
+      env: {
+        NEXT_PUBLIC_ORCHESTRATOR_URL: 'http://localhost:4000'
+      }
+    }
+  ]
 });

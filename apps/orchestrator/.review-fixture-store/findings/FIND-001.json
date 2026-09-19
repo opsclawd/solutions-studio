@@ -1,0 +1,14 @@
+{
+  "id": "FIND-001",
+  "type": "contradiction",
+  "affectedRequirementRevisions": ["REQ-003-R1"],
+  "evidence": [
+    {
+      "sourceRevisionId": "SRC-001-R1",
+      "locator": "enterprise-security-standard/session-management#1"
+    }
+  ],
+  "discoveredBy": "model",
+  "disposition": "OPEN",
+  "rationale": "Conflict detected: Maintenance portal requires 60-minute session duration."
+}

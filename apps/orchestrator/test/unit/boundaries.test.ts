@@ -24,6 +24,7 @@ describe('Architectural Boundary Enforcement Drift Guard', () => {
       'domain-cannot-depend-on-contracts-or-apps',
       'contracts-cannot-depend-on-apps',
       'orchestrator-application-cannot-depend-on-infrastructure',
+      'orchestrator-http-routes-cannot-depend-on-infrastructure',
       'orchestrator-cannot-depend-on-web',
       'web-cannot-depend-on-orchestrator',
       'no-circular',

@@ -1,0 +1,40 @@
+{
+  "sourceType": "sop",
+  "revision": {
+    "id": "SRC-001-R1",
+    "sourceId": "SRC-001",
+    "revision": 1,
+    "contentHash": "45a7c7661593ca1dcd7b63ca3281aaa6205d6071c8b295e6daea58831ce7446e",
+    "capturedAt": "2026-09-18T23:00:28.987Z"
+  },
+  "rawText": "# Enterprise Security Standard\n\n## Encryption at Rest\n\nAll relational and object databases storing customer data must employ AES-256 encryption at rest.\n\n## Role-Based Access Control\n\nAdministrative roles must require multi-factor authentication and role-based privilege assignment.\n\n## Session Management\n\nUser sessions must expire after 15 minutes of inactivity across all internal web portals.",
+  "locatorIndex": [
+    {
+      "locator": "enterprise-security-standard/encryption-at-rest#1",
+      "headingPath": "enterprise-security-standard/encryption-at-rest",
+      "blockLabel": "1",
+      "blockLabelSource": "sequential-ordinal",
+      "text": "All relational and object databases storing customer data must employ AES-256 encryption at rest.",
+      "startLine": 5,
+      "endLine": 5
+    },
+    {
+      "locator": "enterprise-security-standard/role-based-access-control#1",
+      "headingPath": "enterprise-security-standard/role-based-access-control",
+      "blockLabel": "1",
+      "blockLabelSource": "sequential-ordinal",
+      "text": "Administrative roles must require multi-factor authentication and role-based privilege assignment.",
+      "startLine": 9,
+      "endLine": 9
+    },
+    {
+      "locator": "enterprise-security-standard/session-management#1",
+      "headingPath": "enterprise-security-standard/session-management",
+      "blockLabel": "1",
+      "blockLabelSource": "sequential-ordinal",
+      "text": "User sessions must expire after 15 minutes of inactivity across all internal web portals.",
+      "startLine": 13,
+      "endLine": 13
+    }
+  ]
+}

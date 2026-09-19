@@ -1,4 +1,4 @@
-import type { FindingId, RequirementRevisionId } from './ids.js';
+import type { FindingId, RequirementRevisionId, ActorId, RequirementsBaselineId } from './ids.js';
 import type { EvidenceReference } from './EvidenceReference.js';
 import { DomainError, FindingRationaleRequiredError } from './errors.js';
 
@@ -37,6 +37,9 @@ export interface CandidateFinding {
   readonly discoveredBy: DiscoveredBy;
   readonly disposition: FindingDisposition;
   readonly rationale?: string;
+  readonly actorId?: ActorId;
+  readonly baselineId?: RequirementsBaselineId;
+  readonly originatingProjectionId?: string;
 }
 
 export function createCandidateFinding(params: {
@@ -47,6 +50,9 @@ export function createCandidateFinding(params: {
   discoveredBy: DiscoveredBy;
   disposition?: FindingDisposition;
   rationale?: string;
+  actorId?: ActorId;
+  baselineId?: RequirementsBaselineId;
+  originatingProjectionId?: string;
 }): CandidateFinding {
   if (!FINDING_TYPES.includes(params.type)) {
     throw new DomainError(`Invalid FindingType: '${String(params.type)}'`);
@@ -96,7 +102,12 @@ export function createCandidateFinding(params: {
     evidence,
     discoveredBy: params.discoveredBy,
     disposition,
-    ...(rationale !== undefined ? { rationale } : {})
+    ...(rationale !== undefined ? { rationale } : {}),
+    ...(params.actorId !== undefined ? { actorId: params.actorId } : {}),
+    ...(params.baselineId !== undefined ? { baselineId: params.baselineId } : {}),
+    ...(params.originatingProjectionId !== undefined
+      ? { originatingProjectionId: params.originatingProjectionId }
+      : {})
   });
 }
 
@@ -116,7 +127,12 @@ function transitionDisposition(
     evidence: finding.evidence,
     discoveredBy: finding.discoveredBy,
     disposition: newDisposition,
-    rationale: rationale.trim()
+    rationale: rationale.trim(),
+    ...(finding.actorId !== undefined ? { actorId: finding.actorId } : {}),
+    ...(finding.baselineId !== undefined ? { baselineId: finding.baselineId } : {}),
+    ...(finding.originatingProjectionId !== undefined
+      ? { originatingProjectionId: finding.originatingProjectionId }
+      : {})
   });
 }
 
@@ -145,6 +161,11 @@ export function reopenFinding(finding: CandidateFinding, rationale?: string): Ca
     disposition: 'OPEN',
     ...(rationale !== undefined && rationale.trim().length > 0
       ? { rationale: rationale.trim() }
+      : {}),
+    ...(finding.actorId !== undefined ? { actorId: finding.actorId } : {}),
+    ...(finding.baselineId !== undefined ? { baselineId: finding.baselineId } : {}),
+    ...(finding.originatingProjectionId !== undefined
+      ? { originatingProjectionId: finding.originatingProjectionId }
       : {})
   });
 }
