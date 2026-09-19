@@ -17,7 +17,14 @@ import {
   extractRequired,
   resolveTableAlias,
   normalizeName,
-  hasStateTransitionAnnotation
+  hasStateTransitionAnnotation,
+  isEnumSchema,
+  matchesCheckConstraintEnum,
+  isChildTableOf,
+  isParentForeignKey,
+  hasBackingChildTable,
+  stripSqlComments,
+  hasForeignKeyToParent
 } from '../../src/application/use-cases/crossValidation/schemaApiCrossValidator.js';
 
 describe('SchemaApiCrossValidator', () => {
@@ -967,5 +974,852 @@ describe('SchemaApiCrossValidator', () => {
 
     const itemFinding = findings.find((f) => f.rationale?.includes('PurchaseItem'));
     expect(itemFinding).toBeUndefined();
+  });
+
+  // Issue #82: Phase 3.10 — schemaApiCrossValidator false-positive elimination
+
+  it('UT-1: allows table-level VARCHAR + CHECK constraint satisfying OpenAPI enum schema (Scope 1)', () => {
+    const sql = `
+      CREATE TABLE orders (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        customer_id UUID NOT NULL,
+        status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+        CONSTRAINT chk_orders_status CHECK (status IN ('PENDING', 'PAID', 'SHIPPED', 'CANCELLED'))
+      );
+    `;
+    const openApiDoc = {
+      openapi: '3.1.0',
+      paths: {
+        '/orders': {
+          get: { responses: { '200': { description: 'List orders' } } }
+        }
+      },
+      components: {
+        schemas: {
+          Order: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', format: 'uuid' },
+              customer_id: { type: 'string', format: 'uuid' },
+              status: { $ref: '#/components/schemas/OrderStatus' }
+            }
+          },
+          OrderStatus: {
+            type: 'string',
+            enum: ['PENDING', 'PAID', 'SHIPPED', 'CANCELLED']
+          }
+        }
+      }
+    };
+
+    const findings = validator.validate({
+      openApiDoc,
+      sqlSchemaContent: sql,
+      baseline,
+      openApiProjectionId: 'PROJ-OAS-UT1',
+      sqlSchemaProjectionId: 'PROJ-SQL-UT1'
+    });
+
+    const statusFinding = findings.find(
+      (f) => f.rationale?.includes('OrderStatus') || f.rationale?.includes('orderstatus')
+    );
+    expect(statusFinding).toBeUndefined();
+    expect(findings).toHaveLength(0);
+  });
+
+  it('UT-2: allows column-level inline VARCHAR + CHECK constraint satisfying enum schema (Scope 1)', () => {
+    const sql = `
+      CREATE TABLE accounts (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        status VARCHAR(32) NOT NULL CHECK (status IN ('ACTIVE', 'SUSPENDED'))
+      );
+    `;
+    const openApiDoc = {
+      openapi: '3.1.0',
+      paths: {
+        '/accounts': {
+          get: { responses: { '200': { description: 'List accounts' } } }
+        }
+      },
+      components: {
+        schemas: {
+          Account: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', format: 'uuid' },
+              status: { $ref: '#/components/schemas/AccountStatus' }
+            }
+          },
+          AccountStatus: {
+            type: 'string',
+            enum: ['ACTIVE', 'SUSPENDED']
+          }
+        }
+      }
+    };
+
+    const findings = validator.validate({
+      openApiDoc,
+      sqlSchemaContent: sql,
+      baseline,
+      openApiProjectionId: 'PROJ-OAS-UT2',
+      sqlSchemaProjectionId: 'PROJ-SQL-UT2'
+    });
+
+    const statusFinding = findings.find(
+      (f) => f.rationale?.includes('AccountStatus') || f.rationale?.includes('accountstatus')
+    );
+    expect(statusFinding).toBeUndefined();
+    expect(findings).toHaveLength(0);
+  });
+
+  it('UT-3: parses PostgreSQL double-parenthesized CHECK constraint syntax (Scope 1)', () => {
+    const sql = `
+      CREATE TABLE orders (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+        CONSTRAINT chk_orders_status CHECK ((status IN ('PENDING', 'PAID', 'SHIPPED', 'CANCELLED')))
+      );
+    `;
+    const tables = parseSqlTables(sql);
+    expect(tables).toHaveLength(1);
+    const statusCol = tables[0].columns.find((c) => c.name === 'status');
+    expect(statusCol?.checkValues).toEqual(['PENDING', 'PAID', 'SHIPPED', 'CANCELLED']);
+
+    const openApiDoc = {
+      openapi: '3.1.0',
+      paths: {
+        '/orders': {
+          get: { responses: { '200': { description: 'List orders' } } }
+        }
+      },
+      components: {
+        schemas: {
+          Order: { type: 'object', properties: { id: { type: 'string' } } },
+          OrderStatus: {
+            type: 'string',
+            enum: ['PENDING', 'PAID', 'SHIPPED', 'CANCELLED']
+          }
+        }
+      }
+    };
+
+    const findings = validator.validate({
+      openApiDoc,
+      sqlSchemaContent: sql,
+      baseline,
+      openApiProjectionId: 'PROJ-OAS-UT3',
+      sqlSchemaProjectionId: 'PROJ-SQL-UT3'
+    });
+
+    const statusFinding = findings.find(
+      (f) => f.rationale?.includes('OrderStatus') || f.rationale?.includes('orderstatus')
+    );
+    expect(statusFinding).toBeUndefined();
+    expect(findings).toHaveLength(0);
+  });
+
+  it('UT-4: allows required array property mapping to normalized child table via FK (Scope 2)', () => {
+    const sql = `
+      CREATE TABLE orders (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        customer_id UUID NOT NULL
+      );
+
+      CREATE TABLE order_items (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+        product_id UUID NOT NULL,
+        quantity INT NOT NULL
+      );
+    `;
+    const openApiDoc = {
+      openapi: '3.1.0',
+      paths: {
+        '/orders': {
+          post: {
+            requestBody: {
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/OrderCreateRequest' }
+                }
+              }
+            },
+            responses: { '201': { description: 'Created' } }
+          }
+        }
+      },
+      components: {
+        schemas: {
+          Order: {
+            type: 'object',
+            properties: { id: { type: 'string' }, customer_id: { type: 'string' } }
+          },
+          OrderCreateRequest: {
+            type: 'object',
+            required: ['customer_id', 'items'],
+            properties: {
+              customer_id: { type: 'string', format: 'uuid' },
+              items: {
+                type: 'array',
+                items: { $ref: '#/components/schemas/OrderItemCreateRequest' }
+              }
+            }
+          },
+          OrderItemCreateRequest: {
+            type: 'object',
+            required: ['product_id', 'quantity'],
+            properties: {
+              product_id: { type: 'string', format: 'uuid' },
+              quantity: { type: 'integer' }
+            }
+          }
+        }
+      }
+    };
+
+    const findings = validator.validate({
+      openApiDoc,
+      sqlSchemaContent: sql,
+      baseline,
+      openApiProjectionId: 'PROJ-OAS-UT4',
+      sqlSchemaProjectionId: 'PROJ-SQL-UT4'
+    });
+
+    const itemsFinding = findings.find(
+      (f) => f.rationale?.includes("'items'") && f.rationale?.includes('orders')
+    );
+    expect(itemsFinding).toBeUndefined();
+    expect(findings).toHaveLength(0);
+  });
+
+  it('UT-5: allows child table parent FK to be omitted from child create request contract (Scope 3)', () => {
+    const sql = `
+      CREATE TABLE orders (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid()
+      );
+
+      CREATE TABLE order_items (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id UUID NOT NULL,
+        quantity INT NOT NULL,
+        CONSTRAINT fk_order_items_order FOREIGN KEY (order_id) REFERENCES orders(id)
+      );
+    `;
+    const openApiDoc = {
+      openapi: '3.1.0',
+      components: {
+        schemas: {
+          Order: { type: 'object', properties: { id: { type: 'string' } } },
+          OrderItemCreateRequest: {
+            type: 'object',
+            required: ['quantity'],
+            properties: {
+              quantity: { type: 'integer' }
+            }
+          }
+        }
+      }
+    };
+
+    const findings = validator.validate({
+      openApiDoc,
+      sqlSchemaContent: sql,
+      baseline,
+      openApiProjectionId: 'PROJ-OAS-UT5',
+      sqlSchemaProjectionId: 'PROJ-SQL-UT5'
+    });
+
+    const orderIdFinding = findings.find(
+      (f) => f.rationale?.includes("'order_id'") && f.rationale?.includes('order_items')
+    );
+    expect(orderIdFinding).toBeUndefined();
+  });
+
+  it('UT-6: recognizes inline column REFERENCES parent foreign key (Scope 3)', () => {
+    const sql = `
+      CREATE TABLE orders (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid()
+      );
+
+      CREATE TABLE order_items (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id UUID NOT NULL REFERENCES orders(id),
+        quantity INT NOT NULL
+      );
+    `;
+    const tables = parseSqlTables(sql);
+    const orderItemsTable = tables.find((t) => t.name === 'order_items');
+    expect(orderItemsTable).toBeDefined();
+    const orderIdCol = orderItemsTable?.columns.find((c) => c.name === 'order_id');
+    expect(orderIdCol?.referencesTable).toBe('orders');
+    expect(orderIdCol?.referencesColumn).toBe('id');
+  });
+
+  it('UT-7: preserves true positive: flags missing mandatory non-parent FK in API (Witness Scenario 5)', () => {
+    const sql = `
+      CREATE TABLE orders (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid()
+      );
+
+      CREATE TABLE products (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name TEXT NOT NULL
+      );
+
+      CREATE TABLE order_items (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id UUID NOT NULL REFERENCES orders(id),
+        product_id UUID NOT NULL REFERENCES products(id),
+        quantity INT NOT NULL
+      );
+    `;
+    const openApiDoc = {
+      openapi: '3.1.0',
+      components: {
+        schemas: {
+          Order: { type: 'object', properties: { id: { type: 'string' } } },
+          Product: {
+            type: 'object',
+            properties: { id: { type: 'string' }, name: { type: 'string' } }
+          },
+          OrderItemCreateRequest: {
+            type: 'object',
+            required: ['quantity'],
+            properties: {
+              quantity: { type: 'integer' }
+              // product_id is omitted!
+            }
+          }
+        }
+      }
+    };
+
+    const findings = validator.validate({
+      openApiDoc,
+      sqlSchemaContent: sql,
+      baseline,
+      openApiProjectionId: 'PROJ-OAS-UT7',
+      sqlSchemaProjectionId: 'PROJ-SQL-UT7'
+    });
+
+    const productIdFinding = findings.find(
+      (f) =>
+        f.type === 'data-boundary-ambiguity' &&
+        f.rationale?.includes("'product_id'") &&
+        f.rationale?.includes('order_items')
+    );
+    expect(productIdFinding).toBeDefined();
+    expect(productIdFinding?.rationale).toContain(
+      "SQL table 'order_items' defines mandatory column 'product_id'"
+    );
+
+    // order_id is parent FK, so it should NOT be flagged
+    const orderIdFinding = findings.find(
+      (f) => f.rationale?.includes("'order_id'") && f.rationale?.includes('order_items')
+    );
+    expect(orderIdFinding).toBeUndefined();
+  });
+
+  it('UT-8: preserves true positive: flags required array property with NO backing child table (AC-3)', () => {
+    const sql = `
+      CREATE TABLE orders (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        customer_id UUID NOT NULL
+      );
+    `;
+    const openApiDoc = {
+      openapi: '3.1.0',
+      components: {
+        schemas: {
+          Order: {
+            type: 'object',
+            required: ['customer_id', 'external_tags'],
+            properties: {
+              customer_id: { type: 'string' },
+              external_tags: {
+                type: 'array',
+                items: { type: 'string' }
+              }
+            }
+          }
+        }
+      }
+    };
+
+    const findings = validator.validate({
+      openApiDoc,
+      sqlSchemaContent: sql,
+      baseline,
+      openApiProjectionId: 'PROJ-OAS-UT8',
+      sqlSchemaProjectionId: 'PROJ-SQL-UT8'
+    });
+
+    const tagsFinding = findings.find(
+      (f) =>
+        f.type === 'data-boundary-ambiguity' &&
+        f.rationale?.includes("'external_tags'") &&
+        f.rationale?.includes('orders')
+    );
+    expect(tagsFinding).toBeDefined();
+    expect(tagsFinding?.rationale).toContain("OpenAPI contract requires field 'external_tags'");
+  });
+
+  it('UT-9: preserves true positive: flags mandatory non-FK column missing from API schema (AC-3)', () => {
+    const sql = `
+      CREATE TABLE orders (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid()
+      );
+
+      CREATE TABLE order_items (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id UUID NOT NULL REFERENCES orders(id),
+        unit_price NUMERIC NOT NULL
+      );
+    `;
+    const openApiDoc = {
+      openapi: '3.1.0',
+      components: {
+        schemas: {
+          Order: { type: 'object', properties: { id: { type: 'string' } } },
+          OrderItemCreateRequest: {
+            type: 'object',
+            properties: {
+              // unit_price omitted!
+            }
+          }
+        }
+      }
+    };
+
+    const findings = validator.validate({
+      openApiDoc,
+      sqlSchemaContent: sql,
+      baseline,
+      openApiProjectionId: 'PROJ-OAS-UT9',
+      sqlSchemaProjectionId: 'PROJ-SQL-UT9'
+    });
+
+    const priceFinding = findings.find(
+      (f) =>
+        f.type === 'data-boundary-ambiguity' &&
+        f.rationale?.includes("'unit_price'") &&
+        f.rationale?.includes('order_items')
+    );
+    expect(priceFinding).toBeDefined();
+    expect(priceFinding?.rationale).toContain(
+      "SQL table 'order_items' defines mandatory column 'unit_price'"
+    );
+  });
+
+  it('UT-10: preserves true positive: flags enum schema with mismatched CHECK values (AC-3)', () => {
+    const sql = `
+      CREATE TABLE orders (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+        CONSTRAINT chk_orders_status CHECK (status IN ('PENDING', 'PAID'))
+      );
+    `;
+    const openApiDoc = {
+      openapi: '3.1.0',
+      components: {
+        schemas: {
+          Order: { type: 'object', properties: { id: { type: 'string' } } },
+          PaymentMethod: {
+            type: 'string',
+            enum: ['CREDIT_CARD', 'WIRE']
+          }
+        }
+      }
+    };
+
+    const findings = validator.validate({
+      openApiDoc,
+      sqlSchemaContent: sql,
+      baseline,
+      openApiProjectionId: 'PROJ-OAS-UT10',
+      sqlSchemaProjectionId: 'PROJ-SQL-UT10'
+    });
+
+    const paymentFinding = findings.find(
+      (f) => f.type === 'data-boundary-ambiguity' && f.rationale?.includes('PaymentMethod')
+    );
+    expect(paymentFinding).toBeDefined();
+    expect(paymentFinding?.rationale).toContain("OpenAPI declares entity schema 'PaymentMethod'");
+  });
+
+  it('UT-11: synthetic enum derived from CHECK constraint is accessible upfront in enumMap for path segments', () => {
+    const sql = `
+      CREATE TABLE orders (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+        CONSTRAINT chk_orders_status CHECK (status IN ('PENDING', 'PAID', 'SHIPPED', 'CANCELLED'))
+      );
+    `;
+    const openApiDoc = {
+      openapi: '3.1.0',
+      paths: {
+        '/orders': {
+          get: { responses: { '200': { description: 'List orders' } } }
+        },
+        '/order-statuses': {
+          get: {
+            summary: 'List available order statuses',
+            responses: { '200': { description: 'List of order statuses' } }
+          }
+        }
+      },
+      components: {
+        schemas: {
+          Order: { type: 'object', properties: { id: { type: 'string' } } },
+          OrderStatus: {
+            type: 'string',
+            enum: ['PENDING', 'PAID', 'SHIPPED', 'CANCELLED']
+          }
+        }
+      }
+    };
+
+    const findings = validator.validate({
+      openApiDoc,
+      sqlSchemaContent: sql,
+      baseline,
+      openApiProjectionId: 'PROJ-OAS-UT11',
+      sqlSchemaProjectionId: 'PROJ-SQL-UT11'
+    });
+
+    const enumPathFinding = findings.find(
+      (f) => f.rationale?.includes('order-statuses') || f.rationale?.includes('orderstatus')
+    );
+    expect(enumPathFinding).toBeUndefined();
+    expect(findings).toHaveLength(0);
+  });
+
+  it('evaluates isChildTableOf and isParentForeignKey correctly on parent vs lookup relationships', () => {
+    const sql = `
+      CREATE TABLE orders (id UUID PRIMARY KEY);
+      CREATE TABLE products (id UUID PRIMARY KEY);
+      CREATE TABLE order_items (
+        id UUID PRIMARY KEY,
+        order_id UUID NOT NULL REFERENCES orders(id),
+        product_id UUID NOT NULL REFERENCES products(id)
+      );
+    `;
+    const tables = parseSqlTables(sql);
+    const tableMap = new Map(tables.map((t) => [normalizeName(t.name), t]));
+
+    const ordersTable = tableMap.get('order')!;
+    const productsTable = tableMap.get('product')!;
+    const orderItemsTable = tableMap.get('orderitem')!;
+
+    // order_items is child of orders
+    expect(isChildTableOf(orderItemsTable, ordersTable, tableMap)).toBe(true);
+    expect(hasForeignKeyToParent(orderItemsTable, ordersTable)).toBe(true);
+
+    // order_items is NOT child of products (lookup relation)
+    expect(isChildTableOf(orderItemsTable, productsTable, tableMap)).toBe(false);
+
+    // order_id is parent FK on order_items
+    const orderIdCol = orderItemsTable.columns.find((c) => c.name === 'order_id')!;
+    expect(isParentForeignKey(orderIdCol, orderItemsTable, tableMap)).toBe(true);
+
+    // product_id is NOT parent FK on order_items (strict parentage check prevents skipping)
+    const productIdCol = orderItemsTable.columns.find((c) => c.name === 'product_id')!;
+    expect(isParentForeignKey(productIdCol, orderItemsTable, tableMap)).toBe(false);
+  });
+
+  it('evaluates hasBackingChildTable correctly for singular and plural parent prefixes', () => {
+    const sql = `
+      CREATE TABLE orders (id UUID PRIMARY KEY);
+      CREATE TABLE order_items (
+        id UUID PRIMARY KEY,
+        order_id UUID NOT NULL REFERENCES orders(id)
+      );
+    `;
+    const tables = parseSqlTables(sql);
+    const tableMap = new Map(tables.map((t) => [normalizeName(t.name), t]));
+    const ordersTable = tableMap.get('order')!;
+
+    const propSchema = {
+      type: 'array',
+      items: { $ref: '#/components/schemas/OrderItemCreateRequest' }
+    };
+
+    expect(hasBackingChildTable('items', propSchema, ordersTable, tableMap, {})).toBe(true);
+    expect(hasBackingChildTable('order_items', propSchema, ordersTable, tableMap, {})).toBe(true);
+    expect(
+      hasBackingChildTable(
+        'external_tags',
+        { type: 'array', items: { type: 'string' } },
+        ordersTable,
+        tableMap,
+        {}
+      )
+    ).toBe(false);
+  });
+
+  it('matchesCheckConstraintEnum matches when values match even if column name is state', () => {
+    const sql = `
+      CREATE TABLE orders (
+        id UUID PRIMARY KEY,
+        state VARCHAR(32) CHECK (state IN ('PENDING', 'PAID', 'SHIPPED', 'CANCELLED'))
+      );
+    `;
+    const tables = parseSqlTables(sql);
+    const schemaVal = {
+      type: 'string',
+      enum: ['PENDING', 'PAID', 'SHIPPED', 'CANCELLED']
+    };
+
+    expect(isEnumSchema(schemaVal, {})).toBe(true);
+    expect(isEnumSchema({ type: 'string' }, {})).toBe(false);
+    expect(matchesCheckConstraintEnum('orderstatus', schemaVal, tables, {})).toBe(true);
+    expect(matchesCheckConstraintEnum('lifecycle_state', schemaVal, tables, {})).toBe(true);
+    expect(
+      matchesCheckConstraintEnum(
+        'paymentmethod',
+        { type: 'string', enum: ['CREDIT_CARD', 'WIRE'] },
+        tables,
+        {}
+      )
+    ).toBe(false);
+  });
+
+  it('parses production-style @decision SQL line comments before columns and validates enums (AC-1, F-96f9e544, F-60188821)', () => {
+    const sql = `
+      CREATE TABLE orders (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        -- @decision: Use VARCHAR(32) with CHECK constraint for order lifecycle status | Enforces valid domain
+        -- states (PENDING, PAID, SHIPPED, CANCELLED) with migration flexibility
+        status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+        customer_id UUID NOT NULL,
+        CONSTRAINT chk_orders_status CHECK (status IN ('PENDING', 'PAID', 'SHIPPED', 'CANCELLED'))
+      );
+    `;
+    const tables = parseSqlTables(sql);
+    expect(tables).toHaveLength(1);
+    const orderTable = tables[0];
+    // Must NOT have parsed a dummy '--' column
+    expect(orderTable.columns.find((c) => c.name === '--')).toBeUndefined();
+
+    const statusCol = orderTable.columns.find((c) => c.name === 'status');
+    expect(statusCol).toBeDefined();
+    expect(statusCol?.type).toBe('VARCHAR(32)');
+    expect(statusCol?.checkValues).toEqual(['PENDING', 'PAID', 'SHIPPED', 'CANCELLED']);
+
+    const openApiDoc = {
+      openapi: '3.1.0',
+      paths: {
+        '/orders': {
+          get: { responses: { '200': { description: 'List orders' } } }
+        }
+      },
+      components: {
+        schemas: {
+          Order: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', format: 'uuid' },
+              customer_id: { type: 'string', format: 'uuid' },
+              status: { $ref: '#/components/schemas/OrderStatus' }
+            }
+          },
+          OrderStatus: {
+            type: 'string',
+            enum: ['PENDING', 'PAID', 'SHIPPED', 'CANCELLED']
+          }
+        }
+      }
+    };
+
+    const findings = validator.validate({
+      openApiDoc,
+      sqlSchemaContent: sql,
+      baseline,
+      openApiProjectionId: 'PROJ-OAS-DECISION-COMMENT',
+      sqlSchemaProjectionId: 'PROJ-SQL-DECISION-COMMENT'
+    });
+
+    const statusFinding = findings.find(
+      (f) => f.rationale?.includes('OrderStatus') || f.rationale?.includes('orderstatus')
+    );
+    expect(statusFinding).toBeUndefined();
+    expect(findings).toHaveLength(0);
+  });
+
+  it('preserves true positive: flags same-name OrderStatus enum when values are disjoint/mismatched (AC-3, F-2760e041, F-7ccd1074)', () => {
+    const sql = `
+      CREATE TABLE orders (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+        CONSTRAINT chk_orders_status CHECK (status IN ('PENDING', 'PAID'))
+      );
+    `;
+    const openApiDoc = {
+      openapi: '3.1.0',
+      paths: {
+        '/orders': {
+          get: { responses: { '200': { description: 'List orders' } } }
+        }
+      },
+      components: {
+        schemas: {
+          Order: { type: 'object', properties: { id: { type: 'string' } } },
+          OrderStatus: {
+            type: 'string',
+            enum: ['CANCELLED', 'FAILED']
+          }
+        }
+      }
+    };
+
+    const findings = validator.validate({
+      openApiDoc,
+      sqlSchemaContent: sql,
+      baseline,
+      openApiProjectionId: 'PROJ-OAS-MISMATCHED-STATUS',
+      sqlSchemaProjectionId: 'PROJ-SQL-MISMATCHED-STATUS'
+    });
+
+    const statusFinding = findings.find(
+      (f) => f.type === 'data-boundary-ambiguity' && f.rationale?.includes('OrderStatus')
+    );
+    expect(statusFinding).toBeDefined();
+    expect(statusFinding?.rationale).toContain("OpenAPI declares entity schema 'OrderStatus'");
+  });
+
+  it('preserves true positive: flags required array when child table exists by name but has NO parent FK (AC-2, AC-3, F-219d7de5, F-b8f75bcb)', () => {
+    const sql = `
+      CREATE TABLE orders (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        customer_id UUID NOT NULL
+      );
+
+      CREATE TABLE order_items (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        quantity INT NOT NULL
+      );
+    `;
+    const openApiDoc = {
+      openapi: '3.1.0',
+      components: {
+        schemas: {
+          Order: {
+            type: 'object',
+            properties: { id: { type: 'string' }, customer_id: { type: 'string' } }
+          },
+          OrderCreateRequest: {
+            type: 'object',
+            required: ['customer_id', 'items'],
+            properties: {
+              customer_id: { type: 'string', format: 'uuid' },
+              items: {
+                type: 'array',
+                items: { $ref: '#/components/schemas/OrderItemCreateRequest' }
+              }
+            }
+          },
+          OrderItemCreateRequest: {
+            type: 'object',
+            required: ['quantity'],
+            properties: {
+              quantity: { type: 'integer' }
+            }
+          }
+        }
+      }
+    };
+
+    const findings = validator.validate({
+      openApiDoc,
+      sqlSchemaContent: sql,
+      baseline,
+      openApiProjectionId: 'PROJ-OAS-UNLINKED-CHILD',
+      sqlSchemaProjectionId: 'PROJ-SQL-UNLINKED-CHILD'
+    });
+
+    const itemsFinding = findings.find(
+      (f) =>
+        f.type === 'data-boundary-ambiguity' &&
+        f.rationale?.includes("'items'") &&
+        f.rationale?.includes('orders')
+    );
+    expect(itemsFinding).toBeDefined();
+    expect(itemsFinding?.rationale).toContain(
+      "OpenAPI contract requires field 'items', but column 'items' does not exist in SQL table 'orders'."
+    );
+  });
+
+  it('preserves true positive: only parent ownership FK is skipped, distinct second FK to same parent is flagged (F-c9331e9c)', () => {
+    const sql = `
+      CREATE TABLE orders (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid()
+      );
+
+      CREATE TABLE order_items (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id UUID NOT NULL REFERENCES orders(id),
+        previous_order_id UUID NOT NULL REFERENCES orders(id),
+        quantity INT NOT NULL
+      );
+    `;
+    const openApiDoc = {
+      openapi: '3.1.0',
+      components: {
+        schemas: {
+          Order: { type: 'object', properties: { id: { type: 'string' } } },
+          OrderItemCreateRequest: {
+            type: 'object',
+            required: ['quantity'],
+            properties: {
+              quantity: { type: 'integer' }
+              // previous_order_id is omitted!
+            }
+          }
+        }
+      }
+    };
+
+    const findings = validator.validate({
+      openApiDoc,
+      sqlSchemaContent: sql,
+      baseline,
+      openApiProjectionId: 'PROJ-OAS-MULTI-FK',
+      sqlSchemaProjectionId: 'PROJ-SQL-MULTI-FK'
+    });
+
+    // order_id is parent lineage FK, so it should NOT be flagged
+    const orderIdFinding = findings.find(
+      (f) => f.rationale?.includes("'order_id'") && f.rationale?.includes('order_items')
+    );
+    expect(orderIdFinding).toBeUndefined();
+
+    // previous_order_id is NOT parent lineage FK, so it MUST be flagged
+    const prevOrderFinding = findings.find(
+      (f) =>
+        f.type === 'data-boundary-ambiguity' &&
+        f.rationale?.includes("'previous_order_id'") &&
+        f.rationale?.includes('order_items')
+    );
+    expect(prevOrderFinding).toBeDefined();
+    expect(prevOrderFinding?.rationale).toContain(
+      "SQL table 'order_items' defines mandatory column 'previous_order_id' (NOT NULL with no default), but field is missing from OpenAPI schema."
+    );
+  });
+
+  it('correctly tests stripSqlComments without corrupting comments in quoted strings', () => {
+    const sqlWithComments = `
+      -- Line comment at start
+      CREATE TABLE test (
+        id UUID PRIMARY KEY, -- inline comment
+        /* block comment */
+        note VARCHAR(100) DEFAULT '-- not a comment --'
+      );
+    `;
+    const stripped = stripSqlComments(sqlWithComments);
+    expect(stripped).toContain("note VARCHAR(100) DEFAULT '-- not a comment --'");
+    expect(stripped).not.toContain('Line comment at start');
+    expect(stripped).not.toContain('inline comment');
+    expect(stripped).not.toContain('block comment');
   });
 });

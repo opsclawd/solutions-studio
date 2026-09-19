@@ -12,17 +12,28 @@ export interface SqlColumnDefinition {
   readonly isPrimaryKey: boolean;
   readonly isNotNull: boolean;
   readonly hasDefault: boolean;
+  readonly checkValues?: readonly string[];
+  readonly referencesTable?: string;
+  readonly referencesColumn?: string;
+}
+
+export interface SqlForeignKeyDefinition {
+  readonly column: string;
+  readonly referencedTable: string;
+  readonly referencedColumn?: string;
 }
 
 export interface SqlTableDefinition {
   readonly name: string;
   readonly columns: readonly SqlColumnDefinition[];
   readonly primaryKeyColumns: readonly string[];
+  readonly foreignKeys?: readonly SqlForeignKeyDefinition[];
 }
 
 export interface SqlEnumDefinition {
   readonly name: string;
   readonly values: readonly string[];
+  readonly isSynthetic?: boolean;
 }
 
 export interface CrossValidationInput {
@@ -49,6 +60,100 @@ export function normalizeName(name: string): string {
   return clean;
 }
 
+const TABLE_CHECK_REGEX =
+  /(?:CONSTRAINT\s+(?<constraintName>[a-zA-Z0-9_]+)\s+)?CHECK\s*\(\s*\(?(?:[a-zA-Z0-9_."]+\.)?(?<colName>[a-zA-Z0-9_"]+)\s+IN\s*\((?<rawVals>[\s\S]*?)\)\s*\)?\s*\)/i;
+
+const TABLE_FK_REGEX =
+  /(?:CONSTRAINT\s+[a-zA-Z0-9_]+\s+)?FOREIGN\s+KEY\s*\((?<fkCols>[^)]+)\)\s*REFERENCES\s+(?<refTable>[a-zA-Z0-9_."]+)(?:\s*\((?<refCols>[^)]+)\))?/i;
+
+const INLINE_CHECK_REGEX =
+  /CHECK\s*\(\s*\(?(?:(?:[a-zA-Z0-9_."]+\.)?[a-zA-Z0-9_"]+\s+IN|VALUE\s+IN|IN)\s*\((?<rawVals>[\s\S]*?)\)\s*\)?\s*\)/i;
+
+const INLINE_FK_REGEX = /REFERENCES\s+(?<refTable>[a-zA-Z0-9_."]+)(?:\s*\((?<refCol>[^)]+)\))?/i;
+
+export function stripSqlComments(sql: string): string {
+  let result = '';
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+
+  for (let i = 0; i < sql.length; i++) {
+    const char = sql[i];
+    const nextChar = i + 1 < sql.length ? sql[i + 1] : '';
+
+    if (inLineComment) {
+      if (char === '\n') {
+        inLineComment = false;
+        result += '\n';
+      }
+      continue;
+    }
+
+    if (inBlockComment) {
+      if (char === '*' && nextChar === '/') {
+        inBlockComment = false;
+        i++;
+      }
+      continue;
+    }
+
+    if (inSingleQuote) {
+      result += char;
+      if (char === "'") {
+        if (nextChar === "'") {
+          result += nextChar;
+          i++;
+        } else {
+          inSingleQuote = false;
+        }
+      }
+      continue;
+    }
+
+    if (inDoubleQuote) {
+      result += char;
+      if (char === '"') {
+        if (nextChar === '"') {
+          result += nextChar;
+          i++;
+        } else {
+          inDoubleQuote = false;
+        }
+      }
+      continue;
+    }
+
+    if (char === '-' && nextChar === '-') {
+      inLineComment = true;
+      i++;
+      continue;
+    }
+
+    if (char === '/' && nextChar === '*') {
+      inBlockComment = true;
+      i++;
+      continue;
+    }
+
+    if (char === "'") {
+      inSingleQuote = true;
+      result += char;
+      continue;
+    }
+
+    if (char === '"') {
+      inDoubleQuote = true;
+      result += char;
+      continue;
+    }
+
+    result += char;
+  }
+
+  return result;
+}
+
 export function parseSqlTables(sql: string): SqlTableDefinition[] {
   const tables: SqlTableDefinition[] = [];
   // Match CREATE TABLE [IF NOT EXISTS] name (...)
@@ -59,17 +164,19 @@ export function parseSqlTables(sql: string): SqlTableDefinition[] {
   while ((match = tableRegex.exec(sql)) !== null) {
     const rawTableName = match[1].replace(/["']/g, '').split('.').pop() ?? match[1];
     const body = match[2];
+    const cleanBody = stripSqlComments(body);
 
     const columns: SqlColumnDefinition[] = [];
     const pkColumns: string[] = [];
+    const foreignKeys: SqlForeignKeyDefinition[] = [];
 
-    // Split body by commas that are not inside parentheses
+    // Split cleanBody by commas that are not inside parentheses
     const lines: string[] = [];
     let currentLine = '';
     let parenDepth = 0;
 
-    for (let i = 0; i < body.length; i++) {
-      const char = body[i];
+    for (let i = 0; i < cleanBody.length; i++) {
+      const char = cleanBody[i];
       if (char === '(') parenDepth++;
       else if (char === ')') parenDepth--;
 
@@ -84,9 +191,13 @@ export function parseSqlTables(sql: string): SqlTableDefinition[] {
       lines.push(currentLine.trim());
     }
 
+    const tableCheckMap = new Map<string, string[]>();
+    const tableFkMap = new Map<string, { table: string; col?: string }>();
+
+    // Pass 1: Extract table-level constraints
     for (const rawLine of lines) {
-      const line = rawLine.trim().replace(/\s+/g, ' ');
-      if (!line || line.startsWith('--')) continue;
+      const line = rawLine.replace(/\s+/g, ' ').trim();
+      if (!line) continue;
 
       // Table-level PRIMARY KEY constraint
       const tablePkMatch = line.match(/(?:CONSTRAINT\s+\w+\s+)?PRIMARY\s+KEY\s*\(([^)]+)\)/i);
@@ -96,8 +207,54 @@ export function parseSqlTables(sql: string): SqlTableDefinition[] {
         continue;
       }
 
-      // Skip other table-level constraints
-      if (/^(?:CONSTRAINT|FOREIGN\s+KEY|UNIQUE|CHECK)\b/i.test(line)) {
+      // Table-level CHECK constraint
+      const tableCheckMatch = line.match(TABLE_CHECK_REGEX);
+      if (tableCheckMatch?.groups?.colName && tableCheckMatch?.groups?.rawVals) {
+        const colName = tableCheckMatch.groups.colName.replace(/["']/g, '');
+        const vals = tableCheckMatch.groups.rawVals
+          .split(',')
+          .map((v) =>
+            v
+              .trim()
+              .replace(/^['"]|['"]$/g, '')
+              .trim()
+          )
+          .filter((v) => v.length > 0);
+        tableCheckMap.set(colName.toLowerCase(), vals);
+        continue;
+      }
+
+      // Table-level FOREIGN KEY constraint
+      const tableFkMatch = line.match(TABLE_FK_REGEX);
+      if (tableFkMatch?.groups?.fkCols && tableFkMatch?.groups?.refTable) {
+        const fkCols = tableFkMatch.groups.fkCols
+          .split(',')
+          .map((c) => c.trim().replace(/["']/g, ''));
+        const rawRefTable =
+          tableFkMatch.groups.refTable.replace(/["']/g, '').split('.').pop() ??
+          tableFkMatch.groups.refTable;
+        const refCols = tableFkMatch.groups.refCols
+          ? tableFkMatch.groups.refCols.split(',').map((c) => c.trim().replace(/["']/g, ''))
+          : [];
+        fkCols.forEach((col, idx) => {
+          tableFkMap.set(col.toLowerCase(), { table: rawRefTable, col: refCols[idx] });
+          foreignKeys.push({
+            column: col,
+            referencedTable: rawRefTable,
+            referencedColumn: refCols[idx]
+          });
+        });
+        continue;
+      }
+    }
+
+    // Pass 2: Extract column definitions and inline constraints
+    for (const rawLine of lines) {
+      const line = rawLine.replace(/\s+/g, ' ').trim();
+      if (!line) continue;
+
+      // Skip table-level constraints
+      if (/^(?:CONSTRAINT|PRIMARY\s+KEY|FOREIGN\s+KEY|UNIQUE|CHECK)\b/i.test(line)) {
         continue;
       }
 
@@ -120,12 +277,51 @@ export function parseSqlTables(sql: string): SqlTableDefinition[] {
         /GENERATED\s+ALWAYS\s+AS\s+IDENTITY/i.test(line) ||
         /gen_random_uuid/i.test(line);
 
+      // Inline CHECK
+      let inlineCheckVals: string[] | undefined;
+      const inlineCheckMatch = line.match(INLINE_CHECK_REGEX);
+      if (inlineCheckMatch?.groups?.rawVals) {
+        inlineCheckVals = inlineCheckMatch.groups.rawVals
+          .split(',')
+          .map((v) =>
+            v
+              .trim()
+              .replace(/^['"]|['"]$/g, '')
+              .trim()
+          )
+          .filter((v) => v.length > 0);
+      }
+
+      // Inline REFERENCES
+      let inlineFkInfo: { table: string; col?: string } | undefined;
+      const inlineFkMatch = line.match(INLINE_FK_REGEX);
+      if (inlineFkMatch?.groups?.refTable) {
+        const rawRefTable =
+          inlineFkMatch.groups.refTable.replace(/["']/g, '').split('.').pop() ??
+          inlineFkMatch.groups.refTable;
+        const refCol = inlineFkMatch.groups.refCol
+          ? inlineFkMatch.groups.refCol.replace(/["']/g, '').trim()
+          : undefined;
+        inlineFkInfo = { table: rawRefTable, col: refCol };
+        foreignKeys.push({
+          column: colName,
+          referencedTable: rawRefTable,
+          referencedColumn: refCol
+        });
+      }
+
+      const checkValues = inlineCheckVals ?? tableCheckMap.get(colName.toLowerCase());
+      const fkInfo = inlineFkInfo ?? tableFkMap.get(colName.toLowerCase());
+
       columns.push({
         name: colName,
         type: colType,
         isPrimaryKey: isInlinePk,
         isNotNull,
-        hasDefault
+        hasDefault,
+        checkValues,
+        referencesTable: fkInfo?.table,
+        referencesColumn: fkInfo?.col
       });
     }
 
@@ -138,7 +334,8 @@ export function parseSqlTables(sql: string): SqlTableDefinition[] {
     tables.push({
       name: rawTableName,
       columns: finalColumns,
-      primaryKeyColumns: [...new Set(pkColumns)]
+      primaryKeyColumns: [...new Set(pkColumns)],
+      foreignKeys: foreignKeys.length > 0 ? foreignKeys : undefined
     });
   }
 
@@ -154,7 +351,7 @@ export function parseSqlEnums(sql: string): SqlEnumDefinition[] {
   while ((match = enumRegex.exec(sql)) !== null) {
     const rawEnumName = match[1].replace(/["']/g, '').split('.').pop() ?? match[1];
     const body = match[2];
-    const cleanedBody = body.replace(/--.*$/gm, '');
+    const cleanedBody = stripSqlComments(body);
     const values = cleanedBody
       .split(',')
       .map((val) => val.trim().replace(/^['"]|['"]$/g, ''))
@@ -350,11 +547,13 @@ export function resolveTableAlias(
       }
     }
 
-    for (const [tNorm, table] of tableMap.entries()) {
-      if (tNorm.endsWith('item') && tNorm !== 'item') {
-        const parentNorm = tNorm.slice(0, -4);
-        if (tableMap.has(parentNorm)) {
-          return table;
+    if (!schemaPrefix || !tableMap.has(schemaPrefix)) {
+      for (const [tNorm, table] of tableMap.entries()) {
+        if (tNorm.endsWith('item') && tNorm !== 'item') {
+          const parentNorm = tNorm.slice(0, -4);
+          if (tableMap.has(parentNorm)) {
+            return table;
+          }
         }
       }
     }
@@ -467,6 +666,335 @@ const RAW_ACTION_VERBS = [
   'confirm'
 ] as const;
 
+export function isEnumSchema(schemaOrRef: unknown, openApiDoc: Record<string, unknown>): boolean {
+  if (!schemaOrRef || typeof schemaOrRef !== 'object') return false;
+  const resolved = resolveSchemaRef(schemaOrRef, openApiDoc);
+  if (!resolved || typeof resolved !== 'object') return false;
+
+  if (Array.isArray(resolved.enum) && resolved.enum.length > 0) {
+    return true;
+  }
+  if (Array.isArray(resolved.allOf)) {
+    for (const sub of resolved.allOf) {
+      if (isEnumSchema(sub, openApiDoc)) return true;
+    }
+  }
+  return false;
+}
+
+export function getEnumValues(
+  schemaOrRef: unknown,
+  openApiDoc: Record<string, unknown>
+): string[] | undefined {
+  if (!schemaOrRef || typeof schemaOrRef !== 'object') return undefined;
+  const resolved = resolveSchemaRef(schemaOrRef, openApiDoc);
+  if (!resolved || typeof resolved !== 'object') return undefined;
+
+  if (Array.isArray(resolved.enum) && resolved.enum.length > 0) {
+    return resolved.enum.map((v) => String(v));
+  }
+  if (Array.isArray(resolved.allOf)) {
+    for (const sub of resolved.allOf) {
+      const vals = getEnumValues(sub, openApiDoc);
+      if (vals && vals.length > 0) return vals;
+    }
+  }
+  return undefined;
+}
+
+export function matchesCheckConstraintEnum(
+  normSchema: string,
+  schemaVal: unknown,
+  sqlTables: readonly SqlTableDefinition[],
+  openApiDoc: Record<string, unknown>
+): boolean {
+  const enumVals = getEnumValues(schemaVal, openApiDoc);
+  if (!enumVals || enumVals.length === 0) {
+    return false;
+  }
+
+  const schemaEnumSet = new Set(enumVals.map((v) => v.toUpperCase().trim()));
+
+  for (const table of sqlTables) {
+    const normTable = normalizeName(table.name);
+    for (const col of table.columns) {
+      if (!col.checkValues || col.checkValues.length === 0) continue;
+      // String-compatible column
+      if (!/VARCHAR|TEXT|CHAR|STRING/i.test(col.type)) continue;
+
+      const normCol = normalizeName(col.name);
+      const colCheckSet = new Set(col.checkValues.map((v) => v.toUpperCase().trim()));
+
+      let overlapCount = 0;
+      for (const val of schemaEnumSet) {
+        if (colCheckSet.has(val)) {
+          overlapCount++;
+        }
+      }
+
+      if (overlapCount === 0) continue;
+
+      const isSubset = overlapCount === schemaEnumSet.size;
+      const isSuperset = overlapCount === colCheckSet.size;
+
+      if (!isSubset && !isSuperset) continue;
+
+      // Naming affinity
+      const normComposite = normalizeName(`${table.name}_${col.name}`);
+      const normComposite2 = normalizeName(`${normTable}_${col.name}`);
+      const hasNamingAffinity =
+        normSchema === normCol ||
+        normSchema === normComposite ||
+        normSchema === normComposite2 ||
+        normSchema.includes(normCol) ||
+        normCol.includes(normSchema);
+
+      if (hasNamingAffinity || overlapCount >= 2) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+export function hasForeignKeyToParent(
+  childTable: SqlTableDefinition,
+  parentTable: SqlTableDefinition
+): boolean {
+  const normParent = normalizeName(parentTable.name);
+  return childTable.columns.some((c) => {
+    if (c.referencesTable && normalizeName(c.referencesTable) === normParent) {
+      return true;
+    }
+    const normCol = normalizeName(c.name);
+    return normCol === `${normParent}id` || normCol === 'parentid';
+  });
+}
+
+export function isChildTableOf(
+  childTable: SqlTableDefinition,
+  parentTable: SqlTableDefinition,
+  tableMap: Map<string, SqlTableDefinition>,
+  openApiDoc?: Record<string, unknown>
+): boolean {
+  const normChild = normalizeName(childTable.name);
+  const normParent = normalizeName(parentTable.name);
+  if (normChild === normParent) return false;
+
+  // Check 1: Naming convention prefix + child suffix
+  const childSuffixes = ['item', 'line', 'detail', 'entry', 'row', 'element', 'part', 'component'];
+  const hasParentPrefix = normChild.startsWith(normParent);
+  const hasChildSuffix = childSuffixes.some((s) => normChild.endsWith(s));
+  if (hasParentPrefix && hasChildSuffix) {
+    return true;
+  }
+
+  // Check 2: Incoming array relationship in OpenAPI parent schema
+  if (openApiDoc && openApiDoc.components && typeof openApiDoc.components === 'object') {
+    const schemas = (openApiDoc.components as Record<string, unknown>).schemas as
+      Record<string, unknown> | undefined;
+    if (schemas) {
+      for (const [sName, sVal] of Object.entries(schemas)) {
+        const normS = normalizeName(sName);
+        if (
+          normS === normParent ||
+          normS === `create${normParent}` ||
+          normS === `${normParent}create` ||
+          normS === `new${normParent}` ||
+          normS === `${normParent}createrequest` ||
+          normS === `create${normParent}request`
+        ) {
+          const props = extractProperties(sVal as Record<string, unknown>, openApiDoc);
+          for (const pVal of Object.values(props)) {
+            const resolvedP =
+              resolveSchemaRef(pVal, openApiDoc) ?? (pVal as Record<string, unknown>);
+            if (
+              resolvedP &&
+              resolvedP.type === 'array' &&
+              resolvedP.items &&
+              typeof resolvedP.items === 'object'
+            ) {
+              const itemObj = resolvedP.items as Record<string, unknown>;
+              const refTarget =
+                typeof itemObj.$ref === 'string'
+                  ? itemObj.$ref.split('/').pop()
+                  : typeof itemObj.title === 'string'
+                    ? itemObj.title
+                    : undefined;
+              if (refTarget) {
+                const normRef = normalizeName(refTarget);
+                if (
+                  normRef === normChild ||
+                  normChild.startsWith(normRef) ||
+                  normRef.startsWith(normChild)
+                ) {
+                  return true;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Check 3: Suffix alias resolution through resolveTableAlias (Resolves AC-12)
+  const resolvedChild = resolveTableAlias(normChild, tableMap);
+  if (resolvedChild && resolvedChild.name === childTable.name) {
+    const childPrefix = normChild.endsWith('item') ? normChild.slice(0, -4) : normChild;
+    if (
+      childPrefix &&
+      (childPrefix === normParent ||
+        childPrefix.startsWith(normParent) ||
+        normParent.startsWith(childPrefix))
+    ) {
+      return true;
+    }
+  }
+  const resolvedParentChild = resolveTableAlias(`${normParent}item`, tableMap);
+  if (resolvedParentChild && resolvedParentChild.name === childTable.name) {
+    return true;
+  }
+
+  return false;
+}
+
+export function isParentForeignKey(
+  col: SqlColumnDefinition,
+  table: SqlTableDefinition,
+  tableMap: Map<string, SqlTableDefinition>,
+  openApiDoc?: Record<string, unknown>
+): boolean {
+  const normCol = normalizeName(col.name);
+
+  // Case A: Explicit REFERENCES constraint
+  if (col.referencesTable) {
+    const normRefTable = normalizeName(col.referencesTable);
+    const parentTable = tableMap.get(normRefTable) ?? resolveTableAlias(normRefTable, tableMap);
+    if (!parentTable) return false;
+
+    // Strict parentage requirement: table MUST be a verified child of parentTable
+    const isChild = isChildTableOf(table, parentTable, tableMap, openApiDoc);
+    if (!isChild) {
+      // Non-parent foreign key! e.g. product_id REFERENCES products(id) on order_items.
+      return false;
+    }
+
+    // Must be the parent's lineage key (local column name must match parent lineage form)
+    const matchesLocalParentId = normCol === `${normRefTable}id` || normCol === 'parentid';
+
+    if (!matchesLocalParentId) {
+      return false;
+    }
+
+    // If referencesColumn is specified, it should refer to the parent's primary key
+    if (
+      col.referencesColumn &&
+      normalizeName(col.referencesColumn) !== 'id' &&
+      normalizeName(col.referencesColumn) !== `${normRefTable}id`
+    ) {
+      return false;
+    }
+
+    return true;
+  }
+
+  // Case B: Inferred FK via naming convention on verified child table
+  for (const [normParent, parentTable] of tableMap.entries()) {
+    if (isChildTableOf(table, parentTable, tableMap, openApiDoc)) {
+      if (normCol === `${normParent}id` || normCol === 'parentid') {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+export function hasBackingChildTable(
+  propName: string,
+  propSchema: Record<string, unknown>,
+  parentTable: SqlTableDefinition,
+  tableMap: Map<string, SqlTableDefinition>,
+  openApiDoc: Record<string, unknown>
+): boolean {
+  const normParent = normalizeName(parentTable.name);
+  const normProp = normalizeName(propName);
+
+  // Strategy 1: Target schema name from array items ($ref or title)
+  let targetSchemaName: string | undefined;
+  if (propSchema.items && typeof propSchema.items === 'object') {
+    const itemsObj = propSchema.items as Record<string, unknown>;
+    if (typeof itemsObj.$ref === 'string') {
+      targetSchemaName = itemsObj.$ref.split('/').pop();
+    } else if (typeof itemsObj.title === 'string') {
+      targetSchemaName = itemsObj.title;
+    }
+  }
+
+  const candidateNames: string[] = [];
+  if (targetSchemaName) {
+    const stripped = targetSchemaName.replace(
+      /(?:Create|Update|New)?(?:Request|Response|Dto|Input)$/i,
+      ''
+    );
+    candidateNames.push(stripped);
+    candidateNames.push(targetSchemaName);
+  }
+
+  // Strategy 2: Singularized parent prefix combined with property name
+  candidateNames.push(`${normParent}_${normProp}`);
+  candidateNames.push(`${normParent}_${propName}`);
+  candidateNames.push(propName);
+  candidateNames.push(normProp);
+
+  // Strategy 3: Check candidate names in tableMap and verify BOTH parent-child relationship AND foreign key link
+  for (const candidate of candidateNames) {
+    const normCandidate = normalizeName(candidate);
+    const candidateTable =
+      tableMap.get(normCandidate) ?? resolveTableAlias(normCandidate, tableMap);
+    if (candidateTable && candidateTable.name !== parentTable.name) {
+      if (
+        hasForeignKeyToParent(candidateTable, parentTable) &&
+        isChildTableOf(candidateTable, parentTable, tableMap, openApiDoc)
+      ) {
+        return true;
+      }
+    }
+  }
+
+  // Strategy 4: Foreign key scan across tableMap for tables referencing parentTable
+  for (const candidateTable of tableMap.values()) {
+    if (candidateTable.name === parentTable.name) continue;
+    const hasFkToParent = hasForeignKeyToParent(candidateTable, parentTable);
+    if (hasFkToParent) {
+      const normChild = normalizeName(candidateTable.name);
+      const matchesProperty =
+        normChild.includes(normProp) ||
+        normProp.includes(normChild) ||
+        (DEFAULT_SCHEMA_TABLE_ALIASES[normProp]?.some(
+          (alias) => normalizeName(alias) === normChild
+        ) ??
+          false);
+      const matchesTarget =
+        targetSchemaName !== undefined &&
+        (normChild.includes(normalizeName(targetSchemaName)) ||
+          normalizeName(targetSchemaName).includes(normChild) ||
+          (DEFAULT_SCHEMA_TABLE_ALIASES[normalizeName(targetSchemaName)]?.some(
+            (alias) => normalizeName(alias) === normChild
+          ) ??
+            false));
+
+      if (matchesProperty || matchesTarget) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 export class SchemaApiCrossValidator {
   validate(input: CrossValidationInput): CandidateFinding[] {
     const findings: CandidateFinding[] = [];
@@ -484,6 +1012,27 @@ export class SchemaApiCrossValidator {
     const enumMap = new Map<string, SqlEnumDefinition>();
     for (const sqlEnum of sqlEnums) {
       enumMap.set(normalizeName(sqlEnum.name), sqlEnum);
+    }
+
+    // Upfront synthetic enum population from VARCHAR + CHECK constraints
+    for (const table of sqlTables) {
+      const normTable = normalizeName(table.name);
+      for (const col of table.columns) {
+        if (col.checkValues && col.checkValues.length > 0) {
+          const syntheticEnum: SqlEnumDefinition = {
+            name: `${table.name}_${col.name}`,
+            values: col.checkValues,
+            isSynthetic: true
+          };
+          // Register under composite names and column name
+          enumMap.set(normalizeName(`${table.name}_${col.name}`), syntheticEnum);
+          enumMap.set(normalizeName(`${normTable}_${col.name}`), syntheticEnum);
+          enumMap.set(normalizeName(`${normTable}${col.name}`), syntheticEnum);
+          if (!enumMap.has(normalizeName(col.name))) {
+            enumMap.set(normalizeName(col.name), syntheticEnum);
+          }
+        }
+      }
     }
 
     const openApiDoc = input.openApiDoc;
@@ -539,7 +1088,19 @@ export class SchemaApiCrossValidator {
         const matchingTable =
           tableMap.get(normSchema) ?? resolveTableAlias(normSchema, tableMap, schemas[schemaName]);
         const matchingEnum = enumMap.get(normSchema);
-        if (!matchingTable && !matchingEnum) {
+        const isNativeEnumMatch = Boolean(matchingEnum && !matchingEnum.isSynthetic);
+        let isCheckEnumMatch = false;
+
+        if (!matchingTable && !isNativeEnumMatch) {
+          isCheckEnumMatch = matchesCheckConstraintEnum(
+            normSchema,
+            schemas[schemaName],
+            sqlTables,
+            openApiDoc
+          );
+        }
+
+        if (!matchingTable && !isNativeEnumMatch && !isCheckEnumMatch) {
           addFinding(
             'data-boundary-ambiguity',
             `OpenAPI declares entity schema '${schemaName}', but no corresponding table '${schemaName.toLowerCase()}' exists in relational schema projection '${input.sqlSchemaProjectionId}'.`
@@ -749,6 +1310,17 @@ export class SchemaApiCrossValidator {
           if (normField === 'id' || normField === `${normTableName}id`) continue;
 
           if (!tableColNormMap.has(normField)) {
+            const propDef = schemaProps[reqField];
+            if (propDef && typeof propDef === 'object') {
+              const resolvedProp =
+                resolveSchemaRef(propDef, openApiDoc) ?? (propDef as Record<string, unknown>);
+              if (resolvedProp.type === 'array') {
+                if (hasBackingChildTable(reqField, resolvedProp, table, tableMap, openApiDoc)) {
+                  continue;
+                }
+              }
+            }
+
             addFinding(
               'data-boundary-ambiguity',
               `OpenAPI contract requires field '${reqField}', but column '${reqField}' does not exist in SQL table '${table.name}'.`
@@ -760,6 +1332,10 @@ export class SchemaApiCrossValidator {
         for (const col of table.columns) {
           if (col.isNotNull && !col.hasDefault && !col.isPrimaryKey) {
             const normCol = normalizeName(col.name);
+
+            if (isParentForeignKey(col, table, tableMap, openApiDoc)) {
+              continue;
+            }
 
             if (!schemaPropKeys.includes(normCol)) {
               addFinding(
