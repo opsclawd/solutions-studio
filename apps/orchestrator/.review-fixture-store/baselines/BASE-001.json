@@ -1,6 +1,7 @@
 {
   "id": "BASE-001",
   "requirementRevisions": ["REQ-002-R1"],
+  "policyConstraintRevisions": [],
   "createdBy": "lead-reviewer",
-  "createdAt": "2026-09-18T23:00:28.996Z"
+  "createdAt": "2026-09-19T06:23:17.747Z"
 }

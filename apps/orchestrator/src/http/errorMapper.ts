@@ -29,6 +29,10 @@ import {
   SqlExecutionValidationError
 } from '../application/use-cases/SqlSchemaProjectionErrors.js';
 import {
+  OpenApiProvenanceValidationError,
+  OpenApiStructuralValidationError
+} from '../application/use-cases/OpenApiProjectionErrors.js';
+import {
   UnknownProjectionError,
   ProjectionBaselineMismatchError,
   RequirementAlreadyExistsError
@@ -328,6 +332,36 @@ export function mapErrorToResponse(error: unknown): MappedErrorResponse {
   }
 
   if (error instanceof SqlExecutionValidationError) {
+    return {
+      statusCode: 400,
+      body: {
+        code: 'VALIDATION_ERROR',
+        message: error.message,
+        details: error.errorDetails
+      }
+    };
+  }
+
+  if (error instanceof OpenApiProvenanceValidationError) {
+    return {
+      statusCode: 400,
+      body: {
+        code: 'VALIDATION_ERROR',
+        message: error.message,
+        details: {
+          baselineId: error.baselineId,
+          invalidRequirementRevisionIds: error.invalidRequirementRevisionIds,
+          allowedRequirementRevisionIds: error.allowedRequirementRevisionIds,
+          invalidPolicyConstraintRevisionIds: error.invalidPolicyConstraintRevisionIds,
+          allowedPolicyConstraintRevisionIds: error.allowedPolicyConstraintRevisionIds,
+          invalidEngineeringDecisionIds: error.invalidEngineeringDecisionIds,
+          allowedEngineeringDecisionIds: error.allowedEngineeringDecisionIds
+        }
+      }
+    };
+  }
+
+  if (error instanceof OpenApiStructuralValidationError) {
     return {
       statusCode: 400,
       body: {

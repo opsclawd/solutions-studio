@@ -20,6 +20,7 @@ import type {
   GeneratePrototypeProjectionUseCase
 } from './GeneratePrototypeProjectionUseCase.js';
 import type { GenerateSqlSchemaProjectionUseCase } from './GenerateSqlSchemaProjectionUseCase.js';
+import type { GenerateOpenApiProjectionUseCase } from './GenerateOpenApiProjectionUseCase.js';
 import {
   UnknownRequirementRevisionError,
   UnknownRequirementsBaselineError
@@ -27,7 +28,8 @@ import {
 
 export interface ProjectBaselineInput {
   readonly baselineId: RequirementsBaselineId | string;
-  readonly artifactType: 'process-diagram' | 'state-diagram' | 'prototype' | 'sql-schema';
+  readonly artifactType:
+    'process-diagram' | 'state-diagram' | 'prototype' | 'sql-schema' | 'openapi';
   readonly prompt?: string;
   readonly options?: GenerateArtifactOptions;
   readonly id?: string;
@@ -41,7 +43,8 @@ export class ProjectBaselineUseCase {
     private readonly repository: IRequirementsRepository,
     private readonly providerName: string = 'fake',
     private readonly generatePrototypeProjectionUseCase?: GeneratePrototypeProjectionUseCase,
-    private readonly generateSqlSchemaProjectionUseCase?: GenerateSqlSchemaProjectionUseCase
+    private readonly generateSqlSchemaProjectionUseCase?: GenerateSqlSchemaProjectionUseCase,
+    private readonly generateOpenApiProjectionUseCase?: GenerateOpenApiProjectionUseCase
   ) {}
 
   async project(input: ProjectBaselineInput): Promise<BaselineProjectionResult> {
@@ -66,6 +69,20 @@ export class ProjectBaselineUseCase {
         );
       }
       return this.generateSqlSchemaProjectionUseCase.execute({
+        baselineId: input.baselineId,
+        prompt: input.prompt,
+        options: input.options,
+        id: input.id
+      });
+    }
+
+    if (input.artifactType === 'openapi') {
+      if (!this.generateOpenApiProjectionUseCase) {
+        throw new Error(
+          'GenerateOpenApiProjectionUseCase not configured on ProjectBaselineUseCase'
+        );
+      }
+      return this.generateOpenApiProjectionUseCase.execute({
         baselineId: input.baselineId,
         prompt: input.prompt,
         options: input.options,
