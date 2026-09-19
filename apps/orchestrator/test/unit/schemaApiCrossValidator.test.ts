@@ -1922,4 +1922,536 @@ describe('SchemaApiCrossValidator', () => {
       expect(nodeSelfRef.isChildEntity).toBe(false);
     }
   });
+
+  describe('Issue #86: Phase 3.12 remediation', () => {
+    it('recognizes explicit FK child table without naming-convention prefix/suffix (Test 3.1)', () => {
+      const sql = `
+        CREATE TABLE orders (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          order_number VARCHAR(64) NOT NULL
+        );
+
+        CREATE TABLE payment_authorizations (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          order_id UUID NOT NULL REFERENCES orders(id),
+          authorized_amount NUMERIC(10, 2) NOT NULL
+        );
+      `;
+
+      const tables = parseSqlTables(sql);
+      const tableMap = new Map(tables.map((t) => [normalizeName(t.name), t]));
+      const ordersTable = tableMap.get('order')!;
+      const paymentAuthTable = tableMap.get('paymentauthorization')!;
+      const orderIdCol = paymentAuthTable.columns.find((c) => c.name === 'order_id')!;
+
+      // 1. isChildTableOf returns true due to explicit REFERENCES FK to orders
+      expect(isChildTableOf(paymentAuthTable, ordersTable, tableMap)).toBe(true);
+
+      // 2. isParentForeignKey returns true for order_id
+      expect(isParentForeignKey(orderIdCol, paymentAuthTable, tableMap)).toBe(true);
+
+      // 3. validator.validate does NOT flag order_id or payment_authorizations
+      const openApiDoc = {
+        openapi: '3.0.3',
+        info: { title: 'Payment API', version: '1.0.0' },
+        paths: {
+          '/orders/{id}': {
+            patch: {
+              summary: 'Update order',
+              requestBody: {
+                content: {
+                  'application/json': {
+                    schema: {
+                      $ref: '#/components/schemas/PaymentAuthorization'
+                    }
+                  }
+                }
+              },
+              responses: { '200': { description: 'OK' } }
+            }
+          }
+        },
+        components: {
+          schemas: {
+            Order: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', format: 'uuid' },
+                order_number: { type: 'string' }
+              },
+              required: ['id', 'order_number']
+            },
+            PaymentAuthorization: {
+              type: 'object',
+              properties: {
+                authorized_amount: { type: 'number' }
+              },
+              required: ['authorized_amount']
+            }
+          }
+        }
+      };
+
+      const findings = validator.validate({
+        openApiDoc,
+        sqlSchemaContent: sql,
+        baseline,
+        openApiProjectionId: 'PROJ-OAS-86-1',
+        sqlSchemaProjectionId: 'PROJ-SQL-86-1'
+      });
+
+      const missingColFindings = findings.filter(
+        (f) => f.rationale?.includes('payment_authorizations') && f.rationale?.includes('order_id')
+      );
+      expect(missingColFindings).toHaveLength(0);
+      expect(findings).toHaveLength(0);
+    });
+
+    it('matches hyphenated multi-word action path segments without state-transition annotations (Test 3.2)', () => {
+      const sql = `
+        CREATE TABLE orders (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          order_number VARCHAR(64) NOT NULL
+        );
+      `;
+
+      const openApiDoc = {
+        openapi: '3.0.3',
+        info: { title: 'Orders API', version: '1.0.0' },
+        paths: {
+          '/orders/{id}/verify-payment': {
+            post: {
+              summary: 'Verify payment for order',
+              responses: { '200': { description: 'OK' } }
+            }
+          },
+          '/orders/{id}/process-refund': {
+            post: {
+              summary: 'Process refund for order',
+              responses: { '200': { description: 'OK' } }
+            }
+          }
+        },
+        components: {
+          schemas: {
+            Order: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', format: 'uuid' },
+                order_number: { type: 'string' }
+              },
+              required: ['id', 'order_number']
+            }
+          }
+        }
+      };
+
+      const findings = validator.validate({
+        openApiDoc,
+        sqlSchemaContent: sql,
+        baseline,
+        openApiProjectionId: 'PROJ-OAS-86-2',
+        sqlSchemaProjectionId: 'PROJ-SQL-86-2'
+      });
+
+      const actionPathFindings = findings.filter(
+        (f) =>
+          f.type === 'data-boundary-ambiguity' &&
+          (f.rationale?.includes('verify-payment') || f.rationale?.includes('process-refund'))
+      );
+      expect(actionPathFindings).toHaveLength(0);
+      expect(findings).toHaveLength(0);
+    });
+
+    it('regression guard: secondary lookup FK with explicit parent FK is NOT exempted (Test 3.3a)', () => {
+      const sql = `
+        CREATE TABLE orders (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          order_number VARCHAR(64) NOT NULL
+        );
+
+        CREATE TABLE products (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          sku VARCHAR(64) NOT NULL
+        );
+
+        CREATE TABLE order_items (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          order_id UUID NOT NULL REFERENCES orders(id),
+          product_id UUID NOT NULL REFERENCES products(id),
+          quantity INT NOT NULL
+        );
+      `;
+
+      const tables = parseSqlTables(sql);
+      const tableMap = new Map(tables.map((t) => [normalizeName(t.name), t]));
+      const ordersTable = tableMap.get('order')!;
+      const productsTable = tableMap.get('product')!;
+      const orderItemsTable = tableMap.get('orderitem')!;
+      const orderIdCol = orderItemsTable.columns.find((c) => c.name === 'order_id')!;
+      const productIdCol = orderItemsTable.columns.find((c) => c.name === 'product_id')!;
+
+      // order_items is child of orders, but NOT child of products
+      expect(isChildTableOf(orderItemsTable, ordersTable, tableMap)).toBe(true);
+      expect(isChildTableOf(orderItemsTable, productsTable, tableMap)).toBe(false);
+
+      // order_id IS parent FK, product_id is NOT parent FK
+      expect(isParentForeignKey(orderIdCol, orderItemsTable, tableMap)).toBe(true);
+      expect(isParentForeignKey(productIdCol, orderItemsTable, tableMap)).toBe(false);
+
+      const openApiDoc = {
+        openapi: '3.0.3',
+        info: { title: 'Orders API', version: '1.0.0' },
+        paths: {
+          '/orders': {
+            post: {
+              summary: 'Create order',
+              requestBody: {
+                content: {
+                  'application/json': {
+                    schema: {
+                      $ref: '#/components/schemas/Order'
+                    }
+                  }
+                }
+              },
+              responses: { '201': { description: 'Created' } }
+            }
+          },
+          '/order-items': {
+            post: {
+              summary: 'Create order item',
+              requestBody: {
+                content: {
+                  'application/json': {
+                    schema: {
+                      $ref: '#/components/schemas/OrderItemCreateRequest'
+                    }
+                  }
+                }
+              },
+              responses: { '201': { description: 'Created' } }
+            }
+          }
+        },
+        components: {
+          schemas: {
+            Order: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', format: 'uuid' },
+                order_number: { type: 'string' }
+              },
+              required: ['id', 'order_number']
+            },
+            Product: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', format: 'uuid' },
+                sku: { type: 'string' }
+              },
+              required: ['id', 'sku']
+            },
+            OrderItemCreateRequest: {
+              type: 'object',
+              properties: {
+                quantity: { type: 'integer' }
+              },
+              required: ['quantity']
+            }
+          }
+        }
+      };
+
+      const findings = validator.validate({
+        openApiDoc,
+        sqlSchemaContent: sql,
+        baseline,
+        openApiProjectionId: 'PROJ-OAS-86-3a',
+        sqlSchemaProjectionId: 'PROJ-SQL-86-3a'
+      });
+
+      // product_id MUST be flagged because it is missing from OpenAPI schema and is NOT a parent FK
+      const productMissingFinding = findings.find(
+        (f) => f.rationale?.includes('order_items') && f.rationale?.includes('product_id')
+      );
+      expect(productMissingFinding).toBeDefined();
+      expect(productMissingFinding?.rationale).toContain(
+        "SQL table 'order_items' defines mandatory column 'product_id' (NOT NULL with no default), but field is missing from OpenAPI schema."
+      );
+
+      // order_id must NOT be flagged because it is a parent FK
+      const orderMissingFinding = findings.find(
+        (f) => f.rationale?.includes('order_items') && f.rationale?.includes('order_id')
+      );
+      expect(orderMissingFinding).toBeUndefined();
+    });
+
+    it('regression guard: secondary lookup FK with inferred parent FK is NOT classified as child (Test 3.3b)', () => {
+      const sql = `
+        CREATE TABLE orders (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          customer_id VARCHAR(64) NOT NULL
+        );
+
+        CREATE TABLE products (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          sku VARCHAR(64) NOT NULL
+        );
+
+        CREATE TABLE order_items (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          order_id UUID NOT NULL,
+          product_id UUID NOT NULL REFERENCES products(id),
+          quantity INTEGER NOT NULL
+        );
+      `;
+
+      const tables = parseSqlTables(sql);
+      const tableMap = new Map(tables.map((t) => [normalizeName(t.name), t]));
+      const productsTable = tableMap.get('product')!;
+      const orderItemsTable = tableMap.get('orderitem')!;
+      const productIdCol = orderItemsTable.columns.find((c) => c.name === 'product_id')!;
+
+      // isChildTableOf must be false for products despite explicit FK because order_items is bound to orders
+      expect(isChildTableOf(orderItemsTable, productsTable, tableMap)).toBe(false);
+      expect(isParentForeignKey(productIdCol, orderItemsTable, tableMap)).toBe(false);
+
+      const relationships = detectTableRelationships(tables);
+      const itemToProducts = relationships.find(
+        (r) => r.childTable === 'order_items' && r.parentTable === 'products'
+      );
+      expect(itemToProducts).toBeDefined();
+      expect(itemToProducts?.foreignKeyColumn).toBe('product_id');
+      expect(itemToProducts?.isChildEntity).toBe(false);
+
+      const itemToOrders = relationships.find(
+        (r) => r.childTable === 'order_items' && r.parentTable === 'orders'
+      );
+      expect(itemToOrders).toBeDefined();
+      expect(itemToOrders?.foreignKeyColumn).toBe('order_id');
+      expect(itemToOrders?.isChildEntity).toBe(true);
+    });
+
+    it('regression guard: genuine non-action multi-word path segment without backing table is flagged (Test 3.4)', () => {
+      const sql = `
+        CREATE TABLE orders (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          order_number VARCHAR(64) NOT NULL
+        );
+      `;
+
+      const openApiDoc = {
+        openapi: '3.0.3',
+        info: { title: 'Orders API', version: '1.0.0' },
+        paths: {
+          '/orders/{id}/payment-methods': {
+            get: {
+              summary: 'Get payment methods for order',
+              responses: { '200': { description: 'OK' } }
+            }
+          }
+        },
+        components: {
+          schemas: {
+            Order: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', format: 'uuid' },
+                order_number: { type: 'string' }
+              },
+              required: ['id', 'order_number']
+            }
+          }
+        }
+      };
+
+      const findings = validator.validate({
+        openApiDoc,
+        sqlSchemaContent: sql,
+        baseline,
+        openApiProjectionId: 'PROJ-OAS-86-4',
+        sqlSchemaProjectionId: 'PROJ-SQL-86-4'
+      });
+
+      const unbackedFinding = findings.find(
+        (f) =>
+          f.type === 'data-boundary-ambiguity' &&
+          f.rationale?.includes('/orders/{id}/payment-methods') &&
+          f.rationale?.includes("'payment-methods'")
+      );
+      expect(unbackedFinding).toBeDefined();
+      expect(unbackedFinding?.rationale).toContain(
+        "OpenAPI declares resource path '/orders/{id}/payment-methods' (resource 'payment-methods'), but no corresponding table exists in relational schema projection 'PROJ-SQL-86-4'."
+      );
+    });
+
+    it('preserves downstream prompt grounding for independent root entities with FK (Test 3.5)', () => {
+      const sql = `
+        CREATE TABLE customer_accounts (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          account_number VARCHAR(32) NOT NULL
+        );
+
+        CREATE TABLE orders (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          account_id UUID NOT NULL REFERENCES customer_accounts(id)
+        );
+      `;
+
+      const tables = parseSqlTables(sql);
+      const tableMap = new Map(tables.map((t) => [normalizeName(t.name), t]));
+      const customerAccountsTable = tableMap.get('customeraccount')!;
+      const ordersTable = tableMap.get('order')!;
+      const accountIdCol = ordersTable.columns.find((c) => c.name === 'account_id')!;
+
+      // orders is NOT a child of customer_accounts
+      expect(isChildTableOf(ordersTable, customerAccountsTable, tableMap)).toBe(false);
+      expect(isParentForeignKey(accountIdCol, ordersTable, tableMap)).toBe(false);
+
+      const relationships = detectTableRelationships(tables);
+      const ordersToAccounts = relationships.find(
+        (r) => r.childTable === 'orders' && r.parentTable === 'customer_accounts'
+      );
+      expect(ordersToAccounts).toBeDefined();
+      expect(ordersToAccounts?.foreignKeyColumn).toBe('account_id');
+      expect(ordersToAccounts?.isChildEntity).toBe(false);
+    });
+
+    it('regression guard: explicitly differently referenced prefix-shaped column does NOT veto valid explicit parent FK (F-f87410d6, F-84d6d185)', () => {
+      const sql = `
+        CREATE TABLE orders (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          order_number VARCHAR(64) NOT NULL
+        );
+
+        CREATE TABLE payments (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          amount NUMERIC(10, 2) NOT NULL
+        );
+
+        CREATE TABLE invoices (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          invoice_number VARCHAR(64) NOT NULL
+        );
+
+        CREATE TABLE payment_authorizations (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          order_id UUID NOT NULL REFERENCES orders(id),
+          payment_id UUID NOT NULL REFERENCES invoices(id),
+          authorized_amount NUMERIC(10, 2) NOT NULL
+        );
+      `;
+
+      const tables = parseSqlTables(sql);
+      const tableMap = new Map(tables.map((t) => [normalizeName(t.name), t]));
+      const ordersTable = tableMap.get('order')!;
+      const paymentsTable = tableMap.get('payment')!;
+      const paymentAuthTable = tableMap.get('paymentauthorization')!;
+      const orderIdCol = paymentAuthTable.columns.find((c) => c.name === 'order_id')!;
+      const paymentIdCol = paymentAuthTable.columns.find((c) => c.name === 'payment_id')!;
+
+      // payment_authorizations MUST be recognized as child of orders via explicit order_id REFERENCES orders(id)
+      expect(isChildTableOf(paymentAuthTable, ordersTable, tableMap)).toBe(true);
+      expect(isParentForeignKey(orderIdCol, paymentAuthTable, tableMap)).toBe(true);
+
+      // payment_authorizations is NOT a child of payments (no FK to payments)
+      expect(isChildTableOf(paymentAuthTable, paymentsTable, tableMap)).toBe(false);
+      // payment_id references invoices, NOT payments, so it is not a parent FK to payments
+      expect(isParentForeignKey(paymentIdCol, paymentAuthTable, tableMap)).toBe(false);
+
+      // validator.validate does NOT flag order_id on payment_authorizations
+      const openApiDoc = {
+        openapi: '3.0.3',
+        info: { title: 'Payment API', version: '1.0.0' },
+        paths: {
+          '/orders/{id}': {
+            patch: {
+              summary: 'Update order payment authorization',
+              requestBody: {
+                content: {
+                  'application/json': {
+                    schema: {
+                      $ref: '#/components/schemas/PaymentAuthorization'
+                    }
+                  }
+                }
+              },
+              responses: { '200': { description: 'OK' } }
+            }
+          }
+        },
+        components: {
+          schemas: {
+            PaymentAuthorization: {
+              type: 'object',
+              properties: {
+                payment_id: { type: 'string', format: 'uuid' },
+                authorized_amount: { type: 'number' }
+              },
+              required: ['payment_id', 'authorized_amount']
+            }
+          }
+        }
+      };
+
+      const findings = validator.validate({
+        openApiDoc,
+        sqlSchemaContent: sql,
+        baseline,
+        openApiProjectionId: 'PROJ-OAS-86-5',
+        sqlSchemaProjectionId: 'PROJ-SQL-86-5'
+      });
+
+      const orderMissingFinding = findings.find(
+        (f) => f.rationale?.includes('payment_authorizations') && f.rationale?.includes('order_id')
+      );
+      expect(orderMissingFinding).toBeUndefined();
+    });
+
+    it('regression guard: self-referencing child with separate parent lineage FK is recognized as child of parent (F-f87410d6, F-84d6d185)', () => {
+      const sql = `
+        CREATE TABLE catalogs (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          name VARCHAR(64) NOT NULL
+        );
+
+        CREATE TABLE categories (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          catalog_id UUID NOT NULL REFERENCES catalogs(id),
+          parent_id UUID REFERENCES categories(id),
+          name VARCHAR(64) NOT NULL
+        );
+      `;
+
+      const tables = parseSqlTables(sql);
+      const tableMap = new Map(tables.map((t) => [normalizeName(t.name), t]));
+      const catalogsTable = tableMap.get('catalog')!;
+      const categoriesTable = tableMap.get('category')!;
+      const catalogIdCol = categoriesTable.columns.find((c) => c.name === 'catalog_id')!;
+      const parentIdCol = categoriesTable.columns.find((c) => c.name === 'parent_id')!;
+
+      // categories is child of catalogs via explicit catalog_id REFERENCES catalogs(id)
+      expect(isChildTableOf(categoriesTable, catalogsTable, tableMap)).toBe(true);
+      expect(isParentForeignKey(catalogIdCol, categoriesTable, tableMap)).toBe(true);
+
+      // parent_id is self-reference, not parent FK to catalogs
+      expect(isParentForeignKey(parentIdCol, categoriesTable, tableMap)).toBe(false);
+
+      const relationships = detectTableRelationships(tables);
+      const catToCatalogs = relationships.find(
+        (r) => r.childTable === 'categories' && r.parentTable === 'catalogs'
+      );
+      expect(catToCatalogs).toBeDefined();
+      expect(catToCatalogs?.foreignKeyColumn).toBe('catalog_id');
+      expect(catToCatalogs?.isChildEntity).toBe(true);
+
+      const catSelfRef = relationships.find(
+        (r) => r.childTable === 'categories' && r.parentTable === 'categories'
+      );
+      expect(catSelfRef).toBeDefined();
+      expect(catSelfRef?.foreignKeyColumn).toBe('parent_id');
+      expect(catSelfRef?.isChildEntity).toBe(false);
+    });
+  });
 });

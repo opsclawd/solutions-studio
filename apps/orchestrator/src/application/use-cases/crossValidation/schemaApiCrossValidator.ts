@@ -768,12 +768,21 @@ export function matchesCheckConstraintEnum(
 
 export function hasForeignKeyToParent(
   childTable: SqlTableDefinition,
-  parentTable: SqlTableDefinition
+  parentTable: SqlTableDefinition,
+  tableMap?: Map<string, SqlTableDefinition>
 ): boolean {
   const normParent = normalizeName(parentTable.name);
   return childTable.columns.some((c) => {
-    if (c.referencesTable && normalizeName(c.referencesTable) === normParent) {
-      return true;
+    const tableFk = childTable.foreignKeys?.find(
+      (fk) => fk.column.toLowerCase() === c.name.toLowerCase()
+    );
+    const refTable = c.referencesTable ?? tableFk?.referencedTable;
+    if (refTable) {
+      const normRef = normalizeName(refTable);
+      return (
+        normRef === normParent ||
+        (tableMap ? resolveTableAlias(normRef, tableMap)?.name === parentTable.name : false)
+      );
     }
     const normCol = normalizeName(c.name);
     return normCol === `${normParent}id` || normCol === 'parentid';
@@ -789,6 +798,63 @@ export function isChildTableOf(
   const normChild = normalizeName(childTable.name);
   const normParent = normalizeName(parentTable.name);
   if (normChild === normParent) return false;
+
+  // Check 0: Explicit foreign key constraint with lineage key naming from childTable to parentTable
+  const hasExplicitParentFk =
+    childTable.foreignKeys?.some((fk) => {
+      const normRef = normalizeName(fk.referencedTable);
+      const matchesParent =
+        normRef === normParent || resolveTableAlias(normRef, tableMap)?.name === parentTable.name;
+      if (!matchesParent) return false;
+      const normCol = normalizeName(fk.column);
+      return normCol === `${normParent}id` || normCol === `${normRef}id` || normCol === 'parentid';
+    }) ||
+    childTable.columns.some((c) => {
+      if (!c.referencesTable) return false;
+      const normRef = normalizeName(c.referencesTable);
+      const matchesParent =
+        normRef === normParent || resolveTableAlias(normRef, tableMap)?.name === parentTable.name;
+      if (!matchesParent) return false;
+      const normCol = normalizeName(c.name);
+      return normCol === `${normParent}id` || normCol === `${normRef}id` || normCol === 'parentid';
+    });
+
+  if (hasExplicitParentFk) {
+    // Verify whether childTable's naming prefix explicitly binds it to a DIFFERENT referenced parent table
+    // (supporting both explicit REFERENCES constraints and inferred naming-convention foreign keys)
+    const boundToOtherTable = Array.from(tableMap.entries()).some(([otherNorm, otherTable]) => {
+      if (
+        !otherNorm ||
+        otherNorm === normParent ||
+        otherTable.name === parentTable.name ||
+        otherNorm === normChild ||
+        otherTable.name === childTable.name
+      ) {
+        return false;
+      }
+      if (!normChild.startsWith(otherNorm)) return false;
+      return (
+        hasForeignKeyToParent(childTable, otherTable, tableMap) ||
+        childTable.foreignKeys?.some((fk) => {
+          const normRef = normalizeName(fk.referencedTable);
+          return (
+            normRef === otherNorm || resolveTableAlias(normRef, tableMap)?.name === otherTable.name
+          );
+        }) ||
+        childTable.columns.some((c) => {
+          if (!c.referencesTable) return false;
+          const normRef = normalizeName(c.referencesTable);
+          return (
+            normRef === otherNorm || resolveTableAlias(normRef, tableMap)?.name === otherTable.name
+          );
+        })
+      );
+    });
+
+    if (!boundToOtherTable) {
+      return true;
+    }
+  }
 
   // Check 1: Naming convention prefix + child suffix
   const childSuffixes = ['item', 'line', 'detail', 'entry', 'row', 'element', 'part', 'component'];
@@ -964,9 +1030,51 @@ export function detectTableRelationships(
       }
     }
 
-    // 3. Self-referential inferred foreign keys (e.g. parent_id on hierarchical nodes/categories)
+    // 3. Self-referential foreign keys (explicit or inferred, e.g. parent_id on hierarchical nodes/categories)
+    if (childTable.foreignKeys) {
+      for (const fk of childTable.foreignKeys) {
+        const normFkRef = normalizeName(fk.referencedTable);
+        if (
+          normFkRef === normChild ||
+          resolveTableAlias(normFkRef, tableMap)?.name === childTable.name
+        ) {
+          const key = `${childTable.name}:${childTable.name}:${fk.column}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            relationships.push({
+              childTable: childTable.name,
+              parentTable: childTable.name,
+              foreignKeyColumn: fk.column,
+              referencedColumn: fk.referencedColumn ?? childTable.primaryKeyColumns[0] ?? 'id',
+              isChildEntity: false
+            });
+          }
+        }
+      }
+    }
+
     for (const col of childTable.columns) {
-      if (col.referencesTable) continue;
+      if (col.referencesTable) {
+        const normColRef = normalizeName(col.referencesTable);
+        if (
+          normColRef === normChild ||
+          resolveTableAlias(normColRef, tableMap)?.name === childTable.name
+        ) {
+          const key = `${childTable.name}:${childTable.name}:${col.name}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            relationships.push({
+              childTable: childTable.name,
+              parentTable: childTable.name,
+              foreignKeyColumn: col.name,
+              referencedColumn: col.referencesColumn ?? childTable.primaryKeyColumns[0] ?? 'id',
+              isChildEntity: false
+            });
+          }
+        }
+        continue;
+      }
+
       const normCol = normalizeName(col.name);
       if (normCol === 'parentid' || normCol === `parent${normChild}id`) {
         const key = `${childTable.name}:${childTable.name}:${col.name}`;
@@ -1009,7 +1117,9 @@ export function isParentForeignKey(
     }
 
     // Must be the parent's lineage key (local column name must match parent lineage form)
-    const matchesLocalParentId = normCol === `${normRefTable}id` || normCol === 'parentid';
+    const normParent = normalizeName(parentTable.name);
+    const matchesLocalParentId =
+      normCol === `${normRefTable}id` || normCol === `${normParent}id` || normCol === 'parentid';
 
     if (!matchesLocalParentId) {
       return false;
@@ -1019,7 +1129,8 @@ export function isParentForeignKey(
     if (
       col.referencesColumn &&
       normalizeName(col.referencesColumn) !== 'id' &&
-      normalizeName(col.referencesColumn) !== `${normRefTable}id`
+      normalizeName(col.referencesColumn) !== `${normRefTable}id` &&
+      normalizeName(col.referencesColumn) !== `${normParent}id`
     ) {
       return false;
     }
@@ -1281,8 +1392,13 @@ export class SchemaApiCrossValidator {
             continue;
           }
 
+          const terminalWords = terminal.split(/[^a-zA-Z0-9]+/).filter(Boolean);
           const isActionVerb =
-            actionVerbs.has(normTerminal) || actionVerbs.has(terminal.toLowerCase());
+            actionVerbs.has(normTerminal) ||
+            actionVerbs.has(terminal.toLowerCase()) ||
+            terminalWords.some(
+              (w) => actionVerbs.has(normalizeName(w)) || actionVerbs.has(w.toLowerCase())
+            );
           const pathItem = paths[pathKey];
           const hasDecisionAnnotation = hasStateTransitionAnnotation(pathItem);
 
