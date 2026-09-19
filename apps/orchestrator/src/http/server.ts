@@ -12,6 +12,8 @@ import type { TransitionEngineeringDecisionUseCase } from '../application/use-ca
 import type { GetEngineeringDecisionsUseCase } from '../application/use-cases/GetEngineeringDecisionsUseCase.js';
 import type { RecordPolicyConstraintRevisionUseCase } from '../application/use-cases/RecordPolicyConstraintRevisionUseCase.js';
 import type { GetPolicyConstraintRevisionUseCase } from '../application/use-cases/GetPolicyConstraintRevisionUseCase.js';
+import type { GenerateStoriesProjectionUseCase } from '../application/use-cases/GenerateStoriesProjectionUseCase.js';
+import type { GetStoriesUseCase } from '../application/use-cases/GetStoriesUseCase.js';
 import { mapErrorToResponse } from './errorMapper.js';
 import { reviewRoutes } from './routes/review.js';
 import { requirementsRoutes } from './routes/requirements.js';
@@ -20,6 +22,7 @@ import { baselinesRoutes } from './routes/baselines.js';
 import { discoveriesRoutes } from './routes/discoveries.js';
 import { policyConstraintsRoutes } from './routes/policy-constraints.js';
 import { decisionsRoutes } from './routes/decisions.js';
+import { storiesRoutes } from './routes/stories.js';
 
 export interface OrchestratorServerDependencies {
   readonly reviewStateUseCase: GetRequirementsReviewStateUseCase;
@@ -33,6 +36,8 @@ export interface OrchestratorServerDependencies {
   readonly getEngineeringDecisionsUseCase?: GetEngineeringDecisionsUseCase;
   readonly recordPolicyConstraintRevisionUseCase?: RecordPolicyConstraintRevisionUseCase;
   readonly getPolicyConstraintRevisionUseCase?: GetPolicyConstraintRevisionUseCase;
+  readonly generateStoriesProjectionUseCase?: GenerateStoriesProjectionUseCase;
+  readonly getStoriesUseCase?: GetStoriesUseCase;
 }
 
 export function buildServer(
@@ -104,6 +109,13 @@ export function buildServer(
     app.register(decisionsRoutes, {
       transitionEngineeringDecisionUseCase: deps.transitionEngineeringDecisionUseCase,
       getEngineeringDecisionsUseCase: deps.getEngineeringDecisionsUseCase
+    });
+  }
+
+  if (deps.generateStoriesProjectionUseCase && deps.getStoriesUseCase) {
+    app.register(storiesRoutes, {
+      generateStoriesProjectionUseCase: deps.generateStoriesProjectionUseCase,
+      getStoriesUseCase: deps.getStoriesUseCase
     });
   }
 

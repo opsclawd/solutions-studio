@@ -45,7 +45,14 @@ import type {
   EngineeringDecisionDtoSchema,
   CreateEngineeringDecisionRequestDtoSchema,
   TransitionEngineeringDecisionRequestDtoSchema,
-  AuthorityBundleDtoSchema
+  AuthorityBundleDtoSchema,
+  StoryNarrativeDtoSchema,
+  GherkinStepKeywordSchema,
+  GherkinStepDtoSchema,
+  GherkinScenarioDtoSchema,
+  StoryDtoSchema,
+  GenerateStoryRequestDtoSchema,
+  ListStoriesResponseDtoSchema
 } from './schemas.js';
 
 export type InstantDto = z.infer<typeof InstantDtoSchema>;
@@ -115,3 +122,11 @@ export type RecordRequirementDiscoveryRequestDto = z.infer<
 export type RecordFindingDiscoveryRequestDto = z.infer<
   typeof RecordFindingDiscoveryRequestDtoSchema
 >;
+
+export type StoryNarrativeDto = z.infer<typeof StoryNarrativeDtoSchema>;
+export type GherkinStepKeywordDto = z.infer<typeof GherkinStepKeywordSchema>;
+export type GherkinStepDto = z.infer<typeof GherkinStepDtoSchema>;
+export type GherkinScenarioDto = z.infer<typeof GherkinScenarioDtoSchema>;
+export type StoryDto = z.infer<typeof StoryDtoSchema>;
+export type GenerateStoryRequestDto = z.infer<typeof GenerateStoryRequestDtoSchema>;
+export type ListStoriesResponseDto = z.infer<typeof ListStoriesResponseDtoSchema>;

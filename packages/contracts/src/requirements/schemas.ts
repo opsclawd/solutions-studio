@@ -353,7 +353,14 @@ export const ReopenFindingRequestDtoSchema = z.object({
 });
 
 export const GenerateProjectionRequestDtoSchema = z.object({
-  artifactType: z.enum(['process-diagram', 'state-diagram', 'prototype', 'sql-schema', 'openapi']),
+  artifactType: z.enum([
+    'process-diagram',
+    'state-diagram',
+    'prototype',
+    'sql-schema',
+    'openapi',
+    'stories'
+  ]),
   prompt: z.string().min(1).optional()
 });
 
@@ -461,3 +468,49 @@ export const AuthorityBundleDtoSchema = z.object({
   requirements: z.array(RequirementRevisionDtoSchema),
   policyConstraints: z.array(PolicyConstraintRevisionDtoSchema)
 });
+
+export const StoryNarrativeDtoSchema = z.object({
+  role: z.string().min(1),
+  feature: z.string().min(1),
+  benefit: z.string().min(1),
+  rawText: z.string().optional()
+});
+
+export const GherkinStepKeywordSchema = z.enum(['Given', 'When', 'Then', 'And', 'But']);
+
+export const GherkinStepDtoSchema = z.object({
+  keyword: GherkinStepKeywordSchema,
+  text: z.string().min(1)
+});
+
+export const GherkinScenarioDtoSchema = z.object({
+  id: z.string().optional(),
+  title: z.string().min(1),
+  requirementRevisionIds: z.array(z.string().min(1)).min(1),
+  policyConstraintRevisionIds: z.array(z.string().min(1)).optional(),
+  steps: z.array(GherkinStepDtoSchema).min(1),
+  rawText: z.string().optional()
+});
+
+export const StoryDtoSchema = z.object({
+  id: z.string().min(1),
+  baselineId: z.string().min(1),
+  projectionId: z.string().min(1).optional(),
+  title: z.string().min(1),
+  narrative: StoryNarrativeDtoSchema,
+  requirementRevisionIds: z.array(z.string().min(1)).min(1),
+  policyConstraintRevisionIds: z.array(z.string().min(1)).optional(),
+  scenarios: z.array(GherkinScenarioDtoSchema).min(1),
+  acceptanceCriteria: z.array(z.string().min(1)),
+  gherkinText: z.string().min(1),
+  metadata: ProjectionMetadataDtoSchema.optional(),
+  createdAt: InstantDtoSchema
+});
+
+export const GenerateStoryRequestDtoSchema = z.object({
+  prompt: z.string().min(1).optional(),
+  id: z.string().min(1).optional(),
+  autoRecordDiscoveries: z.boolean().optional()
+});
+
+export const ListStoriesResponseDtoSchema = z.array(StoryDtoSchema);

@@ -16,11 +16,13 @@ import type {
   RequirementsReviewStateDto,
   PolicyConstraintRevisionDto,
   EngineeringDecisionDto,
-  AuthorityBundleDto
+  AuthorityBundleDto,
+  StoryDto
 } from '@solutions-studio/contracts';
 import type {
   ReconciliationRecord,
-  ProjectionRecord
+  ProjectionRecord,
+  StoryRecord
 } from '../application/ports/persistence/IRequirementsRepository.js';
 import type {
   EvidenceExcerpt,
@@ -201,5 +203,41 @@ export function mapAuthorityBundleToDto(bundle: AuthorityBundle): AuthorityBundl
     baseline: mapRequirementsBaselineToDto(bundle.baseline),
     requirements: bundle.requirements.map(mapRequirementRevisionToDto),
     policyConstraints: bundle.policyConstraints.map(mapPolicyConstraintRevisionToDto)
+  };
+}
+
+export function mapStoryRecordToDto(record: StoryRecord): StoryDto {
+  return {
+    id: record.id,
+    baselineId: record.baselineId,
+    projectionId: record.projectionId,
+    title: record.title,
+    narrative: {
+      role: record.narrative.role,
+      feature: record.narrative.feature,
+      benefit: record.narrative.benefit,
+      rawText: record.narrative.rawText
+    },
+    requirementRevisionIds: [...record.requirementRevisionIds],
+    policyConstraintRevisionIds: record.policyConstraintRevisionIds
+      ? [...record.policyConstraintRevisionIds]
+      : undefined,
+    scenarios: record.scenarios.map((s) => ({
+      id: s.id,
+      title: s.title,
+      requirementRevisionIds: [...s.requirementRevisionIds],
+      policyConstraintRevisionIds: s.policyConstraintRevisionIds
+        ? [...s.policyConstraintRevisionIds]
+        : undefined,
+      steps: s.steps.map((st) => ({
+        keyword: st.keyword,
+        text: st.text
+      })),
+      rawText: s.rawText
+    })),
+    acceptanceCriteria: [...record.acceptanceCriteria],
+    gherkinText: record.gherkinText,
+    metadata: record.metadata,
+    createdAt: record.createdAt
   };
 }

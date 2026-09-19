@@ -1,6 +1,6 @@
 {
-  "id": "REQ-62f06d07-20d6-4034-87f3-010b7c140338-R3",
-  "requirementId": "REQ-62f06d07-20d6-4034-87f3-010b7c140338",
+  "id": "REQ-c3fde2f4-1ff9-4aad-b9db-6c090bdf0f03-R3",
+  "requirementId": "REQ-c3fde2f4-1ff9-4aad-b9db-6c090bdf0f03",
   "revision": 3,
   "statement": "All privileged sessions must terminate automatically after 15 minutes of inactivity.",
   "category": "business-rule",
@@ -11,5 +11,5 @@
   "rationale": "Verified dependencies and scope resolution.",
   "baselineId": "BASE-001",
   "originatingProjectionId": "PROJ-001",
-  "supersedes": "REQ-62f06d07-20d6-4034-87f3-010b7c140338-R2"
+  "supersedes": "REQ-c3fde2f4-1ff9-4aad-b9db-6c090bdf0f03-R2"
 }

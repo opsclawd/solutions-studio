@@ -11,6 +11,7 @@ export type PolicyConstraintRevisionId = string & {
   readonly __brand: 'PolicyConstraintRevisionId';
 };
 export type EngineeringDecisionId = string & { readonly __brand: 'EngineeringDecisionId' };
+export type StoryId = string & { readonly __brand: 'StoryId' };
 export type ActorId = string & { readonly __brand: 'ActorId' };
 export type ReviewerId = string & { readonly __brand: 'ReviewerId' };
 export type Instant = string & { readonly __brand: 'Instant' };
@@ -56,6 +57,10 @@ export function createPolicyConstraintRevisionId(value: string): PolicyConstrain
 
 export function createEngineeringDecisionId(value: string): EngineeringDecisionId {
   return assertNonEmpty(value, 'EngineeringDecisionId') as EngineeringDecisionId;
+}
+
+export function createStoryId(value: string): StoryId {
+  return assertNonEmpty(value, 'StoryId') as StoryId;
 }
 
 export function createActorId(value: string): ActorId {

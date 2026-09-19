@@ -33,6 +33,11 @@ import {
   OpenApiStructuralValidationError
 } from '../application/use-cases/OpenApiProjectionErrors.js';
 import {
+  StoryProvenanceValidationError,
+  GherkinSyntaxValidationError,
+  UnknownStoryError
+} from '../application/use-cases/StoryProjectionErrors.js';
+import {
   UnknownProjectionError,
   ProjectionBaselineMismatchError,
   RequirementAlreadyExistsError
@@ -362,6 +367,45 @@ export function mapErrorToResponse(error: unknown): MappedErrorResponse {
   }
 
   if (error instanceof OpenApiStructuralValidationError) {
+    return {
+      statusCode: 400,
+      body: {
+        code: 'VALIDATION_ERROR',
+        message: error.message,
+        details: error.errorDetails
+      }
+    };
+  }
+
+  if (error instanceof UnknownStoryError) {
+    return {
+      statusCode: 404,
+      body: {
+        code: 'STORY_NOT_FOUND',
+        message: error.message,
+        details: { storyId: error.storyId }
+      }
+    };
+  }
+
+  if (error instanceof StoryProvenanceValidationError) {
+    return {
+      statusCode: 400,
+      body: {
+        code: 'VALIDATION_ERROR',
+        message: error.message,
+        details: {
+          baselineId: error.baselineId,
+          invalidRequirementRevisionIds: error.invalidRequirementRevisionIds,
+          allowedRequirementRevisionIds: error.allowedRequirementRevisionIds,
+          invalidPolicyConstraintRevisionIds: error.invalidPolicyConstraintRevisionIds,
+          allowedPolicyConstraintRevisionIds: error.allowedPolicyConstraintRevisionIds
+        }
+      }
+    };
+  }
+
+  if (error instanceof GherkinSyntaxValidationError) {
     return {
       statusCode: 400,
       body: {

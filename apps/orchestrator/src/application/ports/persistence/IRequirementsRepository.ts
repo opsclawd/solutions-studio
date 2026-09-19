@@ -22,7 +22,10 @@ import type {
   FindingDisposition,
   RequirementReviewState,
   RequirementResolutionState,
-  RequirementReconciliationAction
+  RequirementReconciliationAction,
+  StoryId,
+  StoryNarrative,
+  GherkinScenario
 } from '@solutions-studio/domain';
 import type {
   ProjectionMetadataDto,
@@ -102,6 +105,21 @@ export interface ProjectionRecord {
   readonly engineeringDecisionIds?: readonly EngineeringDecisionId[];
   readonly artifactType: string;
   readonly content: string;
+  readonly metadata: ProjectionMetadataDto;
+  readonly createdAt: Instant;
+}
+
+export interface StoryRecord {
+  readonly id: StoryId;
+  readonly baselineId: RequirementsBaselineId;
+  readonly projectionId: string;
+  readonly title: string;
+  readonly narrative: StoryNarrative;
+  readonly requirementRevisionIds: readonly RequirementRevisionId[];
+  readonly policyConstraintRevisionIds?: readonly PolicyConstraintRevisionId[];
+  readonly scenarios: readonly GherkinScenario[];
+  readonly acceptanceCriteria: readonly string[];
+  readonly gherkinText: string;
   readonly metadata: ProjectionMetadataDto;
   readonly createdAt: Instant;
 }
@@ -191,4 +209,7 @@ export interface IRequirementsRepository {
   saveProjectionRecord(projection: ProjectionRecord): Promise<void>;
   getProjectionRecord(id: string): Promise<ProjectionRecord | undefined>;
   listProjectionRecords(baselineId?: RequirementsBaselineId): Promise<readonly ProjectionRecord[]>;
+  saveStory(story: StoryRecord): Promise<void>;
+  getStory(id: StoryId): Promise<StoryRecord | undefined>;
+  listStories(baselineId?: RequirementsBaselineId): Promise<readonly StoryRecord[]>;
 }
