@@ -115,7 +115,7 @@ test.describe('Phase 2.7 — End-to-End Phase 2 Exit Gate Reviewer Journey', () 
         'Missing authorization boundary for administrative sessions during inactivity timeout.'
       );
     await page.getByTestId('submit-finding-discovery-btn').click();
-    await expect(page.getByTestId('discovery-finding-success-message')).toBeVisible();
+    await expect(page.getByTestId('discovery-success-message')).toBeVisible();
 
     // ------------------------------------------------------------------------
     // Step 6c: Verify Non-Authoritative Candidate State in Requirements View
