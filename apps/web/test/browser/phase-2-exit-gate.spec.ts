@@ -92,7 +92,9 @@ test.describe('Phase 2.7 — End-to-End Phase 2 Exit Gate Reviewer Journey', () 
     await page.getByTestId('discovery-tab-requirement').click();
     await page
       .getByTestId('discovery-statement-input')
-      .fill('All privileged sessions must terminate automatically after 15 minutes of inactivity.');
+      .fill(
+        'Administrative override sessions must be automatically revoked after 20 minutes of user inactivity.'
+      );
     await page.getByTestId('discovery-category-select').selectOption('business-rule');
     await page
       .getByTestId('discovery-rationale-input')
@@ -125,7 +127,7 @@ test.describe('Phase 2.7 — End-to-End Phase 2 Exit Gate Reviewer Journey', () 
 
     // Locate the newly recorded requirement proposal
     const discoveredReqRow = page.locator(
-      '[data-requirement-id]:has-text("All privileged sessions must terminate automatically")'
+      '[data-requirement-id]:has-text("Administrative override sessions must be automatically revoked")'
     );
     await expect(discoveredReqRow).toBeVisible();
     await discoveredReqRow.click();
@@ -161,10 +163,16 @@ test.describe('Phase 2.7 — End-to-End Phase 2 Exit Gate Reviewer Journey', () 
     const allFindingsBtn = page.getByTestId('view-all-findings-btn');
     await allFindingsBtn.click();
 
-    // Locate the newly created missing-authorization finding
+    // Locate the newly created missing-authorization finding. Filter on the
+    // discoveredBy source ("via artifact-validation"), which is stable for the
+    // finding's whole lifecycle, rather than the rationale text: dispositioning
+    // below replaces the displayed rationale with the resolution rationale, which
+    // would make a rationale-text-based locator stop matching mid-test. The
+    // discoveredBy filter is also unique here, distinguishing this finding from
+    // the pre-seeded unattached missing-authorization finding ("via model").
     const findingItem = page
       .locator('[data-testid="finding-item"]')
-      .filter({ hasText: 'Missing authorization boundary for administrative sessions' });
+      .filter({ hasText: 'via artifact-validation' });
     await expect(findingItem).toBeVisible();
 
     // Open finding disposition form
@@ -190,8 +198,16 @@ test.describe('Phase 2.7 — End-to-End Phase 2 Exit Gate Reviewer Journey', () 
     await expect(baselineModal).toBeVisible();
     await expect(page.getByTestId('predecessor-baseline-id')).toHaveText('BASE-001');
 
+    // The modal suggests the next baseline ID by incrementing the numeric
+    // suffix of the currently-viewed baseline (BASE-001 -> BASE-002), without
+    // checking for collisions against all existing baselines. This suite
+    // shares a fixture store with other spec files that may have already
+    // created BASE-002, so explicitly override the suggested value with an
+    // ID guaranteed unique to this test rather than trust the suggestion.
     const baselineIdInput = page.getByTestId('create-baseline-id-input');
-    await expect(baselineIdInput).toHaveValue('BASE-002');
+    await expect(baselineIdInput).toHaveValue(/^BASE-\d+$/);
+    const suggestedBaselineId = 'BASE-PHASE2-EXIT-GATE';
+    await baselineIdInput.fill(suggestedBaselineId);
 
     // Preview lists eligible reconciled revisions
     const previewList = page.getByTestId('create-baseline-revisions-preview');
@@ -201,9 +217,9 @@ test.describe('Phase 2.7 — End-to-End Phase 2 Exit Gate Reviewer Journey', () 
     await expect(submitBaselineBtn).toBeEnabled();
     await submitBaselineBtn.click();
 
-    // Modal closes and active baseline updates to BASE-002
+    // Modal closes and active baseline updates to the newly created ID
     await expect(baselineModal).toHaveCount(0);
-    await expect(baselineSelector).toHaveValue('BASE-002');
+    await expect(baselineSelector).toHaveValue(suggestedBaselineId);
 
     // ------------------------------------------------------------------------
     // Step 9: Verify Projections & Staleness Detection in Successor Baseline
