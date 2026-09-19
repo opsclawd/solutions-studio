@@ -564,3 +564,67 @@ export const BaselineRequirementCoverageDtoSchema = z.object({
   isFullyCovered: z.boolean(),
   computedAt: InstantDtoSchema
 });
+
+export const StoryDependencyGraphNodeDtoSchema = z.object({
+  storyId: z.string().min(1),
+  title: z.string().min(1),
+  requirementRevisionIds: z.array(z.string().min(1)),
+  dependencies: z.array(z.string().min(1)),
+  dependents: z.array(z.string().min(1)),
+  readinessStatus: z.enum(['implementation-ready', 'not-ready']).optional(),
+  isReady: z.boolean().optional()
+});
+
+export const StoryDependencyGraphEdgeDtoSchema = z.object({
+  from: z.string().min(1),
+  to: z.string().min(1)
+});
+
+export const StoryDependencyGraphValidationResultDtoSchema = z.object({
+  isValid: z.boolean(),
+  errors: z.array(z.string()),
+  missingNodeIds: z.array(z.string()),
+  selfDependencies: z.array(z.string()),
+  cycles: z.array(z.array(z.string()))
+});
+
+export const StoryDependencyGraphDtoSchema = z.object({
+  baselineId: z.string().min(1),
+  nodes: z.array(StoryDependencyGraphNodeDtoSchema),
+  edges: z.array(StoryDependencyGraphEdgeDtoSchema),
+  executionOrder: z.array(z.string()),
+  isAcyclic: z.boolean(),
+  hasCycles: z.boolean(),
+  cycles: z.array(z.array(z.string())),
+  validation: StoryDependencyGraphValidationResultDtoSchema,
+  createdAt: InstantDtoSchema
+});
+
+export const UpdateStoryDependenciesRequestDtoSchema = z.object({
+  dependencies: z.array(z.string().min(1))
+});
+
+export const EngineeringHandoffSummaryDtoSchema = z.object({
+  totalStories: z.number().int().nonnegative(),
+  readyStories: z.number().int().nonnegative(),
+  nonReadyStories: z.number().int().nonnegative(),
+  totalRequirements: z.number().int().nonnegative(),
+  coveredRequirements: z.number().int().nonnegative(),
+  openBlockingFindings: z.number().int().nonnegative(),
+  isHandoffReady: z.boolean()
+});
+
+export const EngineeringHandoffBundleDtoSchema = z.object({
+  baseline: RequirementsBaselineDtoSchema,
+  authorityBundle: AuthorityBundleDtoSchema,
+  engineeringDecisions: z.array(EngineeringDecisionDtoSchema),
+  sqlProjection: ProjectionRecordDtoSchema.optional(),
+  openApiProjection: ProjectionRecordDtoSchema.optional(),
+  stories: z.array(StoryDtoSchema),
+  readinessReports: z.array(StoryReadinessReportDtoSchema),
+  coverage: BaselineRequirementCoverageDtoSchema,
+  dependencyGraph: StoryDependencyGraphDtoSchema,
+  blockingFindings: z.array(CandidateFindingDtoSchema),
+  unresolvedRequirements: z.array(RequirementRevisionDtoSchema),
+  summary: EngineeringHandoffSummaryDtoSchema
+});

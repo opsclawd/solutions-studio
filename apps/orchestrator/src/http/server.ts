@@ -16,6 +16,9 @@ import type { GenerateStoriesProjectionUseCase } from '../application/use-cases/
 import type { GetStoriesUseCase } from '../application/use-cases/GetStoriesUseCase.js';
 import type { EvaluateStoryReadinessUseCase } from '../application/use-cases/EvaluateStoryReadinessUseCase.js';
 import type { ComputeRequirementCoverageUseCase } from '../application/use-cases/ComputeRequirementCoverageUseCase.js';
+import type { BuildStoryDependencyGraphUseCase } from '../application/use-cases/BuildStoryDependencyGraphUseCase.js';
+import type { UpdateStoryDependenciesUseCase } from '../application/use-cases/UpdateStoryDependenciesUseCase.js';
+import type { GetEngineeringHandoffBundleUseCase } from '../application/use-cases/GetEngineeringHandoffBundleUseCase.js';
 import { mapErrorToResponse } from './errorMapper.js';
 import { reviewRoutes } from './routes/review.js';
 import { requirementsRoutes } from './routes/requirements.js';
@@ -25,6 +28,8 @@ import { discoveriesRoutes } from './routes/discoveries.js';
 import { policyConstraintsRoutes } from './routes/policy-constraints.js';
 import { decisionsRoutes } from './routes/decisions.js';
 import { storiesRoutes } from './routes/stories.js';
+import { dependencyGraphRoutes } from './routes/dependency-graph.js';
+import { handoffRoutes } from './routes/handoff.js';
 
 export interface OrchestratorServerDependencies {
   readonly reviewStateUseCase: GetRequirementsReviewStateUseCase;
@@ -42,6 +47,9 @@ export interface OrchestratorServerDependencies {
   readonly getStoriesUseCase?: GetStoriesUseCase;
   readonly evaluateStoryReadinessUseCase?: EvaluateStoryReadinessUseCase;
   readonly computeRequirementCoverageUseCase?: ComputeRequirementCoverageUseCase;
+  readonly buildStoryDependencyGraphUseCase?: BuildStoryDependencyGraphUseCase;
+  readonly updateStoryDependenciesUseCase?: UpdateStoryDependenciesUseCase;
+  readonly getEngineeringHandoffBundleUseCase?: GetEngineeringHandoffBundleUseCase;
 }
 
 export function buildServer(
@@ -121,7 +129,20 @@ export function buildServer(
     app.register(storiesRoutes, {
       generateStoriesProjectionUseCase: deps.generateStoriesProjectionUseCase,
       getStoriesUseCase: deps.getStoriesUseCase,
-      evaluateStoryReadinessUseCase: deps.evaluateStoryReadinessUseCase
+      evaluateStoryReadinessUseCase: deps.evaluateStoryReadinessUseCase,
+      updateStoryDependenciesUseCase: deps.updateStoryDependenciesUseCase
+    });
+  }
+
+  if (deps.buildStoryDependencyGraphUseCase) {
+    app.register(dependencyGraphRoutes, {
+      buildStoryDependencyGraphUseCase: deps.buildStoryDependencyGraphUseCase
+    });
+  }
+
+  if (deps.getEngineeringHandoffBundleUseCase) {
+    app.register(handoffRoutes, {
+      getEngineeringHandoffBundleUseCase: deps.getEngineeringHandoffBundleUseCase
     });
   }
 

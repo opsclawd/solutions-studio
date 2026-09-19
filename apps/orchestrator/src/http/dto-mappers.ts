@@ -6,7 +6,8 @@ import type {
   EngineeringDecision,
   AuthorityBundle,
   StoryReadinessReport,
-  BaselineRequirementCoverage
+  BaselineRequirementCoverage,
+  StoryDependencyGraph
 } from '@solutions-studio/domain';
 import type {
   RequirementRevisionDto,
@@ -21,13 +22,17 @@ import type {
   AuthorityBundleDto,
   StoryDto,
   StoryReadinessReportDto,
-  BaselineRequirementCoverageDto
+  BaselineRequirementCoverageDto,
+  StoryDependencyGraphDto,
+  EngineeringHandoffBundleDto
 } from '@solutions-studio/contracts';
 import type {
   ReconciliationRecord,
   ProjectionRecord,
   StoryRecord
 } from '../application/ports/persistence/IRequirementsRepository.js';
+import type { EngineeringHandoffBundle } from '../application/use-cases/GetEngineeringHandoffBundleUseCase.js';
+
 import type {
   EvidenceExcerpt,
   RequirementsReviewState
@@ -241,7 +246,7 @@ export function mapStoryRecordToDto(record: StoryRecord): StoryDto {
     })),
     acceptanceCriteria: [...record.acceptanceCriteria],
     gherkinText: record.gherkinText,
-    dependencies: record.dependencies ? [...record.dependencies] : undefined,
+    dependencies: record.dependencies ? [...record.dependencies] : [],
     metadata: record.metadata,
     createdAt: record.createdAt
   };
@@ -300,5 +305,59 @@ export function mapBaselineRequirementCoverageToDto(
     })),
     isFullyCovered: coverage.isFullyCovered,
     computedAt: coverage.computedAt
+  };
+}
+
+export function mapStoryDependencyGraphToDto(graph: StoryDependencyGraph): StoryDependencyGraphDto {
+  return {
+    baselineId: graph.baselineId,
+    nodes: graph.nodes.map((n) => ({
+      storyId: n.storyId,
+      title: n.title,
+      requirementRevisionIds: [...n.requirementRevisionIds],
+      dependencies: [...n.dependencies],
+      dependents: [...n.dependents],
+      readinessStatus: n.readinessStatus,
+      isReady: n.isReady
+    })),
+    edges: graph.edges.map((e) => ({
+      from: e.from,
+      to: e.to
+    })),
+    executionOrder: [...graph.executionOrder],
+    isAcyclic: graph.isAcyclic,
+    hasCycles: graph.hasCycles,
+    cycles: graph.cycles.map((c) => [...c]),
+    validation: {
+      isValid: graph.validation.isValid,
+      errors: [...graph.validation.errors],
+      missingNodeIds: [...graph.validation.missingNodeIds],
+      selfDependencies: [...graph.validation.selfDependencies],
+      cycles: graph.validation.cycles.map((c) => [...c])
+    },
+    createdAt: graph.createdAt
+  };
+}
+
+export function mapEngineeringHandoffBundleToDto(
+  bundle: EngineeringHandoffBundle
+): EngineeringHandoffBundleDto {
+  return {
+    baseline: mapRequirementsBaselineToDto(bundle.baseline),
+    authorityBundle: mapAuthorityBundleToDto(bundle.authorityBundle),
+    engineeringDecisions: bundle.engineeringDecisions.map(mapEngineeringDecisionToDto),
+    sqlProjection: bundle.sqlProjection
+      ? mapProjectionRecordToDto(bundle.sqlProjection)
+      : undefined,
+    openApiProjection: bundle.openApiProjection
+      ? mapProjectionRecordToDto(bundle.openApiProjection)
+      : undefined,
+    stories: bundle.stories.map(mapStoryRecordToDto),
+    readinessReports: bundle.readinessReports.map(mapStoryReadinessReportToDto),
+    coverage: mapBaselineRequirementCoverageToDto(bundle.coverage),
+    dependencyGraph: mapStoryDependencyGraphToDto(bundle.dependencyGraph),
+    blockingFindings: bundle.blockingFindings.map(mapCandidateFindingToDto),
+    unresolvedRequirements: bundle.unresolvedRequirements.map(mapRequirementRevisionToDto),
+    summary: { ...bundle.summary }
   };
 }

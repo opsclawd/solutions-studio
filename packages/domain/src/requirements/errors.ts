@@ -55,3 +55,30 @@ export class EmptyBaselineError extends DomainError {
     super(message);
   }
 }
+
+export class StoryDependencyGraphError extends DomainError {
+  constructor(message: string) {
+    super(message);
+  }
+}
+
+export class MissingStoryDependencyNodeError extends StoryDependencyGraphError {
+  constructor(
+    public readonly storyId: string,
+    public readonly dependencyId: string
+  ) {
+    super(`Story '${storyId}' references unknown dependency story '${dependencyId}'`);
+  }
+}
+
+export class StorySelfDependencyError extends StoryDependencyGraphError {
+  constructor(public readonly storyId: string) {
+    super(`Story '${storyId}' cannot declare a dependency on itself`);
+  }
+}
+
+export class StoryDependencyCycleError extends StoryDependencyGraphError {
+  constructor(public readonly cycle: readonly string[]) {
+    super(`Dependency cycle detected: [${cycle.join(' -> ')}]`);
+  }
+}

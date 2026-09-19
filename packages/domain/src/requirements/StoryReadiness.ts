@@ -12,6 +12,7 @@ import type { RequirementRevision } from './RequirementRevision.js';
 import type { PolicyConstraintRevision } from './PolicyConstraintRevision.js';
 import { FINDING_TYPES, type CandidateFinding, type FindingType } from './CandidateFinding.js';
 import type { EngineeringDecision } from './EngineeringDecision.js';
+import { detectCycles, findCyclicStoryIds, findCycleForStory } from './StoryDependencyGraph.js';
 
 export const STORY_READINESS_RULE_IDS = [
   'baseline-exists',
@@ -64,6 +65,7 @@ export interface StoryReadinessEvaluationContext {
     readonly id?: string;
   };
   readonly baselineStoryIds?: readonly StoryId[];
+  readonly baselineStories?: readonly Story[];
 }
 
 export interface StoryReadinessReport {
@@ -429,13 +431,16 @@ export function evaluateStoryReadiness(
   if (dependencies.length === 0) {
     passedRules.push('story-dependencies-exist');
   } else {
-    const baselineStoryIds = new Set<string>(context.baselineStoryIds ?? []);
+    const knownStoryIds = new Set<string>([
+      ...(context.baselineStoryIds ?? []),
+      ...(context.baselineStories?.map((s) => s.id as string) ?? [])
+    ]);
     const offendingDepIds: string[] = [];
 
     for (const depId of dependencies) {
       if (depId === story.id) {
         offendingDepIds.push(depId);
-      } else if (!baselineStoryIds.has(depId)) {
+      } else if (!knownStoryIds.has(depId)) {
         offendingDepIds.push(depId);
       }
     }
@@ -447,6 +452,22 @@ export function evaluateStoryReadiness(
         message: `Story dependencies [${offendingDepIds.join(', ')}] are invalid: dependencies must exist, cannot self-reference, and must belong to baseline '${story.baselineId}'`,
         affectedIds: Object.freeze(offendingDepIds)
       });
+    } else if (context.baselineStories) {
+      const cyclicStoryIds = findCyclicStoryIds(context.baselineStories);
+      if (cyclicStoryIds.has(story.id)) {
+        const cycles = detectCycles(context.baselineStories);
+        const participatingCycle =
+          cycles.find((c) => c.includes(story.id)) ??
+          findCycleForStory(story.id, context.baselineStories) ??
+          ([story.id, story.id] as const);
+        failures.push({
+          ruleId: 'story-dependencies-exist',
+          message: `Story '${story.id}' participates in a dependency cycle: [${participatingCycle.join(' -> ')}]`,
+          affectedIds: Object.freeze([...participatingCycle])
+        });
+      } else {
+        passedRules.push('story-dependencies-exist');
+      }
     } else {
       passedRules.push('story-dependencies-exist');
     }
