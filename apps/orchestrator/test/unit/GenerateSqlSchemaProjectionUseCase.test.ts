@@ -481,4 +481,86 @@ describe('GenerateSqlSchemaProjectionUseCase', () => {
       })
     ).rejects.toThrow(EmptyBaselineError);
   });
+
+  it('includes default UUID surrogate primary key strategy in prompt when unconstrained', async () => {
+    const rev1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-001-R1'),
+      requirementId: createRequirementId('REQ-001'),
+      revision: 1,
+      statement: 'User accounts',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR'
+    });
+    await repo.saveRequirementRevision(rev1);
+
+    const baseline = createRequirementsBaseline({
+      id: createRequirementsBaselineId('BASE-PK-001'),
+      requirements: [rev1],
+      createdBy: createReviewerId('REV-LEAD')
+    });
+    await repo.saveRequirementsBaseline(baseline);
+
+    const validSql = createValidSql('BASE-PK-001', ['REQ-001-R1']);
+    fakeGateway.queueResponse(validSql);
+
+    await useCase.execute({
+      baselineId: baseline.id
+    });
+
+    const sentPrompt = fakeGateway.recordedRequests[0].prompt;
+    expect(sentPrompt).toContain('Primary Key & Surrogate Key Strategy:');
+    expect(sentPrompt).toContain(
+      "use UUID surrogate primary keys ('id UUID PRIMARY KEY DEFAULT gen_random_uuid()')"
+    );
+  });
+
+  it('includes strict compliance directive when accepted engineering decisions are provided', async () => {
+    const rev1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-001-R1'),
+      requirementId: createRequirementId('REQ-001'),
+      revision: 1,
+      statement: 'User accounts',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR'
+    });
+    await repo.saveRequirementRevision(rev1);
+
+    const baseline = createRequirementsBaseline({
+      id: createRequirementsBaselineId('BASE-ED-COMPLY'),
+      requirements: [rev1],
+      createdBy: createReviewerId('REV-LEAD')
+    });
+    await repo.saveRequirementsBaseline(baseline);
+
+    const decision = createEngineeringDecision({
+      id: createEngineeringDecisionId('ED-PK-001'),
+      baselineId: baseline.id,
+      statement: 'Use BIGINT GENERATED ALWAYS AS IDENTITY for primary keys',
+      rationale: 'Sequential high-performance key',
+      state: 'ACCEPTED',
+      createdBy: 'ARCH-1',
+      acceptedBy: createReviewerId('REV-LEAD'),
+      acceptedAt: createInstant('2026-09-18T12:00:00.000Z')
+    });
+    await repo.saveEngineeringDecision(decision);
+
+    const validSql = createValidSql('BASE-ED-COMPLY', ['REQ-001-R1'], {
+      edIds: ['ED-PK-001']
+    });
+    fakeGateway.queueResponse(validSql);
+
+    await useCase.execute({
+      baselineId: baseline.id,
+      engineeringDecisionIds: ['ED-PK-001']
+    });
+
+    const sentPrompt = fakeGateway.recordedRequests[0].prompt;
+    expect(sentPrompt).toContain(
+      'MUST strictly comply with and implement all Accepted Engineering Decisions above (including primary key types, surrogate key strategies, and column naming).'
+    );
+  });
 });

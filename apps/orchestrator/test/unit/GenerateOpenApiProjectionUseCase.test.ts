@@ -30,6 +30,12 @@ import {
   RepairRetryExhaustionError,
   OpenApiProvenanceValidationError
 } from '../../src/application/use-cases/OpenApiProjectionErrors.js';
+import {
+  UnknownProjectionError,
+  ProjectionBaselineMismatchError,
+  ProjectionArtifactTypeMismatchError,
+  ConflictingSqlProjectionAuthorityError
+} from '../../src/application/use-cases/DiscoveryErrors.js';
 import type { ProjectionRecord } from '../../src/application/ports/persistence/IRequirementsRepository.js';
 
 describe('GenerateOpenApiProjectionUseCase', () => {
@@ -616,5 +622,654 @@ describe('GenerateOpenApiProjectionUseCase', () => {
         engineeringDecisionIds: [otherDecision.id]
       })
     ).rejects.toThrow(OpenApiProvenanceValidationError);
+  });
+
+  it('injects SQL schema tables, primary key types, and decisions into OpenAPI prompt when sqlSchemaProjectionId is provided', async () => {
+    const rev1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-001-R1'),
+      requirementId: createRequirementId('REQ-001'),
+      revision: 1,
+      statement: 'Manage orders',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR'
+    });
+    await repo.saveRequirementRevision(rev1);
+
+    const baseline = createRequirementsBaseline({
+      id: createRequirementsBaselineId('BASE-SQL-CTX-1'),
+      requirements: [rev1],
+      createdBy: createReviewerId('REV-LEAD')
+    });
+    await repo.saveRequirementsBaseline(baseline);
+
+    const sqlProjection: ProjectionRecord = {
+      id: 'PROJ-SQL-ORDERS-1',
+      baselineId: baseline.id,
+      requirementRevisionIds: baseline.requirementRevisions,
+      artifactType: 'sql-schema',
+      content: [
+        '-- @baseline BASE-SQL-CTX-1',
+        '-- @requirements REQ-001-R1',
+        '-- @decision: Use BIGINT GENERATED ALWAYS AS IDENTITY for primary keys | Sequential surrogate key',
+        '',
+        'CREATE TABLE orders (',
+        '  order_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,',
+        '  status VARCHAR(32) NOT NULL',
+        ');'
+      ].join('\n'),
+      metadata: {
+        baselineId: baseline.id,
+        requirementRevisionIds: [...baseline.requirementRevisions],
+        artifactType: 'sql-schema',
+        declaredProvenance: {
+          baselineId: baseline.id,
+          requirementRevisionIds: [...baseline.requirementRevisions]
+        },
+        configuredExecution: { provider: 'fake', artifactType: 'sql-schema' },
+        measuredVerification: {
+          repairsNeeded: 0,
+          attemptCount: 1,
+          contentHash: 'hash',
+          verifiedAt: createInstant('2026-09-18T12:00:00.000Z')
+        }
+      },
+      createdAt: createInstant('2026-09-18T12:00:00.000Z')
+    };
+    await repo.saveProjectionRecord(sqlProjection);
+
+    const openApiContent = createValidOpenApi('BASE-SQL-CTX-1', ['REQ-001-R1'], {
+      paths: `  /orders:\n    get:\n      operationId: listOrders\n      responses:\n        '200':\n          description: OK`,
+      schemas: `    Order:\n      type: object\n      required:\n        - order_id\n      properties:\n        order_id:\n          type: integer`
+    });
+    fakeGateway.queueResponse(openApiContent);
+
+    await useCase.execute({
+      baselineId: baseline.id,
+      sqlSchemaProjectionId: sqlProjection.id
+    });
+
+    const sentPrompt = fakeGateway.recordedRequests[0].prompt;
+    expect(sentPrompt).toContain(
+      'Relational Schema Context (from SQL projection PROJ-SQL-ORDERS-1):'
+    );
+    expect(sentPrompt).toContain("Table 'orders': Primary key column 'order_id' (Type: BIGINT)");
+    expect(sentPrompt).toContain('Relational Engineering Decisions:');
+    expect(sentPrompt).toContain(
+      'Use BIGINT GENERATED ALWAYS AS IDENTITY for primary keys | Sequential surrogate key'
+    );
+    expect(sentPrompt).toContain('OpenAPI Identifier Alignment Requirements:');
+    expect(sentPrompt).toContain(
+      "If SQL primary key is integer/BIGINT/SERIAL: OpenAPI schema property must be type 'integer'."
+    );
+  });
+
+  it('injects latest SQL schema projection from repository into prompt when sqlSchemaProjectionId is omitted', async () => {
+    const rev1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-001-R1'),
+      requirementId: createRequirementId('REQ-001'),
+      revision: 1,
+      statement: 'Manage users',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR'
+    });
+    await repo.saveRequirementRevision(rev1);
+
+    const baseline = createRequirementsBaseline({
+      id: createRequirementsBaselineId('BASE-SQL-AUTO-1'),
+      requirements: [rev1],
+      createdBy: createReviewerId('REV-LEAD')
+    });
+    await repo.saveRequirementsBaseline(baseline);
+
+    // Older projection with alphabetically higher ID ('PROJ-SQL-ZZZ-OLDER')
+    const olderSqlProjection: ProjectionRecord = {
+      id: 'PROJ-SQL-ZZZ-OLDER',
+      baselineId: baseline.id,
+      requirementRevisionIds: baseline.requirementRevisions,
+      artifactType: 'sql-schema',
+      content: [
+        '-- @baseline BASE-SQL-AUTO-1',
+        '-- @requirements REQ-001-R1',
+        '',
+        'CREATE TABLE legacy_users (',
+        '  id UUID PRIMARY KEY DEFAULT gen_random_uuid()',
+        ');'
+      ].join('\n'),
+      metadata: {
+        baselineId: baseline.id,
+        requirementRevisionIds: [...baseline.requirementRevisions],
+        artifactType: 'sql-schema',
+        declaredProvenance: {
+          baselineId: baseline.id,
+          requirementRevisionIds: [...baseline.requirementRevisions]
+        },
+        configuredExecution: { provider: 'fake', artifactType: 'sql-schema' },
+        measuredVerification: {
+          repairsNeeded: 0,
+          attemptCount: 1,
+          contentHash: 'hash',
+          verifiedAt: createInstant('2026-09-18T10:00:00.000Z')
+        }
+      },
+      createdAt: createInstant('2026-09-18T10:00:00.000Z')
+    };
+    await repo.saveProjectionRecord(olderSqlProjection);
+
+    // Newer projection with alphabetically lower ID ('PROJ-SQL-AAA-NEWER')
+    const newerSqlProjection: ProjectionRecord = {
+      id: 'PROJ-SQL-AAA-NEWER',
+      baselineId: baseline.id,
+      requirementRevisionIds: baseline.requirementRevisions,
+      artifactType: 'sql-schema',
+      content: [
+        '-- @baseline BASE-SQL-AUTO-1',
+        '-- @requirements REQ-001-R1',
+        '',
+        'CREATE TABLE users (',
+        '  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),',
+        '  email TEXT NOT NULL',
+        ');'
+      ].join('\n'),
+      metadata: {
+        baselineId: baseline.id,
+        requirementRevisionIds: [...baseline.requirementRevisions],
+        artifactType: 'sql-schema',
+        declaredProvenance: {
+          baselineId: baseline.id,
+          requirementRevisionIds: [...baseline.requirementRevisions]
+        },
+        configuredExecution: { provider: 'fake', artifactType: 'sql-schema' },
+        measuredVerification: {
+          repairsNeeded: 0,
+          attemptCount: 1,
+          contentHash: 'hash',
+          verifiedAt: createInstant('2026-09-18T12:00:00.000Z')
+        }
+      },
+      createdAt: createInstant('2026-09-18T12:00:00.000Z')
+    };
+    await repo.saveProjectionRecord(newerSqlProjection);
+
+    const openApiContent = createValidOpenApi('BASE-SQL-AUTO-1', ['REQ-001-R1']);
+    fakeGateway.queueResponse(openApiContent);
+
+    await useCase.execute({
+      baselineId: baseline.id
+    });
+
+    const sentPrompt = fakeGateway.recordedRequests[0].prompt;
+    // Must select the newer one ('PROJ-SQL-AAA-NEWER') rather than alphabetical last ('PROJ-SQL-ZZZ-OLDER')
+    expect(sentPrompt).toContain(
+      'Relational Schema Context (from SQL projection PROJ-SQL-AAA-NEWER):'
+    );
+    expect(sentPrompt).toContain("Table 'users': Primary key column 'id' (Type: UUID)");
+    expect(sentPrompt).not.toContain('PROJ-SQL-ZZZ-OLDER');
+    expect(sentPrompt).not.toContain('legacy_users');
+    expect(sentPrompt).toContain(
+      "If SQL primary key is UUID: OpenAPI schema property must be type 'string' with format 'uuid'."
+    );
+  });
+
+  it('instructs integer ID type when SQL schema uses BIGINT identity primary keys', async () => {
+    const rev1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-001-R1'),
+      requirementId: createRequirementId('REQ-001'),
+      revision: 1,
+      statement: 'Manage products',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR'
+    });
+    await repo.saveRequirementRevision(rev1);
+
+    const baseline = createRequirementsBaseline({
+      id: createRequirementsBaselineId('BASE-SQL-INT-1'),
+      requirements: [rev1],
+      createdBy: createReviewerId('REV-LEAD')
+    });
+    await repo.saveRequirementsBaseline(baseline);
+
+    const sqlProjection: ProjectionRecord = {
+      id: 'PROJ-SQL-PRODUCTS',
+      baselineId: baseline.id,
+      requirementRevisionIds: baseline.requirementRevisions,
+      artifactType: 'sql-schema',
+      content: [
+        '-- @baseline BASE-SQL-INT-1',
+        '-- @requirements REQ-001-R1',
+        '',
+        'CREATE TABLE products (',
+        '  product_id BIGINT PRIMARY KEY,',
+        '  name TEXT NOT NULL',
+        ');'
+      ].join('\n'),
+      metadata: {
+        baselineId: baseline.id,
+        requirementRevisionIds: [...baseline.requirementRevisions],
+        artifactType: 'sql-schema',
+        declaredProvenance: {
+          baselineId: baseline.id,
+          requirementRevisionIds: [...baseline.requirementRevisions]
+        },
+        configuredExecution: { provider: 'fake', artifactType: 'sql-schema' },
+        measuredVerification: {
+          repairsNeeded: 0,
+          attemptCount: 1,
+          contentHash: 'hash',
+          verifiedAt: createInstant('2026-09-18T12:00:00.000Z')
+        }
+      },
+      createdAt: createInstant('2026-09-18T12:00:00.000Z')
+    };
+    await repo.saveProjectionRecord(sqlProjection);
+
+    const openApiContent = createValidOpenApi('BASE-SQL-INT-1', ['REQ-001-R1'], {
+      paths: `  /products:\n    get:\n      operationId: listProducts\n      responses:\n        '200':\n          description: OK`,
+      schemas: `    Product:\n      type: object\n      required:\n        - product_id\n      properties:\n        product_id:\n          type: integer`
+    });
+    fakeGateway.queueResponse(openApiContent);
+
+    await useCase.execute({
+      baselineId: baseline.id,
+      sqlSchemaProjectionId: sqlProjection.id
+    });
+
+    const sentPrompt = fakeGateway.recordedRequests[0].prompt;
+    expect(sentPrompt).toContain(
+      "If SQL primary key is integer/BIGINT/SERIAL: OpenAPI schema property must be type 'integer'."
+    );
+  });
+
+  it('includes default UUID format in prompt when no SQL projection or decision exists', async () => {
+    const rev1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-001-R1'),
+      requirementId: createRequirementId('REQ-001'),
+      revision: 1,
+      statement: 'Manage items',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR'
+    });
+    await repo.saveRequirementRevision(rev1);
+
+    const baseline = createRequirementsBaseline({
+      id: createRequirementsBaselineId('BASE-NO-SQL-1'),
+      requirements: [rev1],
+      createdBy: createReviewerId('REV-LEAD')
+    });
+    await repo.saveRequirementsBaseline(baseline);
+
+    const openApiContent = createValidOpenApi('BASE-NO-SQL-1', ['REQ-001-R1']);
+    fakeGateway.queueResponse(openApiContent);
+
+    await useCase.execute({
+      baselineId: baseline.id
+    });
+
+    const sentPrompt = fakeGateway.recordedRequests[0].prompt;
+    expect(sentPrompt).toContain('Primary Key & Identifier Format Convention:');
+    expect(sentPrompt).toContain(
+      "In the absence of an accepted engineering decision or relational schema context specifying an alternative, use UUID format ('id: { type: string, format: uuid }') as the standard primary key format."
+    );
+  });
+
+  it('includes strict compliance directive when accepted engineering decisions are provided', async () => {
+    const rev1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-001-R1'),
+      requirementId: createRequirementId('REQ-001'),
+      revision: 1,
+      statement: 'Manage accounts',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR'
+    });
+    await repo.saveRequirementRevision(rev1);
+
+    const baseline = createRequirementsBaseline({
+      id: createRequirementsBaselineId('BASE-ED-OPENAPI-1'),
+      requirements: [rev1],
+      createdBy: createReviewerId('REV-LEAD')
+    });
+    await repo.saveRequirementsBaseline(baseline);
+
+    const decision = createEngineeringDecision({
+      id: createEngineeringDecisionId('ED-OAS-001'),
+      baselineId: baseline.id,
+      statement: 'Use UUID primary keys with gen_random_uuid()',
+      rationale: 'Avoid integer sequential key enumeration',
+      requirementRevisionIds: [rev1.id],
+      policyConstraintRevisionIds: [],
+      state: 'ACCEPTED',
+      acceptedBy: createReviewerId('REV-LEAD'),
+      acceptedAt: createInstant('2026-09-18T12:00:00.000Z'),
+      createdBy: 'openapi-generator'
+    });
+    await repo.saveEngineeringDecision(decision);
+
+    const openApiContent = createValidOpenApi('BASE-ED-OPENAPI-1', ['REQ-001-R1'], {
+      edIds: ['ED-OAS-001']
+    });
+    fakeGateway.queueResponse(openApiContent);
+
+    await useCase.execute({
+      baselineId: baseline.id,
+      engineeringDecisionIds: ['ED-OAS-001']
+    });
+
+    const sentPrompt = fakeGateway.recordedRequests[0].prompt;
+    expect(sentPrompt).toContain(
+      'MUST strictly comply with and implement all Accepted Engineering Decisions above (including primary key types and surrogate key strategies).'
+    );
+  });
+
+  it('throws UnknownProjectionError when explicit sqlSchemaProjectionId does not exist', async () => {
+    const rev1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-001-R1'),
+      requirementId: createRequirementId('REQ-001'),
+      revision: 1,
+      statement: 'Manage users',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR'
+    });
+    await repo.saveRequirementRevision(rev1);
+
+    const baseline = createRequirementsBaseline({
+      id: createRequirementsBaselineId('BASE-SQL-MISSING-1'),
+      requirements: [rev1],
+      createdBy: createReviewerId('REV-LEAD')
+    });
+    await repo.saveRequirementsBaseline(baseline);
+
+    await expect(
+      useCase.execute({
+        baselineId: baseline.id,
+        sqlSchemaProjectionId: 'PROJ-NONEXISTENT'
+      })
+    ).rejects.toThrow(UnknownProjectionError);
+  });
+
+  it('throws ProjectionBaselineMismatchError when explicit sqlSchemaProjectionId belongs to another baseline', async () => {
+    const rev1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-001-R1'),
+      requirementId: createRequirementId('REQ-001'),
+      revision: 1,
+      statement: 'Manage users',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR'
+    });
+    await repo.saveRequirementRevision(rev1);
+
+    const baseline1 = createRequirementsBaseline({
+      id: createRequirementsBaselineId('BASE-1'),
+      requirements: [rev1],
+      createdBy: createReviewerId('REV-LEAD')
+    });
+    const baseline2 = createRequirementsBaseline({
+      id: createRequirementsBaselineId('BASE-2'),
+      requirements: [rev1],
+      createdBy: createReviewerId('REV-LEAD')
+    });
+    await repo.saveRequirementsBaseline(baseline1);
+    await repo.saveRequirementsBaseline(baseline2);
+
+    const foreignSqlProjection: ProjectionRecord = {
+      id: 'PROJ-SQL-FOREIGN',
+      baselineId: baseline2.id,
+      requirementRevisionIds: baseline2.requirementRevisions,
+      artifactType: 'sql-schema',
+      content: '-- @baseline BASE-2\nCREATE TABLE orders (id UUID PRIMARY KEY);',
+      metadata: {
+        baselineId: baseline2.id,
+        requirementRevisionIds: [...baseline2.requirementRevisions],
+        artifactType: 'sql-schema',
+        declaredProvenance: {
+          baselineId: baseline2.id,
+          requirementRevisionIds: [...baseline2.requirementRevisions]
+        },
+        configuredExecution: { provider: 'fake', artifactType: 'sql-schema' },
+        measuredVerification: {
+          repairsNeeded: 0,
+          attemptCount: 1,
+          contentHash: 'h',
+          verifiedAt: createInstant('2026-09-18T12:00:00.000Z')
+        }
+      },
+      createdAt: createInstant('2026-09-18T12:00:00.000Z')
+    };
+    await repo.saveProjectionRecord(foreignSqlProjection);
+
+    await expect(
+      useCase.execute({
+        baselineId: baseline1.id,
+        sqlSchemaProjectionId: foreignSqlProjection.id
+      })
+    ).rejects.toThrow(ProjectionBaselineMismatchError);
+  });
+
+  it('throws ProjectionArtifactTypeMismatchError when explicit projection is not sql-schema', async () => {
+    const rev1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-001-R1'),
+      requirementId: createRequirementId('REQ-001'),
+      revision: 1,
+      statement: 'Manage users',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR'
+    });
+    await repo.saveRequirementRevision(rev1);
+
+    const baseline = createRequirementsBaseline({
+      id: createRequirementsBaselineId('BASE-NON-SQL-1'),
+      requirements: [rev1],
+      createdBy: createReviewerId('REV-LEAD')
+    });
+    await repo.saveRequirementsBaseline(baseline);
+
+    const diagramProjection: ProjectionRecord = {
+      id: 'PROJ-DIAGRAM-1',
+      baselineId: baseline.id,
+      requirementRevisionIds: baseline.requirementRevisions,
+      artifactType: 'process-diagram',
+      content: 'stateDiagram-v2\n[*] --> Active',
+      metadata: {
+        baselineId: baseline.id,
+        requirementRevisionIds: [...baseline.requirementRevisions],
+        artifactType: 'process-diagram',
+        declaredProvenance: {
+          baselineId: baseline.id,
+          requirementRevisionIds: [...baseline.requirementRevisions]
+        },
+        configuredExecution: { provider: 'fake', artifactType: 'process-diagram' },
+        measuredVerification: {
+          repairsNeeded: 0,
+          attemptCount: 1,
+          contentHash: 'h',
+          verifiedAt: createInstant('2026-09-18T12:00:00.000Z')
+        }
+      },
+      createdAt: createInstant('2026-09-18T12:00:00.000Z')
+    };
+    await repo.saveProjectionRecord(diagramProjection);
+
+    await expect(
+      useCase.execute({
+        baselineId: baseline.id,
+        sqlSchemaProjectionId: diagramProjection.id
+      })
+    ).rejects.toThrow(ProjectionArtifactTypeMismatchError);
+  });
+
+  it('throws ConflictingSqlProjectionAuthorityError when same-baseline SQL projection conflicts with accepted EngineeringDecision primary key type', async () => {
+    const rev1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-001-R1'),
+      requirementId: createRequirementId('REQ-001'),
+      revision: 1,
+      statement: 'Manage orders',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR'
+    });
+    await repo.saveRequirementRevision(rev1);
+
+    const baseline = createRequirementsBaseline({
+      id: createRequirementsBaselineId('BASE-CONFLICT-1'),
+      requirements: [rev1],
+      createdBy: createReviewerId('REV-LEAD')
+    });
+    await repo.saveRequirementsBaseline(baseline);
+
+    // SQL projection defines BIGINT primary key
+    const sqlProjection: ProjectionRecord = {
+      id: 'PROJ-SQL-BIGINT',
+      baselineId: baseline.id,
+      requirementRevisionIds: baseline.requirementRevisions,
+      artifactType: 'sql-schema',
+      content: [
+        '-- @baseline BASE-CONFLICT-1',
+        '-- @requirements REQ-001-R1',
+        'CREATE TABLE orders (',
+        '  order_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,',
+        '  title TEXT NOT NULL',
+        ');'
+      ].join('\n'),
+      metadata: {
+        baselineId: baseline.id,
+        requirementRevisionIds: [...baseline.requirementRevisions],
+        artifactType: 'sql-schema',
+        declaredProvenance: {
+          baselineId: baseline.id,
+          requirementRevisionIds: [...baseline.requirementRevisions]
+        },
+        configuredExecution: { provider: 'fake', artifactType: 'sql-schema' },
+        measuredVerification: {
+          repairsNeeded: 0,
+          attemptCount: 1,
+          contentHash: 'h',
+          verifiedAt: createInstant('2026-09-18T11:00:00.000Z')
+        }
+      },
+      createdAt: createInstant('2026-09-18T11:00:00.000Z')
+    };
+    await repo.saveProjectionRecord(sqlProjection);
+
+    // Accepted decision explicitly mandates UUID primary keys
+    const uuidDecision = createEngineeringDecision({
+      id: createEngineeringDecisionId('ED-CONFLICT-UUID'),
+      baselineId: baseline.id,
+      statement: 'Use UUID primary keys with gen_random_uuid() for entity tables',
+      rationale: 'Mandatory standard UUID identifier strategy',
+      requirementRevisionIds: [rev1.id],
+      policyConstraintRevisionIds: [],
+      state: 'ACCEPTED',
+      acceptedBy: createReviewerId('REV-LEAD'),
+      acceptedAt: createInstant('2026-09-18T12:00:00.000Z'),
+      createdBy: 'ARCH'
+    });
+    await repo.saveEngineeringDecision(uuidDecision);
+
+    await expect(
+      useCase.execute({
+        baselineId: baseline.id,
+        sqlSchemaProjectionId: sqlProjection.id,
+        engineeringDecisionIds: [uuidDecision.id]
+      })
+    ).rejects.toThrow(ConflictingSqlProjectionAuthorityError);
+  });
+
+  it('includes relational schema context and alignment requirements in repair prompt on retry', async () => {
+    const rev1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-001-R1'),
+      requirementId: createRequirementId('REQ-001'),
+      revision: 1,
+      statement: 'Manage users',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR'
+    });
+    await repo.saveRequirementRevision(rev1);
+
+    const baseline = createRequirementsBaseline({
+      id: createRequirementsBaselineId('BASE-REPAIR-SQL-1'),
+      requirements: [rev1],
+      createdBy: createReviewerId('REV-LEAD')
+    });
+    await repo.saveRequirementsBaseline(baseline);
+
+    const sqlProjection: ProjectionRecord = {
+      id: 'PROJ-SQL-REPAIR-1',
+      baselineId: baseline.id,
+      requirementRevisionIds: baseline.requirementRevisions,
+      artifactType: 'sql-schema',
+      content: [
+        '-- @baseline BASE-REPAIR-SQL-1',
+        '-- @requirements REQ-001-R1',
+        'CREATE TABLE users (',
+        '  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),',
+        '  name TEXT NOT NULL',
+        ');'
+      ].join('\n'),
+      metadata: {
+        baselineId: baseline.id,
+        requirementRevisionIds: [...baseline.requirementRevisions],
+        artifactType: 'sql-schema',
+        declaredProvenance: {
+          baselineId: baseline.id,
+          requirementRevisionIds: [...baseline.requirementRevisions]
+        },
+        configuredExecution: { provider: 'fake', artifactType: 'sql-schema' },
+        measuredVerification: {
+          repairsNeeded: 0,
+          attemptCount: 1,
+          contentHash: 'h',
+          verifiedAt: createInstant('2026-09-18T12:00:00.000Z')
+        }
+      },
+      createdAt: createInstant('2026-09-18T12:00:00.000Z')
+    };
+    await repo.saveProjectionRecord(sqlProjection);
+
+    // Force first candidate to fail validation to trigger repair loop
+    fakeValidator.failNextNTimes(1, 'OpenAPI validation failed: schema error');
+
+    // First attempt candidate
+    const initialCandidate = createValidOpenApi('BASE-REPAIR-SQL-1', ['REQ-001-R1']);
+    fakeGateway.queueResponse(initialCandidate);
+
+    // Second attempt (repair): valid OpenAPI
+    const repairedCandidate = createValidOpenApi('BASE-REPAIR-SQL-1', ['REQ-001-R1']);
+    fakeGateway.queueResponse(repairedCandidate);
+
+    const result = await useCase.execute({
+      baselineId: baseline.id,
+      sqlSchemaProjectionId: sqlProjection.id,
+      options: { maxRepairAttempts: 2 }
+    });
+
+    expect(result.metadata.measuredVerification.repairsNeeded).toBe(1);
+    expect(fakeGateway.recordedRequests).toHaveLength(2);
+
+    // Verify repair prompt (the second request) received the SQL primary-key context
+    const repairPrompt = fakeGateway.recordedRequests[1].prompt;
+    expect(repairPrompt).toContain(
+      'OpenAPI Identifier Alignment Requirements (MUST strictly match relational primary keys):'
+    );
+    expect(repairPrompt).toContain("Table 'users': Primary key column 'id' (Type: UUID)");
+    expect(repairPrompt).toContain(
+      "If SQL primary key is UUID: OpenAPI schema property must be type 'string' with format 'uuid'."
+    );
   });
 });
