@@ -59,7 +59,14 @@ import type {
   StoryReadinessReportDtoSchema,
   ListStoryReadinessReportsResponseDtoSchema,
   RequirementCoverageEntryDtoSchema,
-  BaselineRequirementCoverageDtoSchema
+  BaselineRequirementCoverageDtoSchema,
+  StoryDependencyGraphNodeDtoSchema,
+  StoryDependencyGraphEdgeDtoSchema,
+  StoryDependencyGraphValidationResultDtoSchema,
+  StoryDependencyGraphDtoSchema,
+  UpdateStoryDependenciesRequestDtoSchema,
+  EngineeringHandoffSummaryDtoSchema,
+  EngineeringHandoffBundleDtoSchema
 } from './schemas.js';
 
 export type InstantDto = z.infer<typeof InstantDtoSchema>;
@@ -147,3 +154,15 @@ export type ListStoryReadinessReportsResponseDto = z.infer<
 >;
 export type RequirementCoverageEntryDto = z.infer<typeof RequirementCoverageEntryDtoSchema>;
 export type BaselineRequirementCoverageDto = z.infer<typeof BaselineRequirementCoverageDtoSchema>;
+
+export type StoryDependencyGraphNodeDto = z.infer<typeof StoryDependencyGraphNodeDtoSchema>;
+export type StoryDependencyGraphEdgeDto = z.infer<typeof StoryDependencyGraphEdgeDtoSchema>;
+export type StoryDependencyGraphValidationResultDto = z.infer<
+  typeof StoryDependencyGraphValidationResultDtoSchema
+>;
+export type StoryDependencyGraphDto = z.infer<typeof StoryDependencyGraphDtoSchema>;
+export type UpdateStoryDependenciesRequestDto = z.infer<
+  typeof UpdateStoryDependenciesRequestDtoSchema
+>;
+export type EngineeringHandoffSummaryDto = z.infer<typeof EngineeringHandoffSummaryDtoSchema>;
+export type EngineeringHandoffBundleDto = z.infer<typeof EngineeringHandoffBundleDtoSchema>;

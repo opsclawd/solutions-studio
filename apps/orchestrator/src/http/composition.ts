@@ -28,6 +28,9 @@ import { GetAuthorityBundleUseCase } from '../application/use-cases/GetAuthority
 import { RecordEngineeringDecisionUseCase } from '../application/use-cases/RecordEngineeringDecisionUseCase.js';
 import { TransitionEngineeringDecisionUseCase } from '../application/use-cases/TransitionEngineeringDecisionUseCase.js';
 import { GetEngineeringDecisionsUseCase } from '../application/use-cases/GetEngineeringDecisionsUseCase.js';
+import { BuildStoryDependencyGraphUseCase } from '../application/use-cases/BuildStoryDependencyGraphUseCase.js';
+import { UpdateStoryDependenciesUseCase } from '../application/use-cases/UpdateStoryDependenciesUseCase.js';
+import { GetEngineeringHandoffBundleUseCase } from '../application/use-cases/GetEngineeringHandoffBundleUseCase.js';
 import { FilesystemRequirementsRepository } from '../infrastructure/persistence/filesystem/FilesystemRequirementsRepository.js';
 import {
   GatewayFactory,
@@ -78,6 +81,9 @@ export interface ComposeHttpServerOptions {
   readonly recordEngineeringDecisionUseCase?: RecordEngineeringDecisionUseCase;
   readonly transitionEngineeringDecisionUseCase?: TransitionEngineeringDecisionUseCase;
   readonly getEngineeringDecisionsUseCase?: GetEngineeringDecisionsUseCase;
+  readonly buildStoryDependencyGraphUseCase?: BuildStoryDependencyGraphUseCase;
+  readonly updateStoryDependenciesUseCase?: UpdateStoryDependenciesUseCase;
+  readonly getEngineeringHandoffBundleUseCase?: GetEngineeringHandoffBundleUseCase;
 }
 
 export interface ComposedHttpServer {
@@ -102,6 +108,9 @@ export interface ComposedHttpServer {
   readonly getStoriesUseCase: GetStoriesUseCase;
   readonly evaluateStoryReadinessUseCase: EvaluateStoryReadinessUseCase;
   readonly computeRequirementCoverageUseCase: ComputeRequirementCoverageUseCase;
+  readonly buildStoryDependencyGraphUseCase: BuildStoryDependencyGraphUseCase;
+  readonly updateStoryDependenciesUseCase: UpdateStoryDependenciesUseCase;
+  readonly getEngineeringHandoffBundleUseCase: GetEngineeringHandoffBundleUseCase;
   readonly projectBaselineUseCase: ProjectBaselineUseCase;
   readonly reviewStateUseCase: GetRequirementsReviewStateUseCase;
   readonly recordDiscoveryUseCase: RecordRequirementsDiscoveryUseCase;
@@ -259,6 +268,23 @@ export function composeOrchestratorHttpServer(
   const computeRequirementCoverageUseCase =
     options.computeRequirementCoverageUseCase ?? new ComputeRequirementCoverageUseCase(repository);
 
+  const buildStoryDependencyGraphUseCase =
+    options.buildStoryDependencyGraphUseCase ??
+    new BuildStoryDependencyGraphUseCase(repository, evaluateStoryReadinessUseCase);
+
+  const updateStoryDependenciesUseCase =
+    options.updateStoryDependenciesUseCase ?? new UpdateStoryDependenciesUseCase(repository);
+
+  const getEngineeringHandoffBundleUseCase =
+    options.getEngineeringHandoffBundleUseCase ??
+    new GetEngineeringHandoffBundleUseCase(
+      repository,
+      getAuthorityBundleUseCase,
+      evaluateStoryReadinessUseCase,
+      computeRequirementCoverageUseCase,
+      buildStoryDependencyGraphUseCase
+    );
+
   const app = buildServer(
     {
       reviewStateUseCase,
@@ -275,7 +301,10 @@ export function composeOrchestratorHttpServer(
       generateStoriesProjectionUseCase,
       getStoriesUseCase,
       evaluateStoryReadinessUseCase,
-      computeRequirementCoverageUseCase
+      computeRequirementCoverageUseCase,
+      buildStoryDependencyGraphUseCase,
+      updateStoryDependenciesUseCase,
+      getEngineeringHandoffBundleUseCase
     },
     options.fastifyOptions
   );
@@ -302,6 +331,9 @@ export function composeOrchestratorHttpServer(
     getStoriesUseCase,
     evaluateStoryReadinessUseCase,
     computeRequirementCoverageUseCase,
+    buildStoryDependencyGraphUseCase,
+    updateStoryDependenciesUseCase,
+    getEngineeringHandoffBundleUseCase,
     projectBaselineUseCase,
     reviewStateUseCase,
     recordDiscoveryUseCase,

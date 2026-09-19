@@ -208,9 +208,13 @@ export interface IRequirementsRepository {
   getEvaluationRun(id: string): Promise<EvaluationRunRecord | undefined>;
   listEvaluationRuns(): Promise<readonly EvaluationRunRecord[]>;
   saveProjectionRecord(projection: ProjectionRecord): Promise<void>;
+  updateProjectionRecord(projection: ProjectionRecord): Promise<void>;
   getProjectionRecord(id: string): Promise<ProjectionRecord | undefined>;
   listProjectionRecords(baselineId?: RequirementsBaselineId): Promise<readonly ProjectionRecord[]>;
   saveStory(story: StoryRecord): Promise<void>;
+  updateStory(story: StoryRecord): Promise<void>;
+  updateStoryAndProjection(story: StoryRecord, projection: ProjectionRecord): Promise<void>;
   getStory(id: StoryId): Promise<StoryRecord | undefined>;
   listStories(baselineId?: RequirementsBaselineId): Promise<readonly StoryRecord[]>;
+  withBaselineLock<T>(baselineId: RequirementsBaselineId, action: () => Promise<T>): Promise<T>;
 }

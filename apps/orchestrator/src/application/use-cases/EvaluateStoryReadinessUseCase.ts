@@ -16,6 +16,7 @@ import type { IRequirementsRepository } from '../ports/persistence/IRequirements
 import type { ISqlValidatorGateway } from '../ports/validation/ISqlValidatorGateway.js';
 import type { IOpenApiValidatorGateway } from '../ports/validation/IOpenApiValidatorGateway.js';
 import { UnknownStoryError } from './StoryProjectionErrors.js';
+import { mapStoryRecordToDomainStory } from './storyMappers.js';
 
 export interface EvaluateStoryReadinessInput {
   readonly storyId: string;
@@ -171,9 +172,10 @@ export class EvaluateStoryReadinessUseCase {
       };
     }
 
-    // Fetch baseline story IDs
+    // Fetch baseline story IDs and domain stories for cycle checking
     const baselineStories = await this.repository.listStories(story.baselineId);
     const baselineStoryIds = baselineStories.map((s) => s.id);
+    const baselineDomainStories: Story[] = baselineStories.map(mapStoryRecordToDomainStory);
 
     const context: StoryReadinessEvaluationContext = {
       story,
@@ -184,7 +186,8 @@ export class EvaluateStoryReadinessUseCase {
       engineeringDecisions,
       sqlProjectionValidation,
       openApiProjectionValidation,
-      baselineStoryIds
+      baselineStoryIds,
+      baselineStories: baselineDomainStories
     };
 
     return evaluateStoryReadiness(context, input.policy);

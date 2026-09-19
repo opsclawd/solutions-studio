@@ -10,6 +10,7 @@ import {
   createStory,
   createEngineeringDecision,
   createCandidateFinding,
+  validateStoryDependencies,
   FINDING_TYPES,
   type RequirementsBaseline,
   type RequirementsBaselineId,
@@ -44,6 +45,7 @@ import {
   UnacceptedEngineeringDecisionError,
   RepairRetryExhaustionError
 } from './SqlSchemaProjectionErrors.js';
+import { mapStoryRecordToDomainStory } from './BuildStoryDependencyGraphUseCase.js';
 
 export interface StoryProjectionResult {
   readonly projectionId: string;
@@ -147,13 +149,23 @@ export class GenerateStoriesProjectionUseCase {
       acceptedDecisions.push(...decisions);
     }
 
+    // Load existing baseline stories for dependency context
+    const existingStories = await this.repository.listStories(baseline.id);
+    const storyId = input.id ? createStoryId(input.id) : createStoryId(`STORY-${randomUUID()}`);
+    const projectionId = input.id
+      ? input.id.startsWith('PROJ-')
+        ? input.id
+        : `PROJ-${input.id}`
+      : `PROJ-${storyId}`;
+
     // 4. Build prompt and generate initial candidate
     const prompt = this.buildInitialPrompt(
       baseline,
       revisions,
       policyConstraints,
       acceptedDecisions,
-      input.prompt
+      input.prompt,
+      existingStories
     );
     const initialGeneration = await this.generationGateway.generate({ prompt });
     const initialCandidate = this.extractGherkinContent(initialGeneration.text);
@@ -163,15 +175,10 @@ export class GenerateStoriesProjectionUseCase {
       initialCandidate,
       baseline,
       acceptedDecisions,
-      input.options
+      input.options,
+      existingStories,
+      storyId
     );
-
-    const storyId = input.id ? createStoryId(input.id) : createStoryId(`STORY-${randomUUID()}`);
-    const projectionId = input.id
-      ? input.id.startsWith('PROJ-')
-        ? input.id
-        : `PROJ-${input.id}`
-      : `PROJ-${storyId}`;
 
     // 6. Discovery Extraction & Lineage Population
     const autoRecord = input.autoRecordDiscoveries !== false;
@@ -292,7 +299,9 @@ export class GenerateStoriesProjectionUseCase {
     initialCandidate: string,
     baseline: RequirementsBaseline,
     acceptedDecisions: readonly EngineeringDecision[],
-    options?: GenerateArtifactOptions
+    options?: GenerateArtifactOptions,
+    existingStories?: readonly StoryRecord[],
+    targetStoryId?: string
   ): Promise<{
     content: string;
     parsedDocument: ParsedGherkinDocument;
@@ -308,7 +317,9 @@ export class GenerateStoriesProjectionUseCase {
     const initialValidation = await this.validateCandidate(
       currentCandidate,
       baseline,
-      acceptedDecisions
+      acceptedDecisions,
+      existingStories,
+      targetStoryId
     );
     if (
       initialValidation.isValid &&
@@ -338,7 +349,8 @@ export class GenerateStoriesProjectionUseCase {
         currentCandidate,
         lastError,
         baseline,
-        acceptedDecisions
+        acceptedDecisions,
+        existingStories
       );
 
       const repairGeneration = await this.generationGateway.generate({ prompt: repairPrompt });
@@ -347,7 +359,9 @@ export class GenerateStoriesProjectionUseCase {
       const validation = await this.validateCandidate(
         currentCandidate,
         baseline,
-        acceptedDecisions
+        acceptedDecisions,
+        existingStories,
+        targetStoryId
       );
       if (validation.isValid && validation.parsedDocument && validation.declaredProvenance) {
         return {
@@ -378,7 +392,9 @@ export class GenerateStoriesProjectionUseCase {
   async validateCandidate(
     gherkinText: string,
     baseline: RequirementsBaseline,
-    acceptedDecisions: readonly EngineeringDecision[]
+    acceptedDecisions: readonly EngineeringDecision[],
+    existingStories?: readonly StoryRecord[],
+    targetStoryId?: string
   ): Promise<StoryValidationCandidateResult> {
     const validationResult = await this.validatorGateway.validate(gherkinText);
     if (!validationResult.isValid || !validationResult.parsedDocument) {
@@ -460,6 +476,63 @@ export class GenerateStoriesProjectionUseCase {
           return {
             isValid: false,
             errorMessage: `Scenario '${scenario.title}' references policy constraint revision(s) [${invalidScPols.join(', ')}] not in baseline '${baseline.id}'`
+          };
+        }
+      }
+    }
+
+    // Verify story dependencies
+    if (parsedDoc.declaredStoryDependencies && parsedDoc.declaredStoryDependencies.length > 0) {
+      if (targetStoryId && parsedDoc.declaredStoryDependencies.includes(targetStoryId)) {
+        return {
+          isValid: false,
+          errorMessage: `Story cannot declare a dependency on itself: '${targetStoryId}'`
+        };
+      }
+      if (existingStories) {
+        const knownStoryIds = new Set(existingStories.map((s) => s.id as string));
+        const unknownDeps = parsedDoc.declaredStoryDependencies.filter(
+          (d) => !knownStoryIds.has(d)
+        );
+        if (unknownDeps.length > 0) {
+          return {
+            isValid: false,
+            errorMessage: `Declared story dependency [${unknownDeps.join(', ')}] does not exist in baseline '${baseline.id}'`
+          };
+        }
+
+        // Cycle check
+        const candidateStory = createStory({
+          id: targetStoryId ? createStoryId(targetStoryId) : createStoryId('CANDIDATE-TEMP'),
+          baselineId: baseline.id,
+          title: parsedDoc.title,
+          narrative: parsedDoc.narrative ?? {
+            role: 'Actor',
+            feature: parsedDoc.title,
+            benefit: 'Benefit'
+          },
+          requirementRevisionIds: parsedDoc.declaredRequirementRevisionIds,
+          policyConstraintRevisionIds: parsedDoc.declaredPolicyConstraintRevisionIds,
+          scenarios: parsedDoc.scenarios.map((s, idx) => ({
+            id: s.id ?? `SCENARIO-${idx + 1}`,
+            title: s.title,
+            requirementRevisionIds: s.declaredRequirementRevisionIds,
+            policyConstraintRevisionIds: s.declaredPolicyConstraintRevisionIds,
+            steps: s.steps.map((st) => ({
+              keyword: st.keyword as GherkinStepKeyword,
+              text: st.text
+            })),
+            rawText: s.rawText
+          })),
+          gherkinText,
+          dependencies: parsedDoc.declaredStoryDependencies
+        });
+        const candidateList = [...existingStories.map(mapStoryRecordToDomainStory), candidateStory];
+        const depValidation = validateStoryDependencies(candidateList);
+        if (depValidation.cycles.length > 0) {
+          return {
+            isValid: false,
+            errorMessage: `Declared story dependencies introduce a cycle: [${depValidation.cycles[0].join(' -> ')}]`
           };
         }
       }
@@ -567,7 +640,8 @@ export class GenerateStoriesProjectionUseCase {
     revisions: readonly RequirementRevision[],
     policyConstraints: readonly PolicyConstraintRevision[],
     acceptedDecisions: readonly EngineeringDecision[],
-    customPrompt?: string
+    customPrompt?: string,
+    existingStories?: readonly StoryRecord[]
   ): string {
     const lines: string[] = [
       'You are generating an implementation User Story with Gherkin acceptance criteria based on an immutable verified requirements baseline.',
@@ -596,6 +670,17 @@ export class GenerateStoriesProjectionUseCase {
       }
     }
 
+    if (existingStories && existingStories.length > 0) {
+      lines.push('', 'Existing Stories in Baseline:');
+      for (const es of existingStories) {
+        lines.push(`- ${es.id} (${es.title})`);
+      }
+      lines.push(
+        'If this story depends on functionality delivered by an existing story, declare it using:',
+        '# @depends-on: <StoryId> (e.g. # @depends-on: STORY-001)'
+      );
+    }
+
     if (customPrompt) {
       lines.push('', 'Custom Instructions:', customPrompt);
     }
@@ -611,19 +696,22 @@ export class GenerateStoriesProjectionUseCase {
       acceptedDecisions.length > 0
         ? `4. Declare engineering decisions: '# @engineering-decisions ${acceptedDecisions.map((d) => d.id).join(', ')}'`
         : '',
-      '5. Provide a Feature title and user-story narrative in standard format:',
+      existingStories && existingStories.length > 0
+        ? "5. If declaring dependencies on existing stories, use '# @depends-on: <StoryId>'"
+        : '',
+      '6. Provide a Feature title and user-story narrative in standard format:',
       '   As a <role>',
       '   I want <feature>',
       '   So that <benefit>',
-      '6. Every Scenario MUST declare its requirement traceability tag immediately preceding or on the scenario:',
+      '7. Every Scenario MUST declare its requirement traceability tag immediately preceding or on the scenario:',
       '   @requirements:<RevisionId> (e.g. @requirements:REQ-001-R1)',
       '   If policy applies: @policy-constraints:<PolicyRevisionId>',
       '   EVERY SCENARIO MUST REFERENCE AT LEAST ONE REQUIREMENT REVISION FROM THE BASELINE.',
-      '7. TRACEABILITY INVARIANT: Never invent product rules or acceptance criteria not grounded in the baseline.',
+      '8. TRACEABILITY INVARIANT: Never invent product rules or acceptance criteria not grounded in the baseline.',
       '   If you discover missing product rules or ambiguities, emit a candidate finding comment:',
       '   # @finding: <FindingType> | <Rationale> [| <RequirementRevisionIds>]',
       '   Valid finding types: undefined-cardinality, missing-field-boundary, state-transition-gap, orphaned-dependency, authorization-gap, data-type-mismatch, ambiguous-acceptance-criteria, temporal-ambiguity, missing-recovery-path, circular-dependency, missing-evidence, policy-conflict',
-      '8. If a technical/architectural implementation choice is required, emit a proposed decision comment:',
+      '9. If a technical/architectural implementation choice is required, emit a proposed decision comment:',
       '   # @decision: <Statement> | <Rationale>',
       '',
       'Output ONLY the Gherkin feature specification.'
@@ -636,8 +724,14 @@ export class GenerateStoriesProjectionUseCase {
     failedCandidate: string,
     errorMessage: string,
     baseline: RequirementsBaseline,
-    acceptedDecisions: readonly EngineeringDecision[]
+    acceptedDecisions: readonly EngineeringDecision[],
+    existingStories?: readonly StoryRecord[]
   ): string {
+    const existingStoryLines =
+      existingStories && existingStories.length > 0
+        ? `Allowed Dependency Story IDs: ${existingStories.map((s) => s.id).join(', ')}`
+        : '';
+
     return [
       'The previous Gherkin story generation failed validation with the following error:',
       errorMessage,
@@ -655,14 +749,17 @@ export class GenerateStoriesProjectionUseCase {
       acceptedDecisions.length > 0
         ? `Accepted Decisions: ${acceptedDecisions.map((d) => d.id).join(', ')}`
         : '',
+      existingStoryLines,
       '',
       'Repair Instructions:',
       `1. Include '# @baseline ${baseline.id}' and '# @requirements ${baseline.requirementRevisions.join(', ')}'.`,
       '2. Ensure EVERY Scenario has at least one step and declares at least one exact requirement revision tag (e.g. @requirements:REQ-xxx-Ry) present in the baseline.',
       '3. Ensure all declared references match the baseline.',
-      '4. If required business behavior is missing, do NOT invent criteria; output # @finding: <FindingType> | <Rationale>.',
-      '5. Output ONLY the corrected Gherkin document.'
+      '4. If declaring dependencies, only reference existing story IDs and do NOT introduce circular dependencies.',
+      '5. If required business behavior is missing, do NOT invent criteria; output # @finding: <FindingType> | <Rationale>.',
+      '6. Output ONLY the corrected Gherkin document.'
     ]
+
       .filter((l) => Boolean(l) || l === '')
       .join('\n');
   }

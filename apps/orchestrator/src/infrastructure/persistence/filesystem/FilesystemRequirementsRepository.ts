@@ -135,6 +135,10 @@ export function getEngineeringDecisionLockKey(id: string): string {
   return `decision:${id}`;
 }
 
+export function getBaselineLockKey(id: string): string {
+  return `baseline:${id}`;
+}
+
 export class FilesystemRequirementsRepository implements IRequirementsRepository {
   private readonly baseDir: string;
   private readonly entityLocks = new Map<string, Promise<void>>();
@@ -1400,6 +1404,13 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
     await writeJsonExclusive(filePath, projection);
   }
 
+  async updateProjectionRecord(projection: ProjectionRecord): Promise<void> {
+    assertSafeIdentifier(projection.id, 'projectionId');
+    assertSafeIdentifier(projection.baselineId, 'baselineId');
+    const filePath = resolveStorePath(this.baseDir, 'projections', `${projection.id}.json`);
+    await writeJsonAtomic(filePath, projection);
+  }
+
   async getProjectionRecord(id: string): Promise<ProjectionRecord | undefined> {
     assertSafeIdentifier(id, 'projectionId');
     const filePath = resolveStorePath(this.baseDir, 'projections', `${id}.json`);
@@ -1438,6 +1449,46 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
     assertSafeIdentifier(story.baselineId, 'baselineId');
     const filePath = resolveStorePath(this.baseDir, 'stories', `${story.id}.json`);
     await writeJsonExclusive(filePath, story);
+  }
+
+  async updateStory(story: StoryRecord): Promise<void> {
+    assertSafeIdentifier(story.id, 'storyId');
+    assertSafeIdentifier(story.baselineId, 'baselineId');
+    const filePath = resolveStorePath(this.baseDir, 'stories', `${story.id}.json`);
+    await writeJsonAtomic(filePath, story);
+  }
+
+  async updateStoryAndProjection(story: StoryRecord, projection: ProjectionRecord): Promise<void> {
+    assertSafeIdentifier(story.id, 'storyId');
+    assertSafeIdentifier(story.baselineId, 'baselineId');
+    assertSafeIdentifier(projection.id, 'projectionId');
+    assertSafeIdentifier(projection.baselineId, 'baselineId');
+
+    const storyPath = resolveStorePath(this.baseDir, 'stories', `${story.id}.json`);
+    const projectionPath = resolveStorePath(this.baseDir, 'projections', `${projection.id}.json`);
+
+    // Backup original contents if they exist for rollback
+    const originalStoryRaw = await fs.readFile(storyPath, 'utf8').catch(() => null);
+    const originalProjectionRaw = await fs.readFile(projectionPath, 'utf8').catch(() => null);
+
+    let storyWritten = false;
+    try {
+      await writeJsonAtomic(storyPath, story);
+      storyWritten = true;
+      await writeJsonAtomic(projectionPath, projection);
+    } catch (err) {
+      if (storyWritten) {
+        if (originalStoryRaw !== null) {
+          await fs.writeFile(storyPath, originalStoryRaw, 'utf8').catch(() => {});
+        } else {
+          await fs.unlink(storyPath).catch(() => {});
+        }
+      }
+      if (originalProjectionRaw !== null) {
+        await fs.writeFile(projectionPath, originalProjectionRaw, 'utf8').catch(() => {});
+      }
+      throw err;
+    }
   }
 
   async getStory(id: StoryId): Promise<StoryRecord | undefined> {
@@ -1495,5 +1546,13 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
       }
       throw err;
     }
+  }
+
+  async withBaselineLock<T>(
+    baselineId: RequirementsBaselineId,
+    action: () => Promise<T>
+  ): Promise<T> {
+    assertSafeIdentifier(baselineId, 'baselineId');
+    return this.acquireEntityLock(getBaselineLockKey(baselineId), action);
   }
 }

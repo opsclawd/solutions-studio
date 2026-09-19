@@ -6,11 +6,13 @@ import {
   ListStoriesResponseDtoSchema,
   StoryReadinessPolicyDtoSchema,
   StoryReadinessReportDtoSchema,
-  ListStoryReadinessReportsResponseDtoSchema
+  ListStoryReadinessReportsResponseDtoSchema,
+  UpdateStoryDependenciesRequestDtoSchema
 } from '@solutions-studio/contracts';
 import type { GenerateStoriesProjectionUseCase } from '../../application/use-cases/GenerateStoriesProjectionUseCase.js';
 import type { GetStoriesUseCase } from '../../application/use-cases/GetStoriesUseCase.js';
 import type { EvaluateStoryReadinessUseCase } from '../../application/use-cases/EvaluateStoryReadinessUseCase.js';
+import type { UpdateStoryDependenciesUseCase } from '../../application/use-cases/UpdateStoryDependenciesUseCase.js';
 import { UnknownStoryError } from '../../application/use-cases/StoryProjectionErrors.js';
 import { mapStoryRecordToDto, mapStoryReadinessReportToDto } from '../dto-mappers.js';
 
@@ -18,6 +20,7 @@ export interface StoriesRoutesOptions {
   readonly generateStoriesProjectionUseCase: GenerateStoriesProjectionUseCase;
   readonly getStoriesUseCase: GetStoriesUseCase;
   readonly evaluateStoryReadinessUseCase?: EvaluateStoryReadinessUseCase;
+  readonly updateStoryDependenciesUseCase?: UpdateStoryDependenciesUseCase;
 }
 
 const baselineParamsSchema = z.object({
@@ -177,6 +180,32 @@ export const storiesRoutes: FastifyPluginAsync<StoriesRoutesOptions> = async (ap
           request.query
         );
         return reply.status(200).send(reports.map(mapStoryReadinessReportToDto));
+      }
+    );
+  }
+
+  if (options.updateStoryDependenciesUseCase) {
+    const updateStoryDependenciesUseCase = options.updateStoryDependenciesUseCase;
+    app.put<{
+      Params: z.infer<typeof storyParamsSchema>;
+      Body: z.infer<typeof UpdateStoryDependenciesRequestDtoSchema>;
+    }>(
+      '/api/stories/:storyId/dependencies',
+      {
+        schema: {
+          params: storyParamsSchema,
+          body: UpdateStoryDependenciesRequestDtoSchema,
+          response: {
+            200: StoryDtoSchema
+          }
+        }
+      },
+      async (request, reply) => {
+        const updated = await updateStoryDependenciesUseCase.execute({
+          storyId: request.params.storyId,
+          dependencies: request.body.dependencies
+        });
+        return reply.status(200).send(mapStoryRecordToDto(updated));
       }
     );
   }

@@ -37,7 +37,11 @@ import {
   StoryReadinessReportDtoSchema,
   ListStoryReadinessReportsResponseDtoSchema,
   RequirementCoverageEntryDtoSchema,
-  BaselineRequirementCoverageDtoSchema
+  BaselineRequirementCoverageDtoSchema,
+  StoryDependencyGraphDtoSchema,
+  UpdateStoryDependenciesRequestDtoSchema,
+  EngineeringHandoffSummaryDtoSchema,
+  EngineeringHandoffBundleDtoSchema
 } from '../../src/requirements/index.js';
 
 describe('Requirements Contract Schemas', () => {
@@ -1185,6 +1189,222 @@ describe('Requirements Contract Schemas', () => {
         coverageCount: 1
       });
       expect(entry.coverageCount).toBe(1);
+    });
+  });
+
+  describe('StoryDependencyGraphDtoSchema', () => {
+    it('validates a valid StoryDependencyGraphDto', () => {
+      const raw = {
+        baselineId: 'BASE-001',
+        nodes: [
+          {
+            storyId: 'STORY-001',
+            title: 'Story 1',
+            requirementRevisionIds: ['REQ-001-R1'],
+            dependencies: [],
+            dependents: ['STORY-002'],
+            readinessStatus: 'implementation-ready' as const,
+            isReady: true
+          },
+          {
+            storyId: 'STORY-002',
+            title: 'Story 2',
+            requirementRevisionIds: ['REQ-001-R1'],
+            dependencies: ['STORY-001'],
+            dependents: [],
+            readinessStatus: 'not-ready' as const,
+            isReady: false
+          }
+        ],
+        edges: [{ from: 'STORY-001', to: 'STORY-002' }],
+        executionOrder: ['STORY-001', 'STORY-002'],
+        isAcyclic: true,
+        hasCycles: false,
+        cycles: [],
+        validation: {
+          isValid: true,
+          errors: [],
+          missingNodeIds: [],
+          selfDependencies: [],
+          cycles: []
+        },
+        createdAt: '2026-09-19T00:00:00.000Z'
+      };
+
+      const parsed = StoryDependencyGraphDtoSchema.parse(raw);
+      expect(parsed.baselineId).toBe('BASE-001');
+      expect(parsed.executionOrder).toEqual(['STORY-001', 'STORY-002']);
+    });
+
+    it('validates UpdateStoryDependenciesRequestDtoSchema', () => {
+      const parsed = UpdateStoryDependenciesRequestDtoSchema.parse({
+        dependencies: ['STORY-001', 'STORY-002']
+      });
+      expect(parsed.dependencies).toEqual(['STORY-001', 'STORY-002']);
+    });
+  });
+
+  describe('EngineeringHandoffBundleDtoSchema', () => {
+    const minimalBundle = {
+      baseline: {
+        id: 'BASE-001',
+        requirementRevisions: ['REQ-001-R1'],
+        createdAt: '2026-09-19T00:00:00.000Z',
+        createdBy: 'REV-01'
+      },
+      authorityBundle: {
+        baseline: {
+          id: 'BASE-001',
+          requirementRevisions: ['REQ-001-R1'],
+          createdAt: '2026-09-19T00:00:00.000Z',
+          createdBy: 'REV-01'
+        },
+        requirements: [
+          {
+            id: 'REQ-001-R1',
+            requirementId: 'REQ-001',
+            revision: 1,
+            statement: 'Test requirement',
+            category: 'business-rule' as const,
+            origin: 'EXPLICIT' as const,
+            reviewState: 'ACCEPTED' as const,
+            resolutionState: 'CLEAR' as const,
+            evidence: []
+          }
+        ],
+        policyConstraints: []
+      },
+      engineeringDecisions: [],
+      // projections optional
+      stories: [],
+      readinessReports: [],
+      coverage: {
+        baselineId: 'BASE-001',
+        totalRequirements: 1,
+        coveredCount: 0,
+        uncoveredCount: 1,
+        multiCoveredCount: 0,
+        coveredRequirements: [],
+        uncoveredRequirementRevisionIds: ['REQ-001-R1'],
+        multiCoveredRequirements: [],
+        isFullyCovered: false,
+        computedAt: '2026-09-19T00:00:00.000Z'
+      },
+      dependencyGraph: {
+        baselineId: 'BASE-001',
+        nodes: [],
+        edges: [],
+        executionOrder: [],
+        isAcyclic: true,
+        hasCycles: false,
+        cycles: [],
+        validation: {
+          isValid: true,
+          errors: [],
+          missingNodeIds: [],
+          selfDependencies: [],
+          cycles: []
+        },
+        createdAt: '2026-09-19T00:00:00.000Z'
+      },
+      blockingFindings: [],
+      unresolvedRequirements: [],
+      summary: {
+        totalStories: 0,
+        readyStories: 0,
+        nonReadyStories: 0,
+        totalRequirements: 1,
+        coveredRequirements: 0,
+        openBlockingFindings: 0,
+        isHandoffReady: false
+      }
+    };
+
+    it('validates a bundle without optional SQL or OpenAPI projections', () => {
+      const parsed = EngineeringHandoffBundleDtoSchema.parse(minimalBundle);
+      expect(parsed.sqlProjection).toBeUndefined();
+      expect(parsed.openApiProjection).toBeUndefined();
+      expect(parsed.summary.isHandoffReady).toBe(false);
+    });
+
+    it('validates a bundle with SQL and OpenAPI projections', () => {
+      const withProjections = {
+        ...minimalBundle,
+        sqlProjection: {
+          id: 'PROJ-SQL-001',
+          baselineId: 'BASE-001',
+          requirementRevisionIds: ['REQ-001-R1'],
+          artifactType: 'sql-schema',
+          content: 'CREATE TABLE t ();',
+          metadata: {
+            baselineId: 'BASE-001',
+            requirementRevisionIds: ['REQ-001-R1'],
+            artifactType: 'sql-schema',
+            declaredProvenance: {
+              baselineId: 'BASE-001',
+              requirementRevisionIds: ['REQ-001-R1']
+            },
+            configuredExecution: {
+              provider: 'fake',
+              model: 'model1',
+              artifactType: 'sql-schema'
+            },
+            measuredVerification: {
+              repairsNeeded: 0,
+              attemptCount: 1,
+              contentHash: 'hash2',
+              verifiedAt: '2026-09-19T00:00:00.000Z'
+            }
+          },
+          createdAt: '2026-09-19T00:00:00.000Z'
+        },
+        openApiProjection: {
+          id: 'PROJ-OAS-001',
+          baselineId: 'BASE-001',
+          requirementRevisionIds: ['REQ-001-R1'],
+          artifactType: 'openapi',
+          content: 'openapi: 3.1.0',
+          metadata: {
+            baselineId: 'BASE-001',
+            requirementRevisionIds: ['REQ-001-R1'],
+            artifactType: 'openapi',
+            declaredProvenance: {
+              baselineId: 'BASE-001',
+              requirementRevisionIds: ['REQ-001-R1']
+            },
+            configuredExecution: {
+              provider: 'fake',
+              model: 'model1',
+              artifactType: 'openapi'
+            },
+            measuredVerification: {
+              repairsNeeded: 0,
+              attemptCount: 1,
+              contentHash: 'hash3',
+              verifiedAt: '2026-09-19T00:00:00.000Z'
+            }
+          },
+          createdAt: '2026-09-19T00:00:00.000Z'
+        }
+      };
+
+      const parsed = EngineeringHandoffBundleDtoSchema.parse(withProjections);
+      expect(parsed.sqlProjection?.id).toBe('PROJ-SQL-001');
+      expect(parsed.openApiProjection?.id).toBe('PROJ-OAS-001');
+    });
+
+    it('validates EngineeringHandoffSummaryDtoSchema', () => {
+      const summary = {
+        totalRequirements: 5,
+        coveredRequirements: 5,
+        totalStories: 3,
+        readyStories: 3,
+        nonReadyStories: 0,
+        openBlockingFindings: 0,
+        isHandoffReady: true
+      };
+      const parsed = EngineeringHandoffSummaryDtoSchema.parse(summary);
+      expect(parsed.isHandoffReady).toBe(true);
     });
   });
 });
