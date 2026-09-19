@@ -14,10 +14,7 @@
     "runs": 3,
     "scenarioSteps": 10,
     "scenariosPassed": "3/3",
-    "projectionTypes": [
-      "process-diagram",
-      "prototype"
-    ],
+    "projectionTypes": ["process-diagram", "prototype"],
     "syntaxCompliance": "100%",
     "promotionPreventionGate": "verified fail-closed",
     "historicalImmutability": "verified bit-identical",
