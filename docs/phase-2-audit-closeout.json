@@ -2,9 +2,11 @@
   "phase": 2,
   "recordType": "phase-closeout-audit",
   "promotionDecision": {
-    "candidateSha": "4c26595ea1be429cbc3127b593c5937b299061b2",
+    "candidateSha": "c58c5152f522cb4b4949eca5d0de6c62c7544565",
     "decision": "GO",
-    "report": "docs/phase-2-candidate-validation-report.md"
+    "report": "docs/phase-2-candidate-validation-report.md",
+    "releaseCandidateSha": "50779d1560c7567354739c009795298bedc6b0ea",
+    "mainPromotionSha": "87f865bee412161803c85a81292767202b1f67c7"
   },
   "validation": {
     "provider": "agy",
@@ -23,6 +25,7 @@
     "Phase 2 exit gate verifies the complete interactive requirements discovery loop across Mermaid process diagrams and sandboxed React/TSX prototypes.",
     "Projections strictly bind to baseline and revision identities with provenance JSDoc headers.",
     "Candidate discoveries cannot bypass human reconciliation; direct baselining is rejected fail-closed.",
-    "Predecessor baseline BASE-001 remains immutable and its projections are correctly identified as stale in successor review state."
+    "Predecessor baseline BASE-001 remains immutable and its projections are correctly identified as stale in successor review state.",
+    "The previously recorded SHA 4c26595ea1be429cbc3127b593c5937b299061b2 is the Phase 2.6 predecessor state, not the Phase 2.7 candidate that received GO."
   ]
 }
