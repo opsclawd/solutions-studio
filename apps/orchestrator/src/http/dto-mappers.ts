@@ -120,6 +120,12 @@ export function mapProjectionRecordToDto(record: ProjectionRecord): ProjectionRe
     id: record.id,
     baselineId: record.baselineId,
     requirementRevisionIds: [...record.requirementRevisionIds],
+    policyConstraintRevisionIds: record.policyConstraintRevisionIds
+      ? [...record.policyConstraintRevisionIds]
+      : undefined,
+    engineeringDecisionIds: record.engineeringDecisionIds
+      ? [...record.engineeringDecisionIds]
+      : undefined,
     artifactType: record.artifactType,
     content: record.content,
     metadata: record.metadata,

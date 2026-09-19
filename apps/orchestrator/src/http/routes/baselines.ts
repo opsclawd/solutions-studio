@@ -130,6 +130,8 @@ export const baselinesRoutes: FastifyPluginAsync<BaselinesRoutesOptions> = async
         id: result.projectionId,
         baselineId: result.metadata.baselineId,
         requirementRevisionIds: result.metadata.requirementRevisionIds,
+        policyConstraintRevisionIds: result.metadata.policyConstraintRevisionIds,
+        engineeringDecisionIds: result.metadata.engineeringDecisionIds,
         artifactType: result.metadata.artifactType,
         content: result.content,
         metadata: result.metadata,

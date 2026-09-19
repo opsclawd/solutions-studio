@@ -17,6 +17,7 @@ import { FilesystemRequirementsRepository } from '../../../src/infrastructure/pe
 import { FakeGenerationGateway } from '../../fakes/FakeGenerationGateway.js';
 import { FakeMermaidLinterGateway } from '../../fakes/FakeMermaidLinterGateway.js';
 import { FakePrototypeValidatorGateway } from '../../fakes/FakePrototypeValidatorGateway.js';
+import { FakeSqlValidatorGateway } from '../../fakes/FakeSqlValidatorGateway.js';
 import { composeOrchestratorHttpServer } from '../../../src/http/composition.js';
 
 describe('HTTP Boundary: Projections API', () => {
@@ -25,6 +26,7 @@ describe('HTTP Boundary: Projections API', () => {
   let fakeGen: FakeGenerationGateway;
   let fakeLinter: FakeMermaidLinterGateway;
   let fakeValidator: FakePrototypeValidatorGateway;
+  let fakeSqlValidator: FakeSqlValidatorGateway;
   let app: FastifyInstance;
 
   beforeEach(async () => {
@@ -33,11 +35,13 @@ describe('HTTP Boundary: Projections API', () => {
     fakeGen = new FakeGenerationGateway();
     fakeLinter = new FakeMermaidLinterGateway();
     fakeValidator = new FakePrototypeValidatorGateway();
+    fakeSqlValidator = new FakeSqlValidatorGateway();
     const composed = composeOrchestratorHttpServer({
       repository: repo,
       generationGateway: fakeGen,
       linterGateway: fakeLinter,
-      prototypeValidatorGateway: fakeValidator
+      prototypeValidatorGateway: fakeValidator,
+      sqlValidatorGateway: fakeSqlValidator
     });
     app = composed.app;
     await app.ready();
@@ -131,6 +135,47 @@ describe('HTTP Boundary: Projections API', () => {
       expect(validated.content).toContain('export default function Component()');
       expect(validated.metadata.declaredProvenance.baselineId).toBe('BASE-001');
       expect(validated.metadata.declaredProvenance.requirementRevisionIds).toEqual(['REQ-001-R1']);
+    });
+
+    it('generates sql-schema projection and returns 200 with verified provenance and matching contracts schema', async () => {
+      await seedBaseline('BASE-001', 'REQ-001', 'REQ-001-R1');
+
+      const validSql = [
+        '-- @baseline BASE-001',
+        '-- @requirements REQ-001-R1',
+        'CREATE TABLE items (id SERIAL PRIMARY KEY, name TEXT NOT NULL);'
+      ].join('\n');
+
+      fakeGen.setDefaultResponse(validSql);
+      fakeSqlValidator.setDefaultResult({ isValid: true });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/baselines/BASE-001/projections',
+        payload: {
+          artifactType: 'sql-schema'
+        }
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      const validated = ProjectionRecordDtoSchema.parse(body);
+      expect(validated.baselineId).toBe('BASE-001');
+      expect(validated.artifactType).toBe('sql-schema');
+      expect(validated.content).toContain('CREATE TABLE items');
+      expect(validated.metadata.declaredProvenance.baselineId).toBe('BASE-001');
+      expect(validated.metadata.declaredProvenance.requirementRevisionIds).toEqual(['REQ-001-R1']);
+      expect(validated.requirementRevisionIds).toEqual(['REQ-001-R1']);
+
+      // Check GET inspection returns identical record
+      const getRes = await app.inject({
+        method: 'GET',
+        url: `/api/baselines/BASE-001/projections/${validated.id}`
+      });
+      expect(getRes.statusCode).toBe(200);
+      const getBody = ProjectionRecordDtoSchema.parse(getRes.json());
+      expect(getBody.id).toBe(validated.id);
+      expect(getBody.content).toBe(validated.content);
     });
 
     it('returns 400 VALIDATION_ERROR on invalid artifactType', async () => {

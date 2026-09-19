@@ -24,6 +24,11 @@ import {
 import { RepairRetryExhaustionError } from '../application/use-cases/RepairErrors.js';
 import { PrototypeProvenanceValidationError } from '../application/use-cases/PrototypeProjectionErrors.js';
 import {
+  SqlProvenanceValidationError,
+  UnacceptedEngineeringDecisionError,
+  SqlExecutionValidationError
+} from '../application/use-cases/SqlSchemaProjectionErrors.js';
+import {
   UnknownProjectionError,
   ProjectionBaselineMismatchError,
   RequirementAlreadyExistsError
@@ -284,6 +289,51 @@ export function mapErrorToResponse(error: unknown): MappedErrorResponse {
           invalidRequirementRevisionIds: error.invalidRequirementRevisionIds,
           allowedRequirementRevisionIds: error.allowedRequirementRevisionIds
         }
+      }
+    };
+  }
+
+  if (error instanceof SqlProvenanceValidationError) {
+    return {
+      statusCode: 400,
+      body: {
+        code: 'VALIDATION_ERROR',
+        message: error.message,
+        details: {
+          baselineId: error.baselineId,
+          invalidRequirementRevisionIds: error.invalidRequirementRevisionIds,
+          allowedRequirementRevisionIds: error.allowedRequirementRevisionIds,
+          invalidPolicyConstraintRevisionIds: error.invalidPolicyConstraintRevisionIds,
+          allowedPolicyConstraintRevisionIds: error.allowedPolicyConstraintRevisionIds,
+          invalidEngineeringDecisionIds: error.invalidEngineeringDecisionIds,
+          allowedEngineeringDecisionIds: error.allowedEngineeringDecisionIds
+        }
+      }
+    };
+  }
+
+  if (error instanceof UnacceptedEngineeringDecisionError) {
+    return {
+      statusCode: 400,
+      body: {
+        code: 'VALIDATION_ERROR',
+        message: error.message,
+        details: {
+          decisionId: error.decisionId,
+          state: error.state,
+          baselineId: error.baselineId
+        }
+      }
+    };
+  }
+
+  if (error instanceof SqlExecutionValidationError) {
+    return {
+      statusCode: 400,
+      body: {
+        code: 'VALIDATION_ERROR',
+        message: error.message,
+        details: error.errorDetails
       }
     };
   }
