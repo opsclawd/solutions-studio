@@ -56,6 +56,9 @@ jobs:
       - name: Run Phase 2 Exit Gate Integration
         run: pnpm --filter @solutions-studio/orchestrator exit-gate:phase2
 
+      - name: Run Phase 3 Exit Gate Integration
+        run: pnpm --filter @solutions-studio/orchestrator exit-gate:phase3
+
       - name: Install Playwright Browsers
         run: pnpm --filter @solutions-studio/web exec playwright install --with-deps chromium
 
