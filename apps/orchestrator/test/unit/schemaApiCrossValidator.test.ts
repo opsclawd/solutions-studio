@@ -25,7 +25,8 @@ import {
   hasBackingChildTable,
   stripSqlComments,
   hasForeignKeyToParent,
-  detectTableRelationships
+  detectTableRelationships,
+  isParentTableView
 } from '../../src/application/use-cases/crossValidation/schemaApiCrossValidator.js';
 
 describe('SchemaApiCrossValidator', () => {
@@ -2452,6 +2453,548 @@ describe('SchemaApiCrossValidator', () => {
       expect(catSelfRef).toBeDefined();
       expect(catSelfRef?.foreignKeyColumn).toBe('parent_id');
       expect(catSelfRef?.isChildEntity).toBe(false);
+    });
+  });
+
+  describe('Phase 3.13: bare-noun sub-resource path exemptions (#88)', () => {
+    it('UT-3.13.1 (AC-1): bare-noun path segment touching existing parent-table columns produces no finding', () => {
+      const sql = `
+        CREATE TABLE orders (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          order_number VARCHAR(64) NOT NULL,
+          payment_authorized BOOLEAN NOT NULL,
+          payment_authorization_id VARCHAR(64)
+        );
+      `;
+
+      const openApiDoc = {
+        openapi: '3.0.3',
+        info: { title: 'Order Payment API', version: '1.0.0' },
+        paths: {
+          '/orders/{id}/payment': {
+            get: {
+              summary: 'Get order payment status',
+              responses: {
+                '200': {
+                  description: 'Payment status view',
+                  content: {
+                    'application/json': {
+                      schema: {
+                        type: 'object',
+                        properties: {
+                          payment_authorized: { type: 'boolean' },
+                          payment_authorization_id: { type: 'string' }
+                        },
+                        required: ['payment_authorized']
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            put: {
+              summary: 'Update order payment status',
+              requestBody: {
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'object',
+                      properties: {
+                        payment_authorized: { type: 'boolean' }
+                      },
+                      required: ['payment_authorized']
+                    }
+                  }
+                }
+              },
+              responses: {
+                '200': {
+                  description: 'Updated payment status',
+                  content: {
+                    'application/json': {
+                      schema: {
+                        type: 'object',
+                        properties: {
+                          payment_authorized: { type: 'boolean' }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      };
+
+      const findings = validator.validate({
+        openApiDoc,
+        sqlSchemaContent: sql,
+        baseline,
+        openApiProjectionId: 'PROJ-OAS-88-1',
+        sqlSchemaProjectionId: 'PROJ-SQL-88-1'
+      });
+
+      const paymentFinding = findings.find(
+        (f) => f.rationale?.includes('/orders/{id}/payment') || f.rationale?.includes("'payment'")
+      );
+      expect(paymentFinding).toBeUndefined();
+    });
+
+    it('UT-3.13.2 (AC-2): regression guard: bare-noun path segment referencing non-parent fields is flagged', () => {
+      const sql = `
+        CREATE TABLE orders (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          order_number VARCHAR(64) NOT NULL
+        );
+      `;
+
+      const openApiDoc = {
+        openapi: '3.0.3',
+        info: { title: 'Order Invoices API', version: '1.0.0' },
+        paths: {
+          '/orders/{id}/invoice': {
+            get: {
+              summary: 'Get order invoice',
+              responses: {
+                '200': {
+                  description: 'Invoice details',
+                  content: {
+                    'application/json': {
+                      schema: {
+                        type: 'object',
+                        properties: {
+                          invoice_number: { type: 'string' },
+                          tax_id: { type: 'string' },
+                          due_date: { type: 'string', format: 'date' }
+                        },
+                        required: ['invoice_number']
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      };
+
+      const findings = validator.validate({
+        openApiDoc,
+        sqlSchemaContent: sql,
+        baseline,
+        openApiProjectionId: 'PROJ-OAS-88-2',
+        sqlSchemaProjectionId: 'PROJ-SQL-88-2'
+      });
+
+      const invoiceFinding = findings.find(
+        (f) => f.rationale?.includes('/orders/{id}/invoice') || f.rationale?.includes("'invoice'")
+      );
+      expect(invoiceFinding).toBeDefined();
+      expect(invoiceFinding?.type).toBe('data-boundary-ambiguity');
+      expect(invoiceFinding?.rationale).toContain(
+        "OpenAPI declares resource path '/orders/{id}/invoice' (resource 'invoice'), but no corresponding table exists in relational schema projection 'PROJ-SQL-88-2'."
+      );
+    });
+
+    it('UT-3.13.2b (regression): bare-noun path /orders/{id}/invoice returning number is flagged when orders contains order_number', () => {
+      const sql = `
+        CREATE TABLE orders (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          order_number VARCHAR(64) NOT NULL
+        );
+      `;
+
+      const openApiDoc = {
+        openapi: '3.0.3',
+        info: { title: 'Order Invoice Number Collision API', version: '1.0.0' },
+        paths: {
+          '/orders/{id}/invoice': {
+            get: {
+              summary: 'Get order invoice',
+              responses: {
+                '200': {
+                  description: 'Invoice details with generic number property',
+                  content: {
+                    'application/json': {
+                      schema: {
+                        type: 'object',
+                        properties: {
+                          number: { type: 'string' }
+                        },
+                        required: ['number']
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      };
+
+      const findings = validator.validate({
+        openApiDoc,
+        sqlSchemaContent: sql,
+        baseline,
+        openApiProjectionId: 'PROJ-OAS-88-2b',
+        sqlSchemaProjectionId: 'PROJ-SQL-88-2b'
+      });
+
+      const invoiceFinding = findings.find(
+        (f) => f.rationale?.includes('/orders/{id}/invoice') || f.rationale?.includes("'invoice'")
+      );
+      expect(invoiceFinding).toBeDefined();
+      expect(invoiceFinding?.type).toBe('data-boundary-ambiguity');
+      expect(invoiceFinding?.rationale).toContain(
+        "OpenAPI declares resource path '/orders/{id}/invoice' (resource 'invoice'), but no corresponding table exists in relational schema projection 'PROJ-SQL-88-2b'."
+      );
+    });
+
+    it('UT-3.13.3: terminal-prefixed composite property matching matches parent columns', () => {
+      const sql = `
+        CREATE TABLE orders (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          payment_status VARCHAR(32) NOT NULL,
+          payment_amount NUMERIC(10, 2) NOT NULL
+        );
+      `;
+
+      const openApiDoc = {
+        openapi: '3.0.3',
+        info: { title: 'Order Payment Composite API', version: '1.0.0' },
+        paths: {
+          '/orders/{id}/payment': {
+            get: {
+              summary: 'Get payment status',
+              responses: {
+                '200': {
+                  description: 'Payment summary',
+                  content: {
+                    'application/json': {
+                      schema: {
+                        type: 'object',
+                        properties: {
+                          status: { type: 'string' },
+                          amount: { type: 'number' }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      };
+
+      const findings = validator.validate({
+        openApiDoc,
+        sqlSchemaContent: sql,
+        baseline,
+        openApiProjectionId: 'PROJ-OAS-88-3',
+        sqlSchemaProjectionId: 'PROJ-SQL-88-3'
+      });
+
+      const paymentFinding = findings.find(
+        (f) => f.rationale?.includes('/orders/{id}/payment') || f.rationale?.includes("'payment'")
+      );
+      expect(paymentFinding).toBeUndefined();
+    });
+
+    it('UT-3.13.4: regression guard: schemaless bare-noun path is NOT exempted (non-empty guard protects Test 3.4)', () => {
+      const sql = `
+        CREATE TABLE orders (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          order_number VARCHAR(64) NOT NULL
+        );
+      `;
+
+      const openApiDoc = {
+        openapi: '3.0.3',
+        info: { title: 'Order Tracking API', version: '1.0.0' },
+        paths: {
+          '/orders/{id}/tracking': {
+            get: {
+              summary: 'Get order tracking',
+              responses: {
+                '200': {
+                  description: 'OK without schema body'
+                }
+              }
+            }
+          }
+        }
+      };
+
+      const findings = validator.validate({
+        openApiDoc,
+        sqlSchemaContent: sql,
+        baseline,
+        openApiProjectionId: 'PROJ-OAS-88-4',
+        sqlSchemaProjectionId: 'PROJ-SQL-88-4'
+      });
+
+      const trackingFinding = findings.find(
+        (f) => f.rationale?.includes('/orders/{id}/tracking') || f.rationale?.includes("'tracking'")
+      );
+      expect(trackingFinding).toBeDefined();
+      expect(trackingFinding?.type).toBe('data-boundary-ambiguity');
+    });
+
+    it('UT-3.13.5: partial property match with unbacked fields is flagged as data-boundary-ambiguity', () => {
+      const sql = `
+        CREATE TABLE orders (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          payment_authorized BOOLEAN NOT NULL
+        );
+      `;
+
+      const openApiDoc = {
+        openapi: '3.0.3',
+        info: { title: 'Order Partial Payment API', version: '1.0.0' },
+        paths: {
+          '/orders/{id}/payment': {
+            get: {
+              summary: 'Get order payment',
+              responses: {
+                '200': {
+                  description: 'OK',
+                  content: {
+                    'application/json': {
+                      schema: {
+                        type: 'object',
+                        properties: {
+                          payment_authorized: { type: 'boolean' },
+                          untracked_gateway_secret: { type: 'string' }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      };
+
+      const findings = validator.validate({
+        openApiDoc,
+        sqlSchemaContent: sql,
+        baseline,
+        openApiProjectionId: 'PROJ-OAS-88-5',
+        sqlSchemaProjectionId: 'PROJ-SQL-88-5'
+      });
+
+      const paymentFinding = findings.find(
+        (f) => f.rationale?.includes('/orders/{id}/payment') || f.rationale?.includes("'payment'")
+      );
+      expect(paymentFinding).toBeDefined();
+      expect(paymentFinding?.type).toBe('data-boundary-ambiguity');
+    });
+
+    it('UT-3.13.6: array-wrapped sub-resource view via $ref produces no finding', () => {
+      const sql = `
+        CREATE TABLE orders (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          payment_authorized BOOLEAN NOT NULL,
+          payment_authorization_id VARCHAR(64)
+        );
+      `;
+
+      const openApiDoc = {
+        openapi: '3.0.3',
+        info: { title: 'Order Payment Array API', version: '1.0.0' },
+        paths: {
+          '/orders/{id}/payment': {
+            get: {
+              summary: 'Get order payment views',
+              responses: {
+                '200': {
+                  description: 'Array of payment views',
+                  content: {
+                    'application/json': {
+                      schema: {
+                        type: 'array',
+                        items: {
+                          $ref: '#/components/schemas/PaymentView'
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        components: {
+          schemas: {
+            PaymentView: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', format: 'uuid' },
+                payment_authorized: { type: 'boolean' },
+                payment_authorization_id: { type: 'string' }
+              },
+              required: ['id', 'payment_authorized']
+            }
+          }
+        }
+      };
+
+      const findings = validator.validate({
+        openApiDoc,
+        sqlSchemaContent: sql,
+        baseline,
+        openApiProjectionId: 'PROJ-OAS-88-6',
+        sqlSchemaProjectionId: 'PROJ-SQL-88-6'
+      });
+
+      const paymentFinding = findings.find(
+        (f) => f.rationale?.includes('/orders/{id}/payment') || f.rationale?.includes("'payment'")
+      );
+      expect(paymentFinding).toBeUndefined();
+    });
+
+    it('UT-3.13.7: direct unit tests of isParentTableView helper behavior', () => {
+      const sql = `
+        CREATE TABLE orders (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          order_number VARCHAR(64) NOT NULL,
+          payment_status VARCHAR(32) NOT NULL
+        );
+      `;
+      const tables = parseSqlTables(sql);
+      const ordersTable = tables[0];
+
+      // 1. null / empty guards
+      expect(isParentTableView(null, ordersTable, {})).toBe(false);
+      expect(isParentTableView({}, null as any, {})).toBe(false);
+      expect(isParentTableView('invalid', ordersTable, {})).toBe(false);
+
+      // 2. error responses (4xx, 5xx) ignored, only 2xx inspected
+      const errorOnlyPathItem = {
+        get: {
+          responses: {
+            '400': {
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: { error_code: { type: 'string' } }
+                  }
+                }
+              }
+            },
+            '500': {
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: { internal_message: { type: 'string' } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      };
+      expect(isParentTableView(errorOnlyPathItem, ordersTable, {}, 'payment')).toBe(false);
+
+      // 3. 2xx response alongside 4xx response: error response schema properties do NOT invalidate
+      const mixedRespPathItem = {
+        get: {
+          responses: {
+            '200': {
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: { payment_status: { type: 'string' } }
+                  }
+                }
+              }
+            },
+            '404': {
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: { not_found_reason: { type: 'string' } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      };
+      expect(isParentTableView(mixedRespPathItem, ordersTable, {}, 'payment')).toBe(true);
+
+      // 4. terminal-named wrapper object unwrapping: { payment: { status: 'PAID' } }
+      const wrappedPathItem = {
+        get: {
+          responses: {
+            '200': {
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      payment: {
+                        type: 'object',
+                        properties: { status: { type: 'string' } }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      };
+      expect(isParentTableView(wrappedPathItem, ordersTable, {}, 'payment')).toBe(true);
+
+      // 5. parent identifier variants (id, order_id, parent_id)
+      const surrogateKeyPathItem = {
+        get: {
+          responses: {
+            '200': {
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      id: { type: 'string' },
+                      order_id: { type: 'string' },
+                      payment_status: { type: 'string' }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      };
+      expect(isParentTableView(surrogateKeyPathItem, ordersTable, {}, 'payment')).toBe(true);
+
+      // 6. root-prefixed property collision rejected (e.g. 'number' does NOT match 'order_number' for terminal 'invoice')
+      const invoiceNumberPathItem = {
+        get: {
+          responses: {
+            '200': {
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: { number: { type: 'string' } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      };
+      expect(isParentTableView(invoiceNumberPathItem, ordersTable, {}, 'invoice')).toBe(false);
     });
   });
 });

@@ -1233,6 +1233,190 @@ export function hasBackingChildTable(
   return false;
 }
 
+export function isParentTableView(
+  pathItem: unknown,
+  rootTable: SqlTableDefinition,
+  openApiDoc: Record<string, unknown>,
+  terminal?: string
+): boolean {
+  if (!pathItem || typeof pathItem !== 'object' || !rootTable) {
+    return false;
+  }
+
+  const pObj =
+    (resolveSchemaRef(pathItem, openApiDoc) as Record<string, unknown> | undefined) ??
+    (pathItem as Record<string, unknown>);
+  const rootColNames = new Set(rootTable.columns.map((c) => normalizeName(c.name)));
+  const normRoot = normalizeName(rootTable.name);
+  const rawRootClean = rootTable.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const normTerminal = terminal ? normalizeName(terminal) : undefined;
+  const rawTerminalClean = terminal ? terminal.toLowerCase().replace(/[^a-z0-9]/g, '') : undefined;
+
+  const candidateOps = ['get', 'put', 'patch', 'post'] as const;
+  const referencedProperties: string[] = [];
+  const visitedSchemas = new Set<unknown>();
+
+  const collectPropsFromSchema = (schemaOrRef: unknown) => {
+    if (!schemaOrRef || typeof schemaOrRef !== 'object') return;
+    if (visitedSchemas.has(schemaOrRef)) return;
+    visitedSchemas.add(schemaOrRef);
+
+    const resolved =
+      resolveSchemaRef(schemaOrRef, openApiDoc) ?? (schemaOrRef as Record<string, unknown>);
+    if (resolved !== schemaOrRef && visitedSchemas.has(resolved)) return;
+    visitedSchemas.add(resolved);
+
+    if (resolved.type === 'array' && resolved.items) {
+      if (Array.isArray(resolved.items)) {
+        for (const item of resolved.items) {
+          collectPropsFromSchema(item);
+        }
+      } else {
+        collectPropsFromSchema(resolved.items);
+      }
+    } else {
+      const props = extractProperties(resolved, openApiDoc);
+      for (const [propKey, propVal] of Object.entries(props)) {
+        const normPropKey = normalizeName(propKey);
+        if (
+          (normPropKey === normTerminal ||
+            (rawTerminalClean && normPropKey === rawTerminalClean)) &&
+          propVal &&
+          typeof propVal === 'object'
+        ) {
+          const innerResolved =
+            resolveSchemaRef(propVal, openApiDoc) ?? (propVal as Record<string, unknown>);
+          if (
+            innerResolved.properties ||
+            innerResolved.allOf ||
+            (innerResolved.type === 'array' && innerResolved.items)
+          ) {
+            collectPropsFromSchema(innerResolved);
+            continue;
+          }
+        }
+        referencedProperties.push(propKey);
+      }
+
+      if (Array.isArray(resolved.anyOf)) {
+        for (const sub of resolved.anyOf) {
+          collectPropsFromSchema(sub);
+        }
+      }
+      if (Array.isArray(resolved.oneOf)) {
+        for (const sub of resolved.oneOf) {
+          collectPropsFromSchema(sub);
+        }
+      }
+    }
+  };
+
+  for (const op of candidateOps) {
+    const opVal = pObj[op];
+    if (!opVal || typeof opVal !== 'object') continue;
+    const opObj = opVal as Record<string, unknown>;
+
+    // 1. Inspect requestBody schema
+    if (opObj.requestBody && typeof opObj.requestBody === 'object') {
+      const rb =
+        resolveSchemaRef(opObj.requestBody, openApiDoc) ??
+        (opObj.requestBody as Record<string, unknown>);
+      if (rb.content && typeof rb.content === 'object') {
+        for (const mediaTypeVal of Object.values(rb.content as Record<string, unknown>)) {
+          if (mediaTypeVal && typeof mediaTypeVal === 'object') {
+            const schema = (mediaTypeVal as Record<string, unknown>).schema;
+            if (schema) {
+              collectPropsFromSchema(schema);
+            }
+          }
+        }
+      }
+    }
+
+    // 2. Inspect 2xx success responses
+    if (opObj.responses && typeof opObj.responses === 'object') {
+      const respMap = opObj.responses as Record<string, unknown>;
+      for (const [statusCode, respVal] of Object.entries(respMap)) {
+        if (!/^2\d\d$/i.test(statusCode) && statusCode.toLowerCase() !== '2xx') {
+          continue;
+        }
+        if (respVal && typeof respVal === 'object') {
+          const resp =
+            resolveSchemaRef(respVal, openApiDoc) ?? (respVal as Record<string, unknown>);
+          if (resp.content && typeof resp.content === 'object') {
+            for (const mediaTypeVal of Object.values(resp.content as Record<string, unknown>)) {
+              if (mediaTypeVal && typeof mediaTypeVal === 'object') {
+                const schema = (mediaTypeVal as Record<string, unknown>).schema;
+                if (schema) {
+                  collectPropsFromSchema(schema);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Non-empty guard: at least one schema property must be defined
+  if (referencedProperties.length === 0) {
+    return false;
+  }
+
+  // Verify that all extracted properties belong to the root table
+  for (const propName of referencedProperties) {
+    const normProp = normalizeName(propName);
+
+    // Parent primary key or surrogate ID
+    if (
+      normProp === 'id' ||
+      normProp === `${normRoot}id` ||
+      normProp === `${rawRootClean}id` ||
+      normProp === 'parentid'
+    ) {
+      continue;
+    }
+
+    // Direct parent column
+    if (rootColNames.has(normProp)) {
+      continue;
+    }
+
+    // Composite prefix with terminal segment (e.g. terminal 'payment' + 'status' -> 'payment_status')
+    if (normTerminal) {
+      const comp1 = normalizeName(`${normTerminal}_${normProp}`);
+      const comp2 = normalizeName(`${normTerminal}${normProp}`);
+      if (rootColNames.has(comp1) || rootColNames.has(comp2)) {
+        continue;
+      }
+      if (rawTerminalClean) {
+        const comp3 = normalizeName(`${rawTerminalClean}_${normProp}`);
+        const comp4 = normalizeName(`${rawTerminalClean}${normProp}`);
+        if (rootColNames.has(comp3) || rootColNames.has(comp4)) {
+          continue;
+        }
+      }
+      if (normProp.startsWith(normTerminal)) {
+        const stripped = normProp.slice(normTerminal.length);
+        if (stripped && (rootColNames.has(stripped) || rootColNames.has(normalizeName(stripped)))) {
+          continue;
+        }
+      }
+      if (rawTerminalClean && normProp.startsWith(rawTerminalClean)) {
+        const stripped = normProp.slice(rawTerminalClean.length);
+        if (stripped && (rootColNames.has(stripped) || rootColNames.has(normalizeName(stripped)))) {
+          continue;
+        }
+      }
+    }
+
+    // Property is not representable on the parent table
+    return false;
+  }
+
+  return true;
+}
+
 export class SchemaApiCrossValidator {
   validate(input: CrossValidationInput): CandidateFinding[] {
     const findings: CandidateFinding[] = [];
@@ -1411,13 +1595,17 @@ export class SchemaApiCrossValidator {
           const matchesEnumValue = Boolean(
             rootEnum?.values.some((v) => normalizeName(v) === normTerminal)
           );
+          const isParentView = Boolean(
+            rootTable && isParentTableView(pathItem, rootTable, openApiDoc, terminal)
+          );
 
           if (
             isActionVerb ||
             hasDecisionAnnotation ||
             matchesDirectTable ||
             matchesCompositeTable ||
-            matchesEnumValue
+            matchesEnumValue ||
+            isParentView
           ) {
             continue;
           }
