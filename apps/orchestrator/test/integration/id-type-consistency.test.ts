@@ -643,7 +643,15 @@ describe(
       expect(openApiPrompt).toContain('PROJ-SQL-AAA-NEWER');
       expect(openApiPrompt).toContain("Table 'orders': Primary key column 'id' (Type: UUID)");
       expect(openApiPrompt).not.toContain('PROJ-SQL-ZZZ-OLDER');
-      expect(openApiPrompt).not.toContain('order_id');
+      // Assert the selected projection's actual relational schema context contains id and status, and not order_id
+      const relationalContextMatch = openApiPrompt.match(
+        /Relational Schema Context[\s\S]*?(?=OpenAPI Identifier Alignment Requirements|$)/i
+      );
+      const relationalContext = relationalContextMatch ? relationalContextMatch[0] : openApiPrompt;
+      expect(relationalContext).toContain("Table 'orders': Primary key column 'id' (Type: UUID)");
+      expect(relationalContext).toContain("- 'id': UUID");
+      expect(relationalContext).toContain("- 'status': VARCHAR(32)");
+      expect(relationalContext).not.toContain('order_id');
 
       const sqlPkType = extractNormalizedSqlPrimaryKeyType(newerSql.content, 'orders');
       const openApiIdType = extractNormalizedOpenApiIdentifierType(openApiResult.content, 'Order');

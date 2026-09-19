@@ -1,6 +1,6 @@
 {
-  "id": "REQ-c3fde2f4-1ff9-4aad-b9db-6c090bdf0f03-R1",
-  "requirementId": "REQ-c3fde2f4-1ff9-4aad-b9db-6c090bdf0f03",
+  "id": "REQ-37da15b0-2f6f-4eee-aeaf-845364e7cf29-R1",
+  "requirementId": "REQ-37da15b0-2f6f-4eee-aeaf-845364e7cf29",
   "revision": 1,
   "statement": "All privileged sessions must terminate automatically after 15 minutes of inactivity.",
   "category": "business-rule",

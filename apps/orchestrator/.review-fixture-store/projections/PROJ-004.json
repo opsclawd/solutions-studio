@@ -1,0 +1,27 @@
+{
+  "id": "PROJ-004",
+  "baselineId": "BASE-001",
+  "requirementRevisionIds": ["REQ-002-R1"],
+  "artifactType": "stories",
+  "content": "# @baseline BASE-001\n# @requirements REQ-002-R1\n# @depends-on: STORY-001\n\nFeature: Role-Based Privilege Assignment\n  As a verified administrator\n  I want to receive role-based privileges\n  So that authorized management operations can be performed\n\n  @requirements:REQ-002-R1\n  Scenario: Assign administrator role\n    Given a user with verified MFA from STORY-001\n    When the administrative privileges are loaded\n    Then the administrative role is applied",
+  "metadata": {
+    "baselineId": "BASE-001",
+    "requirementRevisionIds": ["REQ-002-R1"],
+    "artifactType": "stories",
+    "declaredProvenance": {
+      "baselineId": "BASE-001",
+      "requirementRevisionIds": ["REQ-002-R1"]
+    },
+    "configuredExecution": {
+      "provider": "fake",
+      "artifactType": "stories"
+    },
+    "measuredVerification": {
+      "repairsNeeded": 0,
+      "attemptCount": 1,
+      "contentHash": "2ba1ca127b7143e83b22bbafb8782a6fed1605464954442e32dc0872419b8e7e",
+      "verifiedAt": "2026-09-19T18:31:35.724Z"
+    }
+  },
+  "createdAt": "2026-09-19T18:31:35.724Z"
+}

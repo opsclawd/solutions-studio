@@ -1,6 +1,6 @@
 {
-  "id": "REQ-fc67e950-32a6-48e1-a16b-f2075a9849d9-R1",
-  "requirementId": "REQ-fc67e950-32a6-48e1-a16b-f2075a9849d9",
+  "id": "REQ-6db9c532-6cad-4cfa-a2ef-6a677dba5ce2-R1",
+  "requirementId": "REQ-6db9c532-6cad-4cfa-a2ef-6a677dba5ce2",
   "revision": 1,
   "statement": "Prototype reveals user needs confirmation before submitting final order",
   "category": "business-rule",
