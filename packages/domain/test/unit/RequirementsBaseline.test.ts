@@ -9,7 +9,11 @@ import {
   createEvidenceLocator,
   createEvidenceReference,
   validateBaselineMembership,
+  validatePolicyConstraintBaselineMembership,
   createRequirementRevision,
+  createPolicyConstraintId,
+  createPolicyConstraintRevisionId,
+  createPolicyConstraintRevision,
   InvalidBaselineMembershipError,
   DomainError
 } from '../../src/index.js';
@@ -251,6 +255,126 @@ describe('RequirementsBaseline', () => {
       // Assert the manifest stores the exact revision identifier R-142@r4
       expect(baseline.requirementRevisions).toContain('R-142@r4');
       expect((baseline as any).latest).toBeUndefined();
+    });
+  });
+
+  describe('Policy constraints baseline support', () => {
+    const validReq = createRequirementRevision({
+      id: createRequirementRevisionId('R-100@r1'),
+      requirementId: createRequirementId('R-100'),
+      revision: 1,
+      statement: 'Audited statement',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR'
+    });
+
+    it('creates baseline with both requirement revisions and policy constraint revisions', () => {
+      const pc = createPolicyConstraintRevision({
+        id: createPolicyConstraintRevisionId('PC-SEC-001@r1'),
+        policyConstraintId: createPolicyConstraintId('PC-SEC-001'),
+        revision: 1,
+        statement: 'TLS 1.3 required',
+        authorityReference: 'NIST-800-53',
+        state: 'ACCEPTED',
+        createdBy: 'sec-lead'
+      });
+
+      const baseline = createRequirementsBaseline({
+        id: createRequirementsBaselineId('BASELINE-PC-1'),
+        requirements: [validReq],
+        policyConstraints: [pc],
+        createdBy: createReviewerId('REV-01')
+      });
+
+      expect(baseline.requirementRevisions).toEqual(['R-100@r1']);
+      expect(baseline.policyConstraintRevisions).toEqual(['PC-SEC-001@r1']);
+      expect(Object.isFrozen(baseline.policyConstraintRevisions)).toBe(true);
+    });
+
+    it('defaults policyConstraintRevisions to empty frozen array for backwards compatibility', () => {
+      const baseline = createRequirementsBaseline({
+        id: createRequirementsBaselineId('BASELINE-LEGACY'),
+        requirements: [validReq],
+        createdBy: createReviewerId('REV-01')
+      });
+
+      expect(baseline.policyConstraintRevisions).toEqual([]);
+      expect(Object.isFrozen(baseline.policyConstraintRevisions)).toBe(true);
+    });
+
+    it('rejects candidate policy constraint with state !== ACCEPTED', () => {
+      const pendingPc = createPolicyConstraintRevision({
+        id: createPolicyConstraintRevisionId('PC-SEC-001@r1'),
+        policyConstraintId: createPolicyConstraintId('PC-SEC-001'),
+        revision: 1,
+        statement: 'Statement',
+        authorityReference: 'Auth ref',
+        state: 'PENDING',
+        createdBy: 'user'
+      });
+
+      const rejectedPc = createPolicyConstraintRevision({
+        id: createPolicyConstraintRevisionId('PC-SEC-002@r1'),
+        policyConstraintId: createPolicyConstraintId('PC-SEC-002'),
+        revision: 1,
+        statement: 'Statement',
+        authorityReference: 'Auth ref',
+        state: 'REJECTED',
+        createdBy: 'user'
+      });
+
+      const violations = validatePolicyConstraintBaselineMembership([pendingPc, rejectedPc]);
+      expect(violations).toHaveLength(2);
+      expect(violations[0].reasons.some((r) => r.includes('state=ACCEPTED'))).toBe(true);
+      expect(violations[1].reasons.some((r) => r.includes('state=ACCEPTED'))).toBe(true);
+
+      expect(() =>
+        createRequirementsBaseline({
+          id: createRequirementsBaselineId('BASE-FAIL'),
+          requirements: [validReq],
+          policyConstraints: [pendingPc],
+          createdBy: createReviewerId('REV-01')
+        })
+      ).toThrow(InvalidBaselineMembershipError);
+    });
+
+    it('rejects multiple revisions for the same policy constraint in one baseline', () => {
+      const pc1 = createPolicyConstraintRevision({
+        id: createPolicyConstraintRevisionId('PC-SEC-001@r1'),
+        policyConstraintId: createPolicyConstraintId('PC-SEC-001'),
+        revision: 1,
+        statement: 'Statement 1',
+        authorityReference: 'Auth ref',
+        state: 'ACCEPTED',
+        createdBy: 'user'
+      });
+
+      const pc2 = createPolicyConstraintRevision({
+        id: createPolicyConstraintRevisionId('PC-SEC-001@r2'),
+        policyConstraintId: createPolicyConstraintId('PC-SEC-001'),
+        revision: 2,
+        statement: 'Statement 2',
+        authorityReference: 'Auth ref',
+        state: 'ACCEPTED',
+        createdBy: 'user'
+      });
+
+      const violations = validatePolicyConstraintBaselineMembership([pc1, pc2]);
+      expect(violations).toHaveLength(1);
+      expect(violations[0].reasons.some((r) => r.includes('Duplicate policy constraint'))).toBe(
+        true
+      );
+
+      expect(() =>
+        createRequirementsBaseline({
+          id: createRequirementsBaselineId('BASE-FAIL'),
+          requirements: [validReq],
+          policyConstraints: [pc1, pc2],
+          createdBy: createReviewerId('REV-01')
+        })
+      ).toThrow(InvalidBaselineMembershipError);
     });
   });
 

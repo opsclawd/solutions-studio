@@ -10,11 +10,36 @@ import {
   FINDING_TYPES,
   FINDING_DISPOSITIONS,
   DISCOVERED_BY,
+  POLICY_CONSTRAINT_STATES,
+  ENGINEERING_DECISION_STATES,
   isValidInstant
 } from '@solutions-studio/domain';
 
 export const InstantDtoSchema = z.string().refine(isValidInstant, {
   message: 'Invalid RFC 3339/ISO-8601 instant string with timezone and calendar validity'
+});
+
+export const PolicyConstraintStateSchema = z.enum(POLICY_CONSTRAINT_STATES);
+
+export const PolicyConstraintRevisionDtoSchema = z.object({
+  id: z.string().min(1),
+  policyConstraintId: z.string().min(1),
+  revision: z.number().int().positive(),
+  statement: z.string().min(1),
+  authorityReference: z.string().min(1),
+  state: PolicyConstraintStateSchema,
+  createdAt: InstantDtoSchema,
+  createdBy: z.string().min(1),
+  supersedes: z.string().min(1).optional()
+});
+
+export const CreatePolicyConstraintRevisionRequestDtoSchema = z.object({
+  policyConstraintId: z.string().min(1),
+  statement: z.string().min(1),
+  authorityReference: z.string().min(1),
+  state: PolicyConstraintStateSchema.optional().default('ACCEPTED'),
+  createdBy: z.string().min(1),
+  supersedes: z.string().min(1).optional()
 });
 
 export const SourceTypeSchema = z.enum(SOURCE_TYPES);
@@ -70,6 +95,7 @@ export const RequirementRevisionDtoSchema = z.object({
 export const RequirementsBaselineDtoSchema = z.object({
   id: z.string().min(1),
   requirementRevisions: z.array(z.string().min(1)),
+  policyConstraintRevisions: z.array(z.string().min(1)).optional(),
   createdAt: InstantDtoSchema,
   createdBy: z.string().min(1)
 });
@@ -228,6 +254,7 @@ export const ReconciliationRecordDtoSchema = z.union([
 export const CreateRequirementsBaselineRequestDtoSchema = z.object({
   id: z.string().min(1).optional(),
   requirementRevisions: z.array(z.string().min(1)).min(1),
+  policyConstraintRevisions: z.array(z.string().min(1)).optional(),
   createdBy: z.string().min(1),
   createdAt: InstantDtoSchema.optional()
 });
@@ -385,4 +412,45 @@ export const RecordFindingDiscoveryRequestDtoSchema = z.object({
   affectedRequirementRevisions: z.array(z.string().min(1)).optional(),
   evidence: z.array(EvidenceReferenceDtoSchema).optional(),
   findingId: z.string().min(1).optional()
+});
+
+export const EngineeringDecisionStateSchema = z.enum(ENGINEERING_DECISION_STATES);
+
+export const EngineeringDecisionDtoSchema = z.object({
+  id: z.string().min(1),
+  baselineId: z.string().min(1),
+  statement: z.string().min(1),
+  rationale: z.string().min(1),
+  requirementRevisionIds: z.array(z.string().min(1)),
+  policyConstraintRevisionIds: z.array(z.string().min(1)),
+  state: EngineeringDecisionStateSchema,
+  createdAt: InstantDtoSchema,
+  createdBy: z.string().min(1),
+  acceptedBy: z.string().min(1).optional(),
+  acceptedAt: InstantDtoSchema.optional(),
+  supersedes: z.string().min(1).optional(),
+  transitionRationale: z.string().min(1).optional()
+});
+
+export const CreateEngineeringDecisionRequestDtoSchema = z.object({
+  id: z.string().min(1).optional(),
+  baselineId: z.string().min(1),
+  statement: z.string().min(1),
+  rationale: z.string().min(1),
+  requirementRevisionIds: z.array(z.string().min(1)).default([]),
+  policyConstraintRevisionIds: z.array(z.string().min(1)).default([]),
+  createdBy: z.string().min(1),
+  supersedes: z.string().min(1).optional()
+});
+
+export const TransitionEngineeringDecisionRequestDtoSchema = z.object({
+  newState: EngineeringDecisionStateSchema,
+  rationale: z.string().min(1),
+  actorId: z.string().min(1)
+});
+
+export const AuthorityBundleDtoSchema = z.object({
+  baseline: RequirementsBaselineDtoSchema,
+  requirements: z.array(RequirementRevisionDtoSchema),
+  policyConstraints: z.array(PolicyConstraintRevisionDtoSchema)
 });

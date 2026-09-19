@@ -5,14 +5,17 @@ import {
   createReviewerId,
   createInstant,
   createRequirementRevisionId,
+  createPolicyConstraintRevisionId,
   now,
   EmptyBaselineError,
   type RequirementsBaseline,
   type RequirementsBaselineId,
   type RequirementRevisionId,
+  type PolicyConstraintRevisionId,
   type ReviewerId,
   type Instant,
-  type RequirementRevision
+  type RequirementRevision,
+  type PolicyConstraintRevision
 } from '@solutions-studio/domain';
 import type { IRequirementsRepository } from '../ports/persistence/IRequirementsRepository.js';
 import {
@@ -20,13 +23,15 @@ import {
   StaleRevisionTargetError,
   UnauditedRequirementRevisionError,
   UnauditedFindingDispositionError,
-  UnknownRequirementRevisionError
+  UnknownRequirementRevisionError,
+  UnknownPolicyConstraintRevisionError
 } from './ReconciliationErrors.js';
 import { resolveRevisionLineage, selectBlockingFindings } from './resolveRevisionLineage.js';
 
 export interface CreateRequirementsBaselineInput {
   readonly id?: RequirementsBaselineId | string;
   readonly requirementRevisionIds: readonly (RequirementRevisionId | string)[];
+  readonly policyConstraintRevisionIds?: readonly (PolicyConstraintRevisionId | string)[];
   readonly createdBy: ReviewerId | string;
   readonly createdAt?: Instant | string;
 }
@@ -49,6 +54,18 @@ export class CreateRequirementsBaselineUseCase {
       revisions.push(rev);
     }
 
+    const policyRevisions: PolicyConstraintRevision[] = [];
+    if (input.policyConstraintRevisionIds) {
+      for (const rawId of input.policyConstraintRevisionIds) {
+        const polRevId = createPolicyConstraintRevisionId(rawId);
+        const polRev = await this.repository.getPolicyConstraintRevision(polRevId);
+        if (!polRev) {
+          throw new UnknownPolicyConstraintRevisionError(polRevId);
+        }
+        policyRevisions.push(polRev);
+      }
+    }
+
     const baselineId = input.id
       ? createRequirementsBaselineId(input.id)
       : createRequirementsBaselineId(`BASELINE-${randomUUID()}`);
@@ -58,6 +75,7 @@ export class CreateRequirementsBaselineUseCase {
     const baseline = createRequirementsBaseline({
       id: baselineId,
       requirements: revisions,
+      policyConstraints: policyRevisions,
       createdBy,
       createdAt
     });
@@ -69,6 +87,19 @@ export class CreateRequirementsBaselineUseCase {
         const latest = allRevisions[allRevisions.length - 1];
         if (latest.id !== rev.id) {
           throw new StaleRevisionTargetError(rev.id, latest.id);
+        }
+      }
+    }
+
+    // Authority gate: verify that each proposed policy constraint revision is the current latest revision
+    for (const polRev of policyRevisions) {
+      const allRevisions = await this.repository.listPolicyConstraintRevisions(
+        polRev.policyConstraintId
+      );
+      if (allRevisions.length > 0) {
+        const latest = allRevisions[allRevisions.length - 1];
+        if (latest.id !== polRev.id) {
+          throw new StaleRevisionTargetError(polRev.id, latest.id);
         }
       }
     }
@@ -129,7 +160,12 @@ export class CreateRequirementsBaselineUseCase {
       throw new BlockedByOpenFindingsError(blockingMatches);
     }
 
-    await this.repository.saveRequirementsBaselineConditional(baseline, proposedIds);
+    const proposedPolicyIds = policyRevisions.map((p) => p.id);
+    await this.repository.saveRequirementsBaselineConditional(
+      baseline,
+      proposedIds,
+      proposedPolicyIds
+    );
 
     return baseline;
   }

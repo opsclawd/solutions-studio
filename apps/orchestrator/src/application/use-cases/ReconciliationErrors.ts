@@ -148,3 +148,27 @@ export class UnknownRequirementsBaselineError extends ReconciliationError {
     super(message ?? `Unknown requirements baseline: '${baselineId}'`);
   }
 }
+
+export class UnknownPolicyConstraintRevisionError extends ReconciliationError {
+  constructor(
+    public readonly revisionId: string,
+    message?: string
+  ) {
+    super(message ?? `Unknown policy constraint revision: '${revisionId}'`);
+  }
+}
+
+export class UnknownEngineeringDecisionError extends ReconciliationError {
+  constructor(
+    public readonly decisionId: string,
+    message?: string
+  ) {
+    super(message ?? `Unknown engineering decision: '${decisionId}'`);
+  }
+}
+
+export class InvalidEngineeringDecisionStateError extends ReconciliationError {
+  constructor(message: string) {
+    super(message);
+  }
+}

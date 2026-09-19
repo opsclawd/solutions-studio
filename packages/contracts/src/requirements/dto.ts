@@ -37,10 +37,32 @@ import type {
   RevisionLineageEntryDtoSchema,
   DiscoveryDiscoveredBySchema,
   RecordRequirementDiscoveryRequestDtoSchema,
-  RecordFindingDiscoveryRequestDtoSchema
+  RecordFindingDiscoveryRequestDtoSchema,
+  PolicyConstraintStateSchema,
+  PolicyConstraintRevisionDtoSchema,
+  CreatePolicyConstraintRevisionRequestDtoSchema,
+  EngineeringDecisionStateSchema,
+  EngineeringDecisionDtoSchema,
+  CreateEngineeringDecisionRequestDtoSchema,
+  TransitionEngineeringDecisionRequestDtoSchema,
+  AuthorityBundleDtoSchema
 } from './schemas.js';
 
 export type InstantDto = z.infer<typeof InstantDtoSchema>;
+export type PolicyConstraintStateDto = z.infer<typeof PolicyConstraintStateSchema>;
+export type PolicyConstraintRevisionDto = z.infer<typeof PolicyConstraintRevisionDtoSchema>;
+export type CreatePolicyConstraintRevisionRequestDto = z.infer<
+  typeof CreatePolicyConstraintRevisionRequestDtoSchema
+>;
+export type EngineeringDecisionStateDto = z.infer<typeof EngineeringDecisionStateSchema>;
+export type EngineeringDecisionDto = z.infer<typeof EngineeringDecisionDtoSchema>;
+export type CreateEngineeringDecisionRequestDto = z.infer<
+  typeof CreateEngineeringDecisionRequestDtoSchema
+>;
+export type TransitionEngineeringDecisionRequestDto = z.infer<
+  typeof TransitionEngineeringDecisionRequestDtoSchema
+>;
+export type AuthorityBundleDto = z.infer<typeof AuthorityBundleDtoSchema>;
 export type SourceTypeDto = z.infer<typeof SourceTypeSchema>;
 export type RequirementCategoryDto = z.infer<typeof RequirementCategorySchema>;
 export type RequirementOriginDto = z.infer<typeof RequirementOriginSchema>;
