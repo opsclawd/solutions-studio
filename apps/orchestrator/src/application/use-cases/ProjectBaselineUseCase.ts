@@ -19,6 +19,7 @@ import type {
   BaselineProjectionResult,
   GeneratePrototypeProjectionUseCase
 } from './GeneratePrototypeProjectionUseCase.js';
+import type { GenerateSqlSchemaProjectionUseCase } from './GenerateSqlSchemaProjectionUseCase.js';
 import {
   UnknownRequirementRevisionError,
   UnknownRequirementsBaselineError
@@ -26,7 +27,7 @@ import {
 
 export interface ProjectBaselineInput {
   readonly baselineId: RequirementsBaselineId | string;
-  readonly artifactType: 'process-diagram' | 'state-diagram' | 'prototype';
+  readonly artifactType: 'process-diagram' | 'state-diagram' | 'prototype' | 'sql-schema';
   readonly prompt?: string;
   readonly options?: GenerateArtifactOptions;
   readonly id?: string;
@@ -39,7 +40,8 @@ export class ProjectBaselineUseCase {
     private readonly generateArtifactUseCase: GenerateArtifactUseCase,
     private readonly repository: IRequirementsRepository,
     private readonly providerName: string = 'fake',
-    private readonly generatePrototypeProjectionUseCase?: GeneratePrototypeProjectionUseCase
+    private readonly generatePrototypeProjectionUseCase?: GeneratePrototypeProjectionUseCase,
+    private readonly generateSqlSchemaProjectionUseCase?: GenerateSqlSchemaProjectionUseCase
   ) {}
 
   async project(input: ProjectBaselineInput): Promise<BaselineProjectionResult> {
@@ -50,6 +52,20 @@ export class ProjectBaselineUseCase {
         );
       }
       return this.generatePrototypeProjectionUseCase.execute({
+        baselineId: input.baselineId,
+        prompt: input.prompt,
+        options: input.options,
+        id: input.id
+      });
+    }
+
+    if (input.artifactType === 'sql-schema') {
+      if (!this.generateSqlSchemaProjectionUseCase) {
+        throw new Error(
+          'GenerateSqlSchemaProjectionUseCase not configured on ProjectBaselineUseCase'
+        );
+      }
+      return this.generateSqlSchemaProjectionUseCase.execute({
         baselineId: input.baselineId,
         prompt: input.prompt,
         options: input.options,

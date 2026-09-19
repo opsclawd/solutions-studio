@@ -98,6 +98,8 @@ export interface ProjectionRecord {
   readonly id: string;
   readonly baselineId: RequirementsBaselineId;
   readonly requirementRevisionIds: readonly RequirementRevisionId[];
+  readonly policyConstraintRevisionIds?: readonly PolicyConstraintRevisionId[];
+  readonly engineeringDecisionIds?: readonly EngineeringDecisionId[];
   readonly artifactType: string;
   readonly content: string;
   readonly metadata: ProjectionMetadataDto;

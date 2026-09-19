@@ -262,13 +262,18 @@ export const CreateRequirementsBaselineRequestDtoSchema = z.object({
 export const ProjectionMetadataDtoSchema = z.object({
   baselineId: z.string().min(1),
   requirementRevisionIds: z.array(z.string().min(1)).min(1),
+  policyConstraintRevisionIds: z.array(z.string().min(1)).optional(),
+  engineeringDecisionIds: z.array(z.string().min(1)).optional(),
   artifactType: z.string().min(1),
   declaredProvenance: z.object({
     baselineId: z.string().min(1),
-    requirementRevisionIds: z.array(z.string().min(1)).min(1)
+    requirementRevisionIds: z.array(z.string().min(1)).min(1),
+    policyConstraintRevisionIds: z.array(z.string().min(1)).optional(),
+    engineeringDecisionIds: z.array(z.string().min(1)).optional()
   }),
   configuredExecution: z.object({
     provider: z.string().min(1),
+    model: z.string().optional(),
     artifactType: z.string().min(1)
   }),
   measuredVerification: z.object({
@@ -283,6 +288,8 @@ export const ProjectionRecordDtoSchema = z.object({
   id: z.string().min(1),
   baselineId: z.string().min(1),
   requirementRevisionIds: z.array(z.string().min(1)).min(1),
+  policyConstraintRevisionIds: z.array(z.string().min(1)).optional(),
+  engineeringDecisionIds: z.array(z.string().min(1)).optional(),
   artifactType: z.string().min(1),
   content: z.string().min(1),
   metadata: ProjectionMetadataDtoSchema,
@@ -346,7 +353,7 @@ export const ReopenFindingRequestDtoSchema = z.object({
 });
 
 export const GenerateProjectionRequestDtoSchema = z.object({
-  artifactType: z.enum(['process-diagram', 'state-diagram', 'prototype']),
+  artifactType: z.enum(['process-diagram', 'state-diagram', 'prototype', 'sql-schema']),
   prompt: z.string().min(1).optional()
 });
 

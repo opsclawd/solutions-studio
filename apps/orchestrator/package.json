@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@babel/standalone": "^7.26.4",
+    "@electric-sql/pglite": "^0.5.8",
     "@fastify/cors": "^10.0.1",
     "@mermaid-js/mermaid-cli": "^11.4.2",
     "@solutions-studio/contracts": "workspace:*",

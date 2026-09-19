@@ -5,11 +5,13 @@ import type { IRequirementsRepository } from '../application/ports/persistence/I
 import type { IGenerationGateway } from '../application/ports/generation/IGenerationGateway.js';
 import type { IMermaidLinterGateway } from '../application/ports/validation/IMermaidLinterGateway.js';
 import type { IPrototypeValidatorGateway } from '../application/ports/validation/IPrototypeValidatorGateway.js';
+import type { ISqlValidatorGateway } from '../application/ports/validation/ISqlValidatorGateway.js';
 import { CompileRequirementsUseCase } from '../application/use-cases/CompileRequirementsUseCase.js';
 import { ReconcileRequirementsUseCase } from '../application/use-cases/ReconcileRequirementsUseCase.js';
 import { CreateRequirementsBaselineUseCase } from '../application/use-cases/CreateRequirementsBaselineUseCase.js';
 import { GenerateArtifactUseCase } from '../application/use-cases/GenerateArtifactUseCase.js';
 import { GeneratePrototypeProjectionUseCase } from '../application/use-cases/GeneratePrototypeProjectionUseCase.js';
+import { GenerateSqlSchemaProjectionUseCase } from '../application/use-cases/GenerateSqlSchemaProjectionUseCase.js';
 import { ProjectBaselineUseCase } from '../application/use-cases/ProjectBaselineUseCase.js';
 import { GetRequirementsReviewStateUseCase } from '../application/use-cases/GetRequirementsReviewStateUseCase.js';
 import { RecordRequirementsDiscoveryUseCase } from '../application/use-cases/RecordRequirementsDiscoveryUseCase.js';
@@ -28,6 +30,7 @@ import {
 import { DeterministicFallbackGateway } from '../infrastructure/generation/DeterministicFallbackGateway.js';
 import { MermaidCliLinterAdapter } from '../infrastructure/validation/MermaidCliLinterAdapter.js';
 import { BabelTsxValidatorAdapter } from '../infrastructure/validation/BabelTsxValidatorAdapter.js';
+import { PGliteSqlValidatorAdapter } from '../infrastructure/validation/PGliteSqlValidatorAdapter.js';
 import { buildServer } from './server.js';
 
 export interface ComposeHttpServerOptions {
@@ -41,6 +44,7 @@ export interface ComposeHttpServerOptions {
   readonly generationGateway?: IGenerationGateway;
   readonly linterGateway?: IMermaidLinterGateway;
   readonly prototypeValidatorGateway?: IPrototypeValidatorGateway;
+  readonly sqlValidatorGateway?: ISqlValidatorGateway;
   readonly fastifyOptions?: FastifyServerOptions;
   // Use cases overrides (e.g. for testing)
   readonly compileUseCase?: CompileRequirementsUseCase;
@@ -48,6 +52,7 @@ export interface ComposeHttpServerOptions {
   readonly baselineUseCase?: CreateRequirementsBaselineUseCase;
   readonly generateArtifactUseCase?: GenerateArtifactUseCase;
   readonly generatePrototypeProjectionUseCase?: GeneratePrototypeProjectionUseCase;
+  readonly generateSqlSchemaProjectionUseCase?: GenerateSqlSchemaProjectionUseCase;
   readonly projectBaselineUseCase?: ProjectBaselineUseCase;
   readonly reviewStateUseCase?: GetRequirementsReviewStateUseCase;
   readonly recordDiscoveryUseCase?: RecordRequirementsDiscoveryUseCase;
@@ -67,11 +72,13 @@ export interface ComposedHttpServer {
   readonly generationGateway: IGenerationGateway;
   readonly linterGateway: IMermaidLinterGateway;
   readonly prototypeValidatorGateway: IPrototypeValidatorGateway;
+  readonly sqlValidatorGateway: ISqlValidatorGateway;
   readonly compileUseCase: CompileRequirementsUseCase;
   readonly reconcileUseCase: ReconcileRequirementsUseCase;
   readonly baselineUseCase: CreateRequirementsBaselineUseCase;
   readonly generateArtifactUseCase: GenerateArtifactUseCase;
   readonly generatePrototypeProjectionUseCase: GeneratePrototypeProjectionUseCase;
+  readonly generateSqlSchemaProjectionUseCase: GenerateSqlSchemaProjectionUseCase;
   readonly projectBaselineUseCase: ProjectBaselineUseCase;
   readonly reviewStateUseCase: GetRequirementsReviewStateUseCase;
   readonly recordDiscoveryUseCase: RecordRequirementsDiscoveryUseCase;
@@ -126,6 +133,8 @@ export function composeOrchestratorHttpServer(
   const prototypeValidatorGateway =
     options.prototypeValidatorGateway ?? new BabelTsxValidatorAdapter();
 
+  const sqlValidatorGateway = options.sqlValidatorGateway ?? new PGliteSqlValidatorAdapter();
+
   const compileUseCase =
     options.compileUseCase ?? new CompileRequirementsUseCase(generationGateway, repository);
 
@@ -147,13 +156,23 @@ export function composeOrchestratorHttpServer(
       provider
     );
 
+  const generateSqlSchemaProjectionUseCase =
+    options.generateSqlSchemaProjectionUseCase ??
+    new GenerateSqlSchemaProjectionUseCase(
+      generationGateway,
+      sqlValidatorGateway,
+      repository,
+      provider
+    );
+
   const projectBaselineUseCase =
     options.projectBaselineUseCase ??
     new ProjectBaselineUseCase(
       generateArtifactUseCase,
       repository,
       provider,
-      generatePrototypeProjectionUseCase
+      generatePrototypeProjectionUseCase,
+      generateSqlSchemaProjectionUseCase
     );
 
   const reviewStateUseCase =
@@ -208,11 +227,13 @@ export function composeOrchestratorHttpServer(
     generationGateway,
     linterGateway,
     prototypeValidatorGateway,
+    sqlValidatorGateway,
     compileUseCase,
     reconcileUseCase,
     baselineUseCase,
     generateArtifactUseCase,
     generatePrototypeProjectionUseCase,
+    generateSqlSchemaProjectionUseCase,
     projectBaselineUseCase,
     reviewStateUseCase,
     recordDiscoveryUseCase,
