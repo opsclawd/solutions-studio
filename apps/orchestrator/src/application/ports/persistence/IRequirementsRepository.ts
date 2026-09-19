@@ -12,11 +12,20 @@ import type {
   RequirementRevision,
   CandidateFinding,
   RequirementsBaseline,
+  PolicyConstraintId,
+  PolicyConstraintRevisionId,
+  EngineeringDecisionId,
+  PolicyConstraintRevision,
+  EngineeringDecision,
+  EngineeringDecisionState,
   SourceType,
   FindingDisposition,
   RequirementReviewState,
   RequirementResolutionState,
-  RequirementReconciliationAction
+  RequirementReconciliationAction,
+  StoryId,
+  StoryNarrative,
+  GherkinScenario
 } from '@solutions-studio/domain';
 import type {
   ProjectionMetadataDto,
@@ -92,10 +101,28 @@ export interface ProjectionRecord {
   readonly id: string;
   readonly baselineId: RequirementsBaselineId;
   readonly requirementRevisionIds: readonly RequirementRevisionId[];
+  readonly policyConstraintRevisionIds?: readonly PolicyConstraintRevisionId[];
+  readonly engineeringDecisionIds?: readonly EngineeringDecisionId[];
   readonly artifactType: string;
   readonly content: string;
   readonly metadata: ProjectionMetadataDto;
   readonly createdAt: Instant;
+}
+
+export interface StoryRecord {
+  readonly id: StoryId;
+  readonly baselineId: RequirementsBaselineId;
+  readonly projectionId: string;
+  readonly title: string;
+  readonly narrative: StoryNarrative;
+  readonly requirementRevisionIds: readonly RequirementRevisionId[];
+  readonly policyConstraintRevisionIds?: readonly PolicyConstraintRevisionId[];
+  readonly scenarios: readonly GherkinScenario[];
+  readonly acceptanceCriteria: readonly string[];
+  readonly gherkinText: string;
+  readonly metadata: ProjectionMetadataDto;
+  readonly createdAt: Instant;
+  readonly dependencies?: readonly StoryId[];
 }
 
 export class ImmutableRecordConflictError extends Error {
@@ -154,14 +181,40 @@ export interface IRequirementsRepository {
   ): Promise<void>;
   saveRequirementsBaselineConditional(
     baseline: RequirementsBaseline,
-    expectedLatestRevisionIds: readonly RequirementRevisionId[]
+    expectedLatestRevisionIds: readonly RequirementRevisionId[],
+    expectedLatestPolicyConstraintRevisionIds?: readonly PolicyConstraintRevisionId[]
   ): Promise<void>;
   getRequirementsBaseline(id: RequirementsBaselineId): Promise<RequirementsBaseline | undefined>;
   listRequirementsBaselines(): Promise<readonly RequirementsBaseline[]>;
+  savePolicyConstraintRevision(revision: PolicyConstraintRevision): Promise<void>;
+  getPolicyConstraintRevision(
+    id: PolicyConstraintRevisionId
+  ): Promise<PolicyConstraintRevision | undefined>;
+  listPolicyConstraintRevisions(
+    policyConstraintId: PolicyConstraintId
+  ): Promise<readonly PolicyConstraintRevision[]>;
+  listPolicyConstraintIds(): Promise<readonly PolicyConstraintId[]>;
+  saveEngineeringDecision(decision: EngineeringDecision): Promise<void>;
+  getEngineeringDecision(id: EngineeringDecisionId): Promise<EngineeringDecision | undefined>;
+  listEngineeringDecisions(filter?: {
+    baselineId?: RequirementsBaselineId;
+    state?: EngineeringDecisionState;
+  }): Promise<readonly EngineeringDecision[]>;
+  updateEngineeringDecision(
+    decision: EngineeringDecision,
+    expectedCurrentState?: EngineeringDecisionState
+  ): Promise<void>;
   saveEvaluationRun(run: EvaluationRunRecord): Promise<void>;
   getEvaluationRun(id: string): Promise<EvaluationRunRecord | undefined>;
   listEvaluationRuns(): Promise<readonly EvaluationRunRecord[]>;
   saveProjectionRecord(projection: ProjectionRecord): Promise<void>;
+  updateProjectionRecord(projection: ProjectionRecord): Promise<void>;
   getProjectionRecord(id: string): Promise<ProjectionRecord | undefined>;
   listProjectionRecords(baselineId?: RequirementsBaselineId): Promise<readonly ProjectionRecord[]>;
+  saveStory(story: StoryRecord): Promise<void>;
+  updateStory(story: StoryRecord): Promise<void>;
+  updateStoryAndProjection(story: StoryRecord, projection: ProjectionRecord): Promise<void>;
+  getStory(id: StoryId): Promise<StoryRecord | undefined>;
+  listStories(baselineId?: RequirementsBaselineId): Promise<readonly StoryRecord[]>;
+  withBaselineLock<T>(baselineId: RequirementsBaselineId, action: () => Promise<T>): Promise<T>;
 }

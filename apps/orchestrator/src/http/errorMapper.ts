@@ -2,7 +2,8 @@ import { ZodError } from 'zod';
 import {
   DomainError,
   EmptyBaselineError,
-  FindingRationaleRequiredError
+  FindingRationaleRequiredError,
+  InvalidBaselineMembershipError
 } from '@solutions-studio/domain';
 import type { ApiErrorDto } from '@solutions-studio/contracts';
 import {
@@ -15,13 +16,32 @@ import {
   UnauditedRequirementRevisionError,
   UnknownCandidateFindingError,
   UnknownRequirementRevisionError,
-  UnknownRequirementsBaselineError
+  UnknownRequirementsBaselineError,
+  UnknownPolicyConstraintRevisionError,
+  UnknownEngineeringDecisionError,
+  InvalidEngineeringDecisionStateError
 } from '../application/use-cases/ReconciliationErrors.js';
 import { RepairRetryExhaustionError } from '../application/use-cases/RepairErrors.js';
 import { PrototypeProvenanceValidationError } from '../application/use-cases/PrototypeProjectionErrors.js';
 import {
+  SqlProvenanceValidationError,
+  UnacceptedEngineeringDecisionError,
+  SqlExecutionValidationError
+} from '../application/use-cases/SqlSchemaProjectionErrors.js';
+import {
+  OpenApiProvenanceValidationError,
+  OpenApiStructuralValidationError
+} from '../application/use-cases/OpenApiProjectionErrors.js';
+import {
+  StoryProvenanceValidationError,
+  GherkinSyntaxValidationError,
+  UnknownStoryError
+} from '../application/use-cases/StoryProjectionErrors.js';
+import {
   UnknownProjectionError,
   ProjectionBaselineMismatchError,
+  ProjectionArtifactTypeMismatchError,
+  ConflictingSqlProjectionAuthorityError,
   RequirementAlreadyExistsError
 } from '../application/use-cases/DiscoveryErrors.js';
 import {
@@ -114,6 +134,28 @@ export function mapErrorToResponse(error: unknown): MappedErrorResponse {
     };
   }
 
+  if (error instanceof UnknownPolicyConstraintRevisionError) {
+    return {
+      statusCode: 404,
+      body: {
+        code: 'POLICY_CONSTRAINT_NOT_FOUND',
+        message: error.message,
+        details: { revisionId: error.revisionId }
+      }
+    };
+  }
+
+  if (error instanceof UnknownEngineeringDecisionError) {
+    return {
+      statusCode: 404,
+      body: {
+        code: 'ENGINEERING_DECISION_NOT_FOUND',
+        message: error.message,
+        details: { decisionId: error.decisionId }
+      }
+    };
+  }
+
   if (error instanceof UnknownProjectionError) {
     return {
       statusCode: 404,
@@ -146,6 +188,35 @@ export function mapErrorToResponse(error: unknown): MappedErrorResponse {
           projectionId: error.projectionId,
           baselineId: error.expectedBaselineId,
           projectionBaselineId: error.projectionBaselineId
+        }
+      }
+    };
+  }
+
+  if (error instanceof ProjectionArtifactTypeMismatchError) {
+    return {
+      statusCode: 400,
+      body: {
+        code: 'VALIDATION_ERROR',
+        message: error.message,
+        details: {
+          projectionId: error.projectionId,
+          artifactType: error.projectionArtifactType,
+          expectedArtifactType: error.expectedArtifactType
+        }
+      }
+    };
+  }
+
+  if (error instanceof ConflictingSqlProjectionAuthorityError) {
+    return {
+      statusCode: 409,
+      body: {
+        code: 'VALIDATION_ERROR',
+        message: error.message,
+        details: {
+          projectionId: error.projectionId,
+          decisionId: error.decisionId
         }
       }
     };
@@ -201,7 +272,11 @@ export function mapErrorToResponse(error: unknown): MappedErrorResponse {
     };
   }
 
-  if (error instanceof InvalidTransitionError || error instanceof AlreadyClearError) {
+  if (
+    error instanceof InvalidTransitionError ||
+    error instanceof AlreadyClearError ||
+    error instanceof InvalidEngineeringDecisionStateError
+  ) {
     return {
       statusCode: 409,
       body: {
@@ -258,6 +333,120 @@ export function mapErrorToResponse(error: unknown): MappedErrorResponse {
     };
   }
 
+  if (error instanceof SqlProvenanceValidationError) {
+    return {
+      statusCode: 400,
+      body: {
+        code: 'VALIDATION_ERROR',
+        message: error.message,
+        details: {
+          baselineId: error.baselineId,
+          invalidRequirementRevisionIds: error.invalidRequirementRevisionIds,
+          allowedRequirementRevisionIds: error.allowedRequirementRevisionIds,
+          invalidPolicyConstraintRevisionIds: error.invalidPolicyConstraintRevisionIds,
+          allowedPolicyConstraintRevisionIds: error.allowedPolicyConstraintRevisionIds,
+          invalidEngineeringDecisionIds: error.invalidEngineeringDecisionIds,
+          allowedEngineeringDecisionIds: error.allowedEngineeringDecisionIds
+        }
+      }
+    };
+  }
+
+  if (error instanceof UnacceptedEngineeringDecisionError) {
+    return {
+      statusCode: 400,
+      body: {
+        code: 'VALIDATION_ERROR',
+        message: error.message,
+        details: {
+          decisionId: error.decisionId,
+          state: error.state,
+          baselineId: error.baselineId
+        }
+      }
+    };
+  }
+
+  if (error instanceof SqlExecutionValidationError) {
+    return {
+      statusCode: 400,
+      body: {
+        code: 'VALIDATION_ERROR',
+        message: error.message,
+        details: error.errorDetails
+      }
+    };
+  }
+
+  if (error instanceof OpenApiProvenanceValidationError) {
+    return {
+      statusCode: 400,
+      body: {
+        code: 'VALIDATION_ERROR',
+        message: error.message,
+        details: {
+          baselineId: error.baselineId,
+          invalidRequirementRevisionIds: error.invalidRequirementRevisionIds,
+          allowedRequirementRevisionIds: error.allowedRequirementRevisionIds,
+          invalidPolicyConstraintRevisionIds: error.invalidPolicyConstraintRevisionIds,
+          allowedPolicyConstraintRevisionIds: error.allowedPolicyConstraintRevisionIds,
+          invalidEngineeringDecisionIds: error.invalidEngineeringDecisionIds,
+          allowedEngineeringDecisionIds: error.allowedEngineeringDecisionIds
+        }
+      }
+    };
+  }
+
+  if (error instanceof OpenApiStructuralValidationError) {
+    return {
+      statusCode: 400,
+      body: {
+        code: 'VALIDATION_ERROR',
+        message: error.message,
+        details: error.errorDetails
+      }
+    };
+  }
+
+  if (error instanceof UnknownStoryError) {
+    return {
+      statusCode: 404,
+      body: {
+        code: 'STORY_NOT_FOUND',
+        message: error.message,
+        details: { storyId: error.storyId }
+      }
+    };
+  }
+
+  if (error instanceof StoryProvenanceValidationError) {
+    return {
+      statusCode: 400,
+      body: {
+        code: 'VALIDATION_ERROR',
+        message: error.message,
+        details: {
+          baselineId: error.baselineId,
+          invalidRequirementRevisionIds: error.invalidRequirementRevisionIds,
+          allowedRequirementRevisionIds: error.allowedRequirementRevisionIds,
+          invalidPolicyConstraintRevisionIds: error.invalidPolicyConstraintRevisionIds,
+          allowedPolicyConstraintRevisionIds: error.allowedPolicyConstraintRevisionIds
+        }
+      }
+    };
+  }
+
+  if (error instanceof GherkinSyntaxValidationError) {
+    return {
+      statusCode: 400,
+      body: {
+        code: 'VALIDATION_ERROR',
+        message: error.message,
+        details: error.errorDetails
+      }
+    };
+  }
+
   if (error instanceof RepairRetryExhaustionError) {
     return {
       statusCode: 502,
@@ -267,6 +456,19 @@ export function mapErrorToResponse(error: unknown): MappedErrorResponse {
         details: {
           attempts: error.attempts,
           errors: error.errors
+        }
+      }
+    };
+  }
+
+  if (error instanceof InvalidBaselineMembershipError) {
+    return {
+      statusCode: 400,
+      body: {
+        code: 'INVALID_BASELINE_MEMBERSHIP',
+        message: error.message,
+        details: {
+          violations: error.violations
         }
       }
     };

@@ -37,10 +37,53 @@ import type {
   RevisionLineageEntryDtoSchema,
   DiscoveryDiscoveredBySchema,
   RecordRequirementDiscoveryRequestDtoSchema,
-  RecordFindingDiscoveryRequestDtoSchema
+  RecordFindingDiscoveryRequestDtoSchema,
+  PolicyConstraintStateSchema,
+  PolicyConstraintRevisionDtoSchema,
+  CreatePolicyConstraintRevisionRequestDtoSchema,
+  EngineeringDecisionStateSchema,
+  EngineeringDecisionDtoSchema,
+  CreateEngineeringDecisionRequestDtoSchema,
+  TransitionEngineeringDecisionRequestDtoSchema,
+  AuthorityBundleDtoSchema,
+  StoryNarrativeDtoSchema,
+  GherkinStepKeywordSchema,
+  GherkinStepDtoSchema,
+  GherkinScenarioDtoSchema,
+  StoryDtoSchema,
+  GenerateStoryRequestDtoSchema,
+  ListStoriesResponseDtoSchema,
+  StoryReadinessRuleIdSchema,
+  StoryReadinessFailureDtoSchema,
+  StoryReadinessPolicyDtoSchema,
+  StoryReadinessReportDtoSchema,
+  ListStoryReadinessReportsResponseDtoSchema,
+  RequirementCoverageEntryDtoSchema,
+  BaselineRequirementCoverageDtoSchema,
+  StoryDependencyGraphNodeDtoSchema,
+  StoryDependencyGraphEdgeDtoSchema,
+  StoryDependencyGraphValidationResultDtoSchema,
+  StoryDependencyGraphDtoSchema,
+  UpdateStoryDependenciesRequestDtoSchema,
+  EngineeringHandoffSummaryDtoSchema,
+  EngineeringHandoffBundleDtoSchema
 } from './schemas.js';
 
 export type InstantDto = z.infer<typeof InstantDtoSchema>;
+export type PolicyConstraintStateDto = z.infer<typeof PolicyConstraintStateSchema>;
+export type PolicyConstraintRevisionDto = z.infer<typeof PolicyConstraintRevisionDtoSchema>;
+export type CreatePolicyConstraintRevisionRequestDto = z.infer<
+  typeof CreatePolicyConstraintRevisionRequestDtoSchema
+>;
+export type EngineeringDecisionStateDto = z.infer<typeof EngineeringDecisionStateSchema>;
+export type EngineeringDecisionDto = z.infer<typeof EngineeringDecisionDtoSchema>;
+export type CreateEngineeringDecisionRequestDto = z.infer<
+  typeof CreateEngineeringDecisionRequestDtoSchema
+>;
+export type TransitionEngineeringDecisionRequestDto = z.infer<
+  typeof TransitionEngineeringDecisionRequestDtoSchema
+>;
+export type AuthorityBundleDto = z.infer<typeof AuthorityBundleDtoSchema>;
 export type SourceTypeDto = z.infer<typeof SourceTypeSchema>;
 export type RequirementCategoryDto = z.infer<typeof RequirementCategorySchema>;
 export type RequirementOriginDto = z.infer<typeof RequirementOriginSchema>;
@@ -93,3 +136,33 @@ export type RecordRequirementDiscoveryRequestDto = z.infer<
 export type RecordFindingDiscoveryRequestDto = z.infer<
   typeof RecordFindingDiscoveryRequestDtoSchema
 >;
+
+export type StoryNarrativeDto = z.infer<typeof StoryNarrativeDtoSchema>;
+export type GherkinStepKeywordDto = z.infer<typeof GherkinStepKeywordSchema>;
+export type GherkinStepDto = z.infer<typeof GherkinStepDtoSchema>;
+export type GherkinScenarioDto = z.infer<typeof GherkinScenarioDtoSchema>;
+export type StoryDto = z.infer<typeof StoryDtoSchema>;
+export type GenerateStoryRequestDto = z.infer<typeof GenerateStoryRequestDtoSchema>;
+export type ListStoriesResponseDto = z.infer<typeof ListStoriesResponseDtoSchema>;
+
+export type StoryReadinessRuleIdDto = z.infer<typeof StoryReadinessRuleIdSchema>;
+export type StoryReadinessFailureDto = z.infer<typeof StoryReadinessFailureDtoSchema>;
+export type StoryReadinessPolicyDto = z.infer<typeof StoryReadinessPolicyDtoSchema>;
+export type StoryReadinessReportDto = z.infer<typeof StoryReadinessReportDtoSchema>;
+export type ListStoryReadinessReportsResponseDto = z.infer<
+  typeof ListStoryReadinessReportsResponseDtoSchema
+>;
+export type RequirementCoverageEntryDto = z.infer<typeof RequirementCoverageEntryDtoSchema>;
+export type BaselineRequirementCoverageDto = z.infer<typeof BaselineRequirementCoverageDtoSchema>;
+
+export type StoryDependencyGraphNodeDto = z.infer<typeof StoryDependencyGraphNodeDtoSchema>;
+export type StoryDependencyGraphEdgeDto = z.infer<typeof StoryDependencyGraphEdgeDtoSchema>;
+export type StoryDependencyGraphValidationResultDto = z.infer<
+  typeof StoryDependencyGraphValidationResultDtoSchema
+>;
+export type StoryDependencyGraphDto = z.infer<typeof StoryDependencyGraphDtoSchema>;
+export type UpdateStoryDependenciesRequestDto = z.infer<
+  typeof UpdateStoryDependenciesRequestDtoSchema
+>;
+export type EngineeringHandoffSummaryDto = z.infer<typeof EngineeringHandoffSummaryDtoSchema>;
+export type EngineeringHandoffBundleDto = z.infer<typeof EngineeringHandoffBundleDtoSchema>;

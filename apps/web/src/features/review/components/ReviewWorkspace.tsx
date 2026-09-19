@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import type { RequirementCategoryDto, RequirementOriginDto } from '@solutions-studio/contracts';
 import type { FindingDisposition } from '@solutions-studio/domain';
 
@@ -253,6 +254,16 @@ export function ReviewWorkspace({ baselineId }: ReviewWorkspaceProps) {
                 Projections ({projections.length})
               </button>
             </div>
+
+            <Link
+              href={`/handoff${activeBaselineId ? `?baselineId=${encodeURIComponent(activeBaselineId)}` : ''}`}
+              data-testid="engineering-handoff-nav-link"
+              className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-medium transition shadow-xs flex items-center gap-1"
+              title="View story dependency graph and engineering handoff bundle"
+            >
+              <span>Engineering Handoff</span>
+              <span>→</span>
+            </Link>
 
             <button
               type="button"

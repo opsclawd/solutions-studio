@@ -10,11 +10,37 @@ import {
   FINDING_TYPES,
   FINDING_DISPOSITIONS,
   DISCOVERED_BY,
+  POLICY_CONSTRAINT_STATES,
+  ENGINEERING_DECISION_STATES,
+  STORY_READINESS_RULE_IDS,
   isValidInstant
 } from '@solutions-studio/domain';
 
 export const InstantDtoSchema = z.string().refine(isValidInstant, {
   message: 'Invalid RFC 3339/ISO-8601 instant string with timezone and calendar validity'
+});
+
+export const PolicyConstraintStateSchema = z.enum(POLICY_CONSTRAINT_STATES);
+
+export const PolicyConstraintRevisionDtoSchema = z.object({
+  id: z.string().min(1),
+  policyConstraintId: z.string().min(1),
+  revision: z.number().int().positive(),
+  statement: z.string().min(1),
+  authorityReference: z.string().min(1),
+  state: PolicyConstraintStateSchema,
+  createdAt: InstantDtoSchema,
+  createdBy: z.string().min(1),
+  supersedes: z.string().min(1).optional()
+});
+
+export const CreatePolicyConstraintRevisionRequestDtoSchema = z.object({
+  policyConstraintId: z.string().min(1),
+  statement: z.string().min(1),
+  authorityReference: z.string().min(1),
+  state: PolicyConstraintStateSchema.optional().default('ACCEPTED'),
+  createdBy: z.string().min(1),
+  supersedes: z.string().min(1).optional()
 });
 
 export const SourceTypeSchema = z.enum(SOURCE_TYPES);
@@ -70,6 +96,7 @@ export const RequirementRevisionDtoSchema = z.object({
 export const RequirementsBaselineDtoSchema = z.object({
   id: z.string().min(1),
   requirementRevisions: z.array(z.string().min(1)),
+  policyConstraintRevisions: z.array(z.string().min(1)).optional(),
   createdAt: InstantDtoSchema,
   createdBy: z.string().min(1)
 });
@@ -228,6 +255,7 @@ export const ReconciliationRecordDtoSchema = z.union([
 export const CreateRequirementsBaselineRequestDtoSchema = z.object({
   id: z.string().min(1).optional(),
   requirementRevisions: z.array(z.string().min(1)).min(1),
+  policyConstraintRevisions: z.array(z.string().min(1)).optional(),
   createdBy: z.string().min(1),
   createdAt: InstantDtoSchema.optional()
 });
@@ -235,13 +263,18 @@ export const CreateRequirementsBaselineRequestDtoSchema = z.object({
 export const ProjectionMetadataDtoSchema = z.object({
   baselineId: z.string().min(1),
   requirementRevisionIds: z.array(z.string().min(1)).min(1),
+  policyConstraintRevisionIds: z.array(z.string().min(1)).optional(),
+  engineeringDecisionIds: z.array(z.string().min(1)).optional(),
   artifactType: z.string().min(1),
   declaredProvenance: z.object({
     baselineId: z.string().min(1),
-    requirementRevisionIds: z.array(z.string().min(1)).min(1)
+    requirementRevisionIds: z.array(z.string().min(1)).min(1),
+    policyConstraintRevisionIds: z.array(z.string().min(1)).optional(),
+    engineeringDecisionIds: z.array(z.string().min(1)).optional()
   }),
   configuredExecution: z.object({
     provider: z.string().min(1),
+    model: z.string().optional(),
     artifactType: z.string().min(1)
   }),
   measuredVerification: z.object({
@@ -256,6 +289,8 @@ export const ProjectionRecordDtoSchema = z.object({
   id: z.string().min(1),
   baselineId: z.string().min(1),
   requirementRevisionIds: z.array(z.string().min(1)).min(1),
+  policyConstraintRevisionIds: z.array(z.string().min(1)).optional(),
+  engineeringDecisionIds: z.array(z.string().min(1)).optional(),
   artifactType: z.string().min(1),
   content: z.string().min(1),
   metadata: ProjectionMetadataDtoSchema,
@@ -319,7 +354,14 @@ export const ReopenFindingRequestDtoSchema = z.object({
 });
 
 export const GenerateProjectionRequestDtoSchema = z.object({
-  artifactType: z.enum(['process-diagram', 'state-diagram', 'prototype']),
+  artifactType: z.enum([
+    'process-diagram',
+    'state-diagram',
+    'prototype',
+    'sql-schema',
+    'openapi',
+    'stories'
+  ]),
   prompt: z.string().min(1).optional()
 });
 
@@ -385,4 +427,204 @@ export const RecordFindingDiscoveryRequestDtoSchema = z.object({
   affectedRequirementRevisions: z.array(z.string().min(1)).optional(),
   evidence: z.array(EvidenceReferenceDtoSchema).optional(),
   findingId: z.string().min(1).optional()
+});
+
+export const EngineeringDecisionStateSchema = z.enum(ENGINEERING_DECISION_STATES);
+
+export const EngineeringDecisionDtoSchema = z.object({
+  id: z.string().min(1),
+  baselineId: z.string().min(1),
+  statement: z.string().min(1),
+  rationale: z.string().min(1),
+  requirementRevisionIds: z.array(z.string().min(1)),
+  policyConstraintRevisionIds: z.array(z.string().min(1)),
+  state: EngineeringDecisionStateSchema,
+  createdAt: InstantDtoSchema,
+  createdBy: z.string().min(1),
+  acceptedBy: z.string().min(1).optional(),
+  acceptedAt: InstantDtoSchema.optional(),
+  supersedes: z.string().min(1).optional(),
+  transitionRationale: z.string().min(1).optional()
+});
+
+export const CreateEngineeringDecisionRequestDtoSchema = z.object({
+  id: z.string().min(1).optional(),
+  baselineId: z.string().min(1),
+  statement: z.string().min(1),
+  rationale: z.string().min(1),
+  requirementRevisionIds: z.array(z.string().min(1)).default([]),
+  policyConstraintRevisionIds: z.array(z.string().min(1)).default([]),
+  createdBy: z.string().min(1),
+  supersedes: z.string().min(1).optional()
+});
+
+export const TransitionEngineeringDecisionRequestDtoSchema = z.object({
+  newState: EngineeringDecisionStateSchema,
+  rationale: z.string().min(1),
+  actorId: z.string().min(1)
+});
+
+export const AuthorityBundleDtoSchema = z.object({
+  baseline: RequirementsBaselineDtoSchema,
+  requirements: z.array(RequirementRevisionDtoSchema),
+  policyConstraints: z.array(PolicyConstraintRevisionDtoSchema)
+});
+
+export const StoryNarrativeDtoSchema = z.object({
+  role: z.string().min(1),
+  feature: z.string().min(1),
+  benefit: z.string().min(1),
+  rawText: z.string().optional()
+});
+
+export const GherkinStepKeywordSchema = z.enum(['Given', 'When', 'Then', 'And', 'But']);
+
+export const GherkinStepDtoSchema = z.object({
+  keyword: GherkinStepKeywordSchema,
+  text: z.string().min(1)
+});
+
+export const GherkinScenarioDtoSchema = z.object({
+  id: z.string().optional(),
+  title: z.string().min(1),
+  requirementRevisionIds: z.array(z.string().min(1)).min(1),
+  policyConstraintRevisionIds: z.array(z.string().min(1)).optional(),
+  steps: z.array(GherkinStepDtoSchema).min(1),
+  rawText: z.string().optional()
+});
+
+export const StoryDtoSchema = z.object({
+  id: z.string().min(1),
+  baselineId: z.string().min(1),
+  projectionId: z.string().min(1).optional(),
+  title: z.string().min(1),
+  narrative: StoryNarrativeDtoSchema,
+  requirementRevisionIds: z.array(z.string().min(1)).min(1),
+  policyConstraintRevisionIds: z.array(z.string().min(1)).optional(),
+  scenarios: z.array(GherkinScenarioDtoSchema).min(1),
+  acceptanceCriteria: z.array(z.string().min(1)),
+  gherkinText: z.string().min(1),
+  dependencies: z.array(z.string().min(1)).optional(),
+  metadata: ProjectionMetadataDtoSchema.optional(),
+  createdAt: InstantDtoSchema
+});
+
+export const GenerateStoryRequestDtoSchema = z.object({
+  prompt: z.string().min(1).optional(),
+  id: z.string().min(1).optional(),
+  autoRecordDiscoveries: z.boolean().optional()
+});
+
+export const ListStoriesResponseDtoSchema = z.array(StoryDtoSchema);
+
+export const StoryReadinessRuleIdSchema = z.enum(STORY_READINESS_RULE_IDS);
+
+export const StoryReadinessFailureDtoSchema = z.object({
+  ruleId: z.string().min(1),
+  message: z.string().min(1),
+  affectedIds: z.array(z.string()),
+  details: z.record(z.unknown()).optional()
+});
+
+export const StoryReadinessPolicyDtoSchema = z.object({
+  requireSqlProjection: z.boolean().optional(),
+  requireOpenApiProjection: z.boolean().optional(),
+  allowDeferredEngineeringDecisions: z.boolean().optional(),
+  blockingFindingTypes: z.array(z.enum(FINDING_TYPES)).optional()
+});
+
+export const StoryReadinessReportDtoSchema = z.object({
+  storyId: z.string().min(1),
+  baselineId: z.string().min(1),
+  status: z.enum(['implementation-ready', 'not-ready']),
+  isReady: z.boolean(),
+  evaluatedAt: InstantDtoSchema,
+  failures: z.array(StoryReadinessFailureDtoSchema),
+  passedRules: z.array(z.string()),
+  policy: StoryReadinessPolicyDtoSchema.optional()
+});
+
+export const ListStoryReadinessReportsResponseDtoSchema = z.array(StoryReadinessReportDtoSchema);
+
+export const RequirementCoverageEntryDtoSchema = z.object({
+  requirementRevisionId: z.string().min(1),
+  coveringStoryIds: z.array(z.string().min(1)),
+  coverageCount: z.number().int().nonnegative()
+});
+
+export const BaselineRequirementCoverageDtoSchema = z.object({
+  baselineId: z.string().min(1),
+  totalRequirements: z.number().int().nonnegative(),
+  coveredCount: z.number().int().nonnegative(),
+  uncoveredCount: z.number().int().nonnegative(),
+  multiCoveredCount: z.number().int().nonnegative(),
+  coveredRequirements: z.array(RequirementCoverageEntryDtoSchema),
+  uncoveredRequirementRevisionIds: z.array(z.string().min(1)),
+  multiCoveredRequirements: z.array(RequirementCoverageEntryDtoSchema),
+  isFullyCovered: z.boolean(),
+  computedAt: InstantDtoSchema
+});
+
+export const StoryDependencyGraphNodeDtoSchema = z.object({
+  storyId: z.string().min(1),
+  title: z.string().min(1),
+  requirementRevisionIds: z.array(z.string().min(1)),
+  dependencies: z.array(z.string().min(1)),
+  dependents: z.array(z.string().min(1)),
+  readinessStatus: z.enum(['implementation-ready', 'not-ready']).optional(),
+  isReady: z.boolean().optional()
+});
+
+export const StoryDependencyGraphEdgeDtoSchema = z.object({
+  from: z.string().min(1),
+  to: z.string().min(1)
+});
+
+export const StoryDependencyGraphValidationResultDtoSchema = z.object({
+  isValid: z.boolean(),
+  errors: z.array(z.string()),
+  missingNodeIds: z.array(z.string()),
+  selfDependencies: z.array(z.string()),
+  cycles: z.array(z.array(z.string()))
+});
+
+export const StoryDependencyGraphDtoSchema = z.object({
+  baselineId: z.string().min(1),
+  nodes: z.array(StoryDependencyGraphNodeDtoSchema),
+  edges: z.array(StoryDependencyGraphEdgeDtoSchema),
+  executionOrder: z.array(z.string()),
+  isAcyclic: z.boolean(),
+  hasCycles: z.boolean(),
+  cycles: z.array(z.array(z.string())),
+  validation: StoryDependencyGraphValidationResultDtoSchema,
+  createdAt: InstantDtoSchema
+});
+
+export const UpdateStoryDependenciesRequestDtoSchema = z.object({
+  dependencies: z.array(z.string().min(1))
+});
+
+export const EngineeringHandoffSummaryDtoSchema = z.object({
+  totalStories: z.number().int().nonnegative(),
+  readyStories: z.number().int().nonnegative(),
+  nonReadyStories: z.number().int().nonnegative(),
+  totalRequirements: z.number().int().nonnegative(),
+  coveredRequirements: z.number().int().nonnegative(),
+  openBlockingFindings: z.number().int().nonnegative(),
+  isHandoffReady: z.boolean()
+});
+
+export const EngineeringHandoffBundleDtoSchema = z.object({
+  baseline: RequirementsBaselineDtoSchema,
+  authorityBundle: AuthorityBundleDtoSchema,
+  engineeringDecisions: z.array(EngineeringDecisionDtoSchema),
+  sqlProjection: ProjectionRecordDtoSchema.optional(),
+  openApiProjection: ProjectionRecordDtoSchema.optional(),
+  stories: z.array(StoryDtoSchema),
+  readinessReports: z.array(StoryReadinessReportDtoSchema),
+  coverage: BaselineRequirementCoverageDtoSchema,
+  dependencyGraph: StoryDependencyGraphDtoSchema,
+  blockingFindings: z.array(CandidateFindingDtoSchema),
+  unresolvedRequirements: z.array(RequirementRevisionDtoSchema),
+  summary: EngineeringHandoffSummaryDtoSchema
 });

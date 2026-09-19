@@ -6,6 +6,12 @@ export type RequirementId = string & { readonly __brand: 'RequirementId' };
 export type RequirementRevisionId = string & { readonly __brand: 'RequirementRevisionId' };
 export type FindingId = string & { readonly __brand: 'FindingId' };
 export type RequirementsBaselineId = string & { readonly __brand: 'RequirementsBaselineId' };
+export type PolicyConstraintId = string & { readonly __brand: 'PolicyConstraintId' };
+export type PolicyConstraintRevisionId = string & {
+  readonly __brand: 'PolicyConstraintRevisionId';
+};
+export type EngineeringDecisionId = string & { readonly __brand: 'EngineeringDecisionId' };
+export type StoryId = string & { readonly __brand: 'StoryId' };
 export type ActorId = string & { readonly __brand: 'ActorId' };
 export type ReviewerId = string & { readonly __brand: 'ReviewerId' };
 export type Instant = string & { readonly __brand: 'Instant' };
@@ -39,6 +45,22 @@ export function createFindingId(value: string): FindingId {
 
 export function createRequirementsBaselineId(value: string): RequirementsBaselineId {
   return assertNonEmpty(value, 'RequirementsBaselineId') as RequirementsBaselineId;
+}
+
+export function createPolicyConstraintId(value: string): PolicyConstraintId {
+  return assertNonEmpty(value, 'PolicyConstraintId') as PolicyConstraintId;
+}
+
+export function createPolicyConstraintRevisionId(value: string): PolicyConstraintRevisionId {
+  return assertNonEmpty(value, 'PolicyConstraintRevisionId') as PolicyConstraintRevisionId;
+}
+
+export function createEngineeringDecisionId(value: string): EngineeringDecisionId {
+  return assertNonEmpty(value, 'EngineeringDecisionId') as EngineeringDecisionId;
+}
+
+export function createStoryId(value: string): StoryId {
+  return assertNonEmpty(value, 'StoryId') as StoryId;
 }
 
 export function createActorId(value: string): ActorId {

@@ -1,0 +1,14 @@
+{
+  "id": "REQ-c3fde2f4-1ff9-4aad-b9db-6c090bdf0f03-R1",
+  "requirementId": "REQ-c3fde2f4-1ff9-4aad-b9db-6c090bdf0f03",
+  "revision": 1,
+  "statement": "All privileged sessions must terminate automatically after 15 minutes of inactivity.",
+  "category": "business-rule",
+  "origin": "REVIEWER_PROPOSAL",
+  "reviewState": "PENDING",
+  "resolutionState": "UNRESOLVED",
+  "evidence": [],
+  "rationale": "Observed missing timeout handling during PROJ-001 diagram review.",
+  "baselineId": "BASE-001",
+  "originatingProjectionId": "PROJ-001"
+}

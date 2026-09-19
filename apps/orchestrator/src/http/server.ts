@@ -6,12 +6,30 @@ import type { ReconcileRequirementsUseCase } from '../application/use-cases/Reco
 import type { CreateRequirementsBaselineUseCase } from '../application/use-cases/CreateRequirementsBaselineUseCase.js';
 import type { ProjectBaselineUseCase } from '../application/use-cases/ProjectBaselineUseCase.js';
 import type { RecordRequirementsDiscoveryUseCase } from '../application/use-cases/RecordRequirementsDiscoveryUseCase.js';
+import type { GetAuthorityBundleUseCase } from '../application/use-cases/GetAuthorityBundleUseCase.js';
+import type { RecordEngineeringDecisionUseCase } from '../application/use-cases/RecordEngineeringDecisionUseCase.js';
+import type { TransitionEngineeringDecisionUseCase } from '../application/use-cases/TransitionEngineeringDecisionUseCase.js';
+import type { GetEngineeringDecisionsUseCase } from '../application/use-cases/GetEngineeringDecisionsUseCase.js';
+import type { RecordPolicyConstraintRevisionUseCase } from '../application/use-cases/RecordPolicyConstraintRevisionUseCase.js';
+import type { GetPolicyConstraintRevisionUseCase } from '../application/use-cases/GetPolicyConstraintRevisionUseCase.js';
+import type { GenerateStoriesProjectionUseCase } from '../application/use-cases/GenerateStoriesProjectionUseCase.js';
+import type { GetStoriesUseCase } from '../application/use-cases/GetStoriesUseCase.js';
+import type { EvaluateStoryReadinessUseCase } from '../application/use-cases/EvaluateStoryReadinessUseCase.js';
+import type { ComputeRequirementCoverageUseCase } from '../application/use-cases/ComputeRequirementCoverageUseCase.js';
+import type { BuildStoryDependencyGraphUseCase } from '../application/use-cases/BuildStoryDependencyGraphUseCase.js';
+import type { UpdateStoryDependenciesUseCase } from '../application/use-cases/UpdateStoryDependenciesUseCase.js';
+import type { GetEngineeringHandoffBundleUseCase } from '../application/use-cases/GetEngineeringHandoffBundleUseCase.js';
 import { mapErrorToResponse } from './errorMapper.js';
 import { reviewRoutes } from './routes/review.js';
 import { requirementsRoutes } from './routes/requirements.js';
 import { findingsRoutes } from './routes/findings.js';
 import { baselinesRoutes } from './routes/baselines.js';
 import { discoveriesRoutes } from './routes/discoveries.js';
+import { policyConstraintsRoutes } from './routes/policy-constraints.js';
+import { decisionsRoutes } from './routes/decisions.js';
+import { storiesRoutes } from './routes/stories.js';
+import { dependencyGraphRoutes } from './routes/dependency-graph.js';
+import { handoffRoutes } from './routes/handoff.js';
 
 export interface OrchestratorServerDependencies {
   readonly reviewStateUseCase: GetRequirementsReviewStateUseCase;
@@ -19,6 +37,19 @@ export interface OrchestratorServerDependencies {
   readonly baselineUseCase: CreateRequirementsBaselineUseCase;
   readonly projectBaselineUseCase: ProjectBaselineUseCase;
   readonly recordDiscoveryUseCase?: RecordRequirementsDiscoveryUseCase;
+  readonly getAuthorityBundleUseCase?: GetAuthorityBundleUseCase;
+  readonly recordEngineeringDecisionUseCase?: RecordEngineeringDecisionUseCase;
+  readonly transitionEngineeringDecisionUseCase?: TransitionEngineeringDecisionUseCase;
+  readonly getEngineeringDecisionsUseCase?: GetEngineeringDecisionsUseCase;
+  readonly recordPolicyConstraintRevisionUseCase?: RecordPolicyConstraintRevisionUseCase;
+  readonly getPolicyConstraintRevisionUseCase?: GetPolicyConstraintRevisionUseCase;
+  readonly generateStoriesProjectionUseCase?: GenerateStoriesProjectionUseCase;
+  readonly getStoriesUseCase?: GetStoriesUseCase;
+  readonly evaluateStoryReadinessUseCase?: EvaluateStoryReadinessUseCase;
+  readonly computeRequirementCoverageUseCase?: ComputeRequirementCoverageUseCase;
+  readonly buildStoryDependencyGraphUseCase?: BuildStoryDependencyGraphUseCase;
+  readonly updateStoryDependenciesUseCase?: UpdateStoryDependenciesUseCase;
+  readonly getEngineeringHandoffBundleUseCase?: GetEngineeringHandoffBundleUseCase;
 }
 
 export function buildServer(
@@ -67,12 +98,51 @@ export function buildServer(
   app.register(baselinesRoutes, {
     baselineUseCase: deps.baselineUseCase,
     projectBaselineUseCase: deps.projectBaselineUseCase,
-    reviewStateUseCase: deps.reviewStateUseCase
+    reviewStateUseCase: deps.reviewStateUseCase,
+    getAuthorityBundleUseCase: deps.getAuthorityBundleUseCase,
+    recordEngineeringDecisionUseCase: deps.recordEngineeringDecisionUseCase,
+    getEngineeringDecisionsUseCase: deps.getEngineeringDecisionsUseCase,
+    computeRequirementCoverageUseCase: deps.computeRequirementCoverageUseCase
   });
 
   if (deps.recordDiscoveryUseCase) {
     app.register(discoveriesRoutes, {
       recordDiscoveryUseCase: deps.recordDiscoveryUseCase
+    });
+  }
+
+  if (deps.recordPolicyConstraintRevisionUseCase && deps.getPolicyConstraintRevisionUseCase) {
+    app.register(policyConstraintsRoutes, {
+      recordPolicyConstraintRevisionUseCase: deps.recordPolicyConstraintRevisionUseCase,
+      getPolicyConstraintRevisionUseCase: deps.getPolicyConstraintRevisionUseCase
+    });
+  }
+
+  if (deps.transitionEngineeringDecisionUseCase && deps.getEngineeringDecisionsUseCase) {
+    app.register(decisionsRoutes, {
+      transitionEngineeringDecisionUseCase: deps.transitionEngineeringDecisionUseCase,
+      getEngineeringDecisionsUseCase: deps.getEngineeringDecisionsUseCase
+    });
+  }
+
+  if (deps.generateStoriesProjectionUseCase && deps.getStoriesUseCase) {
+    app.register(storiesRoutes, {
+      generateStoriesProjectionUseCase: deps.generateStoriesProjectionUseCase,
+      getStoriesUseCase: deps.getStoriesUseCase,
+      evaluateStoryReadinessUseCase: deps.evaluateStoryReadinessUseCase,
+      updateStoryDependenciesUseCase: deps.updateStoryDependenciesUseCase
+    });
+  }
+
+  if (deps.buildStoryDependencyGraphUseCase) {
+    app.register(dependencyGraphRoutes, {
+      buildStoryDependencyGraphUseCase: deps.buildStoryDependencyGraphUseCase
+    });
+  }
+
+  if (deps.getEngineeringHandoffBundleUseCase) {
+    app.register(handoffRoutes, {
+      getEngineeringHandoffBundleUseCase: deps.getEngineeringHandoffBundleUseCase
     });
   }
 
