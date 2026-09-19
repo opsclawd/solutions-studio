@@ -7,12 +7,24 @@
       "pnpm boundaries",
       "pnpm typecheck",
       "pnpm format",
-      "pnpm -r --if-present test"
+      "pnpm -r --if-present test",
+      "pnpm --filter @solutions-studio/orchestrator exit-gate:phase1",
+      "pnpm --filter @solutions-studio/orchestrator exit-gate:phase2",
+      "pnpm test:browser"
     ],
     "tiers": [
       ["pnpm format:fix"],
       ["pnpm -r --if-present build"],
-      ["pnpm lint", "pnpm boundaries", "pnpm typecheck", "pnpm format", "pnpm -r --if-present test"]
+      [
+        "pnpm lint",
+        "pnpm boundaries",
+        "pnpm typecheck",
+        "pnpm format",
+        "pnpm -r --if-present test",
+        "pnpm --filter @solutions-studio/orchestrator exit-gate:phase1",
+        "pnpm --filter @solutions-studio/orchestrator exit-gate:phase2",
+        "pnpm test:browser"
+      ]
     ],
     "timeout": 600
   }

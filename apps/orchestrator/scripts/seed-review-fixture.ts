@@ -163,6 +163,7 @@ export async function seedReviewFixture(targetDir: string) {
   const baseline1: RequirementsBaseline = {
     id: createRequirementsBaselineId('BASE-001'),
     requirementRevisions: [req2Rev1.id],
+    policyConstraintRevisions: [],
     createdBy: createReviewerId('lead-reviewer'),
     createdAt: now()
   };

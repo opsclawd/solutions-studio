@@ -2,7 +2,8 @@ import { ZodError } from 'zod';
 import {
   DomainError,
   EmptyBaselineError,
-  FindingRationaleRequiredError
+  FindingRationaleRequiredError,
+  InvalidBaselineMembershipError
 } from '@solutions-studio/domain';
 import type { ApiErrorDto } from '@solutions-studio/contracts';
 import {
@@ -15,7 +16,10 @@ import {
   UnauditedRequirementRevisionError,
   UnknownCandidateFindingError,
   UnknownRequirementRevisionError,
-  UnknownRequirementsBaselineError
+  UnknownRequirementsBaselineError,
+  UnknownPolicyConstraintRevisionError,
+  UnknownEngineeringDecisionError,
+  InvalidEngineeringDecisionStateError
 } from '../application/use-cases/ReconciliationErrors.js';
 import { RepairRetryExhaustionError } from '../application/use-cases/RepairErrors.js';
 import { PrototypeProvenanceValidationError } from '../application/use-cases/PrototypeProjectionErrors.js';
@@ -114,6 +118,28 @@ export function mapErrorToResponse(error: unknown): MappedErrorResponse {
     };
   }
 
+  if (error instanceof UnknownPolicyConstraintRevisionError) {
+    return {
+      statusCode: 404,
+      body: {
+        code: 'POLICY_CONSTRAINT_NOT_FOUND',
+        message: error.message,
+        details: { revisionId: error.revisionId }
+      }
+    };
+  }
+
+  if (error instanceof UnknownEngineeringDecisionError) {
+    return {
+      statusCode: 404,
+      body: {
+        code: 'ENGINEERING_DECISION_NOT_FOUND',
+        message: error.message,
+        details: { decisionId: error.decisionId }
+      }
+    };
+  }
+
   if (error instanceof UnknownProjectionError) {
     return {
       statusCode: 404,
@@ -201,7 +227,11 @@ export function mapErrorToResponse(error: unknown): MappedErrorResponse {
     };
   }
 
-  if (error instanceof InvalidTransitionError || error instanceof AlreadyClearError) {
+  if (
+    error instanceof InvalidTransitionError ||
+    error instanceof AlreadyClearError ||
+    error instanceof InvalidEngineeringDecisionStateError
+  ) {
     return {
       statusCode: 409,
       body: {
@@ -267,6 +297,19 @@ export function mapErrorToResponse(error: unknown): MappedErrorResponse {
         details: {
           attempts: error.attempts,
           errors: error.errors
+        }
+      }
+    };
+  }
+
+  if (error instanceof InvalidBaselineMembershipError) {
+    return {
+      statusCode: 400,
+      body: {
+        code: 'INVALID_BASELINE_MEMBERSHIP',
+        message: error.message,
+        details: {
+          violations: error.violations
         }
       }
     };

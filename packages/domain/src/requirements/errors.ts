@@ -43,7 +43,7 @@ export class InvalidBaselineMembershipError extends DomainError {
   constructor(public readonly violations: readonly BaselineMembershipViolation[]) {
     const summary = violations.map((v) => `${v.revisionId}: ${v.reasons.join(', ')}`).join('; ');
     super(
-      `Cannot create requirements baseline: ${violations.length} requirement revision(s) are invalid: ${summary}`
+      `Cannot create requirements baseline: ${violations.length} revision(s) are invalid: ${summary}`
     );
   }
 }

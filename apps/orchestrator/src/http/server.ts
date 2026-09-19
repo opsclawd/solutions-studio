@@ -6,12 +6,20 @@ import type { ReconcileRequirementsUseCase } from '../application/use-cases/Reco
 import type { CreateRequirementsBaselineUseCase } from '../application/use-cases/CreateRequirementsBaselineUseCase.js';
 import type { ProjectBaselineUseCase } from '../application/use-cases/ProjectBaselineUseCase.js';
 import type { RecordRequirementsDiscoveryUseCase } from '../application/use-cases/RecordRequirementsDiscoveryUseCase.js';
+import type { GetAuthorityBundleUseCase } from '../application/use-cases/GetAuthorityBundleUseCase.js';
+import type { RecordEngineeringDecisionUseCase } from '../application/use-cases/RecordEngineeringDecisionUseCase.js';
+import type { TransitionEngineeringDecisionUseCase } from '../application/use-cases/TransitionEngineeringDecisionUseCase.js';
+import type { GetEngineeringDecisionsUseCase } from '../application/use-cases/GetEngineeringDecisionsUseCase.js';
+import type { RecordPolicyConstraintRevisionUseCase } from '../application/use-cases/RecordPolicyConstraintRevisionUseCase.js';
+import type { GetPolicyConstraintRevisionUseCase } from '../application/use-cases/GetPolicyConstraintRevisionUseCase.js';
 import { mapErrorToResponse } from './errorMapper.js';
 import { reviewRoutes } from './routes/review.js';
 import { requirementsRoutes } from './routes/requirements.js';
 import { findingsRoutes } from './routes/findings.js';
 import { baselinesRoutes } from './routes/baselines.js';
 import { discoveriesRoutes } from './routes/discoveries.js';
+import { policyConstraintsRoutes } from './routes/policy-constraints.js';
+import { decisionsRoutes } from './routes/decisions.js';
 
 export interface OrchestratorServerDependencies {
   readonly reviewStateUseCase: GetRequirementsReviewStateUseCase;
@@ -19,6 +27,12 @@ export interface OrchestratorServerDependencies {
   readonly baselineUseCase: CreateRequirementsBaselineUseCase;
   readonly projectBaselineUseCase: ProjectBaselineUseCase;
   readonly recordDiscoveryUseCase?: RecordRequirementsDiscoveryUseCase;
+  readonly getAuthorityBundleUseCase?: GetAuthorityBundleUseCase;
+  readonly recordEngineeringDecisionUseCase?: RecordEngineeringDecisionUseCase;
+  readonly transitionEngineeringDecisionUseCase?: TransitionEngineeringDecisionUseCase;
+  readonly getEngineeringDecisionsUseCase?: GetEngineeringDecisionsUseCase;
+  readonly recordPolicyConstraintRevisionUseCase?: RecordPolicyConstraintRevisionUseCase;
+  readonly getPolicyConstraintRevisionUseCase?: GetPolicyConstraintRevisionUseCase;
 }
 
 export function buildServer(
@@ -67,12 +81,29 @@ export function buildServer(
   app.register(baselinesRoutes, {
     baselineUseCase: deps.baselineUseCase,
     projectBaselineUseCase: deps.projectBaselineUseCase,
-    reviewStateUseCase: deps.reviewStateUseCase
+    reviewStateUseCase: deps.reviewStateUseCase,
+    getAuthorityBundleUseCase: deps.getAuthorityBundleUseCase,
+    recordEngineeringDecisionUseCase: deps.recordEngineeringDecisionUseCase,
+    getEngineeringDecisionsUseCase: deps.getEngineeringDecisionsUseCase
   });
 
   if (deps.recordDiscoveryUseCase) {
     app.register(discoveriesRoutes, {
       recordDiscoveryUseCase: deps.recordDiscoveryUseCase
+    });
+  }
+
+  if (deps.recordPolicyConstraintRevisionUseCase && deps.getPolicyConstraintRevisionUseCase) {
+    app.register(policyConstraintsRoutes, {
+      recordPolicyConstraintRevisionUseCase: deps.recordPolicyConstraintRevisionUseCase,
+      getPolicyConstraintRevisionUseCase: deps.getPolicyConstraintRevisionUseCase
+    });
+  }
+
+  if (deps.transitionEngineeringDecisionUseCase && deps.getEngineeringDecisionsUseCase) {
+    app.register(decisionsRoutes, {
+      transitionEngineeringDecisionUseCase: deps.transitionEngineeringDecisionUseCase,
+      getEngineeringDecisionsUseCase: deps.getEngineeringDecisionsUseCase
     });
   }
 

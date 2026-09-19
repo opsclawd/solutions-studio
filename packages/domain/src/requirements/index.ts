@@ -11,3 +11,7 @@ export * from './Requirement.js';
 export * from './RequirementRevision.js';
 export * from './CandidateFinding.js';
 export * from './RequirementsBaseline.js';
+export * from './PolicyConstraint.js';
+export * from './PolicyConstraintRevision.js';
+export * from './EngineeringDecision.js';
+export * from './AuthorityBundle.js';

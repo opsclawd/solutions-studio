@@ -13,6 +13,12 @@ import { GeneratePrototypeProjectionUseCase } from '../application/use-cases/Gen
 import { ProjectBaselineUseCase } from '../application/use-cases/ProjectBaselineUseCase.js';
 import { GetRequirementsReviewStateUseCase } from '../application/use-cases/GetRequirementsReviewStateUseCase.js';
 import { RecordRequirementsDiscoveryUseCase } from '../application/use-cases/RecordRequirementsDiscoveryUseCase.js';
+import { RecordPolicyConstraintRevisionUseCase } from '../application/use-cases/RecordPolicyConstraintRevisionUseCase.js';
+import { GetPolicyConstraintRevisionUseCase } from '../application/use-cases/GetPolicyConstraintRevisionUseCase.js';
+import { GetAuthorityBundleUseCase } from '../application/use-cases/GetAuthorityBundleUseCase.js';
+import { RecordEngineeringDecisionUseCase } from '../application/use-cases/RecordEngineeringDecisionUseCase.js';
+import { TransitionEngineeringDecisionUseCase } from '../application/use-cases/TransitionEngineeringDecisionUseCase.js';
+import { GetEngineeringDecisionsUseCase } from '../application/use-cases/GetEngineeringDecisionsUseCase.js';
 import { FilesystemRequirementsRepository } from '../infrastructure/persistence/filesystem/FilesystemRequirementsRepository.js';
 import {
   GatewayFactory,
@@ -45,6 +51,12 @@ export interface ComposeHttpServerOptions {
   readonly projectBaselineUseCase?: ProjectBaselineUseCase;
   readonly reviewStateUseCase?: GetRequirementsReviewStateUseCase;
   readonly recordDiscoveryUseCase?: RecordRequirementsDiscoveryUseCase;
+  readonly recordPolicyConstraintRevisionUseCase?: RecordPolicyConstraintRevisionUseCase;
+  readonly getPolicyConstraintRevisionUseCase?: GetPolicyConstraintRevisionUseCase;
+  readonly getAuthorityBundleUseCase?: GetAuthorityBundleUseCase;
+  readonly recordEngineeringDecisionUseCase?: RecordEngineeringDecisionUseCase;
+  readonly transitionEngineeringDecisionUseCase?: TransitionEngineeringDecisionUseCase;
+  readonly getEngineeringDecisionsUseCase?: GetEngineeringDecisionsUseCase;
 }
 
 export interface ComposedHttpServer {
@@ -63,6 +75,12 @@ export interface ComposedHttpServer {
   readonly projectBaselineUseCase: ProjectBaselineUseCase;
   readonly reviewStateUseCase: GetRequirementsReviewStateUseCase;
   readonly recordDiscoveryUseCase: RecordRequirementsDiscoveryUseCase;
+  readonly recordPolicyConstraintRevisionUseCase: RecordPolicyConstraintRevisionUseCase;
+  readonly getPolicyConstraintRevisionUseCase: GetPolicyConstraintRevisionUseCase;
+  readonly getAuthorityBundleUseCase: GetAuthorityBundleUseCase;
+  readonly recordEngineeringDecisionUseCase: RecordEngineeringDecisionUseCase;
+  readonly transitionEngineeringDecisionUseCase: TransitionEngineeringDecisionUseCase;
+  readonly getEngineeringDecisionsUseCase: GetEngineeringDecisionsUseCase;
 }
 
 export function composeOrchestratorHttpServer(
@@ -144,13 +162,40 @@ export function composeOrchestratorHttpServer(
   const recordDiscoveryUseCase =
     options.recordDiscoveryUseCase ?? new RecordRequirementsDiscoveryUseCase(repository);
 
+  const recordPolicyConstraintRevisionUseCase =
+    options.recordPolicyConstraintRevisionUseCase ??
+    new RecordPolicyConstraintRevisionUseCase(repository);
+
+  const getPolicyConstraintRevisionUseCase =
+    options.getPolicyConstraintRevisionUseCase ??
+    new GetPolicyConstraintRevisionUseCase(repository);
+
+  const getAuthorityBundleUseCase =
+    options.getAuthorityBundleUseCase ?? new GetAuthorityBundleUseCase(repository);
+
+  const recordEngineeringDecisionUseCase =
+    options.recordEngineeringDecisionUseCase ?? new RecordEngineeringDecisionUseCase(repository);
+
+  const transitionEngineeringDecisionUseCase =
+    options.transitionEngineeringDecisionUseCase ??
+    new TransitionEngineeringDecisionUseCase(repository);
+
+  const getEngineeringDecisionsUseCase =
+    options.getEngineeringDecisionsUseCase ?? new GetEngineeringDecisionsUseCase(repository);
+
   const app = buildServer(
     {
       reviewStateUseCase,
       reconcileUseCase,
       baselineUseCase,
       projectBaselineUseCase,
-      recordDiscoveryUseCase
+      recordDiscoveryUseCase,
+      recordPolicyConstraintRevisionUseCase,
+      getPolicyConstraintRevisionUseCase,
+      getAuthorityBundleUseCase,
+      recordEngineeringDecisionUseCase,
+      transitionEngineeringDecisionUseCase,
+      getEngineeringDecisionsUseCase
     },
     options.fastifyOptions
   );
@@ -170,6 +215,12 @@ export function composeOrchestratorHttpServer(
     generatePrototypeProjectionUseCase,
     projectBaselineUseCase,
     reviewStateUseCase,
-    recordDiscoveryUseCase
+    recordDiscoveryUseCase,
+    recordPolicyConstraintRevisionUseCase,
+    getPolicyConstraintRevisionUseCase,
+    getAuthorityBundleUseCase,
+    recordEngineeringDecisionUseCase,
+    transitionEngineeringDecisionUseCase,
+    getEngineeringDecisionsUseCase
   };
 }

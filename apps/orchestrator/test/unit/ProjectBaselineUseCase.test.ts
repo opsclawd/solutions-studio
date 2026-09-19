@@ -118,6 +118,7 @@ describe('ProjectBaselineUseCase', () => {
     const emptyBaseline = {
       id: createRequirementsBaselineId('BASE-EMPTY'),
       requirementRevisions: [] as any[],
+      policyConstraintRevisions: [],
       createdAt: createInstant('2026-09-16T12:00:00.000Z'),
       createdBy: createReviewerId('REV-LEAD')
     };

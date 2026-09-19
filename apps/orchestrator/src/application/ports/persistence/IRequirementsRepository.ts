@@ -12,6 +12,12 @@ import type {
   RequirementRevision,
   CandidateFinding,
   RequirementsBaseline,
+  PolicyConstraintId,
+  PolicyConstraintRevisionId,
+  EngineeringDecisionId,
+  PolicyConstraintRevision,
+  EngineeringDecision,
+  EngineeringDecisionState,
   SourceType,
   FindingDisposition,
   RequirementReviewState,
@@ -154,10 +160,29 @@ export interface IRequirementsRepository {
   ): Promise<void>;
   saveRequirementsBaselineConditional(
     baseline: RequirementsBaseline,
-    expectedLatestRevisionIds: readonly RequirementRevisionId[]
+    expectedLatestRevisionIds: readonly RequirementRevisionId[],
+    expectedLatestPolicyConstraintRevisionIds?: readonly PolicyConstraintRevisionId[]
   ): Promise<void>;
   getRequirementsBaseline(id: RequirementsBaselineId): Promise<RequirementsBaseline | undefined>;
   listRequirementsBaselines(): Promise<readonly RequirementsBaseline[]>;
+  savePolicyConstraintRevision(revision: PolicyConstraintRevision): Promise<void>;
+  getPolicyConstraintRevision(
+    id: PolicyConstraintRevisionId
+  ): Promise<PolicyConstraintRevision | undefined>;
+  listPolicyConstraintRevisions(
+    policyConstraintId: PolicyConstraintId
+  ): Promise<readonly PolicyConstraintRevision[]>;
+  listPolicyConstraintIds(): Promise<readonly PolicyConstraintId[]>;
+  saveEngineeringDecision(decision: EngineeringDecision): Promise<void>;
+  getEngineeringDecision(id: EngineeringDecisionId): Promise<EngineeringDecision | undefined>;
+  listEngineeringDecisions(filter?: {
+    baselineId?: RequirementsBaselineId;
+    state?: EngineeringDecisionState;
+  }): Promise<readonly EngineeringDecision[]>;
+  updateEngineeringDecision(
+    decision: EngineeringDecision,
+    expectedCurrentState?: EngineeringDecisionState
+  ): Promise<void>;
   saveEvaluationRun(run: EvaluationRunRecord): Promise<void>;
   getEvaluationRun(id: string): Promise<EvaluationRunRecord | undefined>;
   listEvaluationRuns(): Promise<readonly EvaluationRunRecord[]>;

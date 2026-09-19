@@ -1,7 +1,10 @@
 import type {
   RequirementRevision,
   CandidateFinding,
-  RequirementsBaseline
+  RequirementsBaseline,
+  PolicyConstraintRevision,
+  EngineeringDecision,
+  AuthorityBundle
 } from '@solutions-studio/domain';
 import type {
   RequirementRevisionDto,
@@ -10,7 +13,10 @@ import type {
   ReconciliationRecordDto,
   ProjectionRecordDto,
   EvidenceExcerptDto,
-  RequirementsReviewStateDto
+  RequirementsReviewStateDto,
+  PolicyConstraintRevisionDto,
+  EngineeringDecisionDto,
+  AuthorityBundleDto
 } from '@solutions-studio/contracts';
 import type {
   ReconciliationRecord,
@@ -69,6 +75,9 @@ export function mapRequirementsBaselineToDto(
   return {
     id: baseline.id,
     requirementRevisions: [...baseline.requirementRevisions],
+    ...(baseline.policyConstraintRevisions && baseline.policyConstraintRevisions.length > 0
+      ? { policyConstraintRevisions: [...baseline.policyConstraintRevisions] }
+      : {}),
     createdAt: baseline.createdAt,
     createdBy: baseline.createdBy
   };
@@ -144,5 +153,47 @@ export function mapReviewStateToDto(state: RequirementsReviewState): Requirement
       requirementId: entry.requirementId
     })),
     availableBaselines: state.availableBaselines ? [...state.availableBaselines] : undefined
+  };
+}
+
+export function mapPolicyConstraintRevisionToDto(
+  revision: PolicyConstraintRevision
+): PolicyConstraintRevisionDto {
+  return {
+    id: revision.id,
+    policyConstraintId: revision.policyConstraintId,
+    revision: revision.revision,
+    statement: revision.statement,
+    authorityReference: revision.authorityReference,
+    state: revision.state,
+    createdAt: revision.createdAt,
+    createdBy: revision.createdBy,
+    supersedes: revision.supersedes
+  };
+}
+
+export function mapEngineeringDecisionToDto(decision: EngineeringDecision): EngineeringDecisionDto {
+  return {
+    id: decision.id,
+    baselineId: decision.baselineId,
+    statement: decision.statement,
+    rationale: decision.rationale,
+    requirementRevisionIds: [...decision.requirementRevisionIds],
+    policyConstraintRevisionIds: [...decision.policyConstraintRevisionIds],
+    state: decision.state,
+    createdAt: decision.createdAt,
+    createdBy: decision.createdBy,
+    acceptedBy: decision.acceptedBy,
+    acceptedAt: decision.acceptedAt,
+    supersedes: decision.supersedes,
+    transitionRationale: decision.transitionRationale
+  };
+}
+
+export function mapAuthorityBundleToDto(bundle: AuthorityBundle): AuthorityBundleDto {
+  return {
+    baseline: mapRequirementsBaselineToDto(bundle.baseline),
+    requirements: bundle.requirements.map(mapRequirementRevisionToDto),
+    policyConstraints: bundle.policyConstraints.map(mapPolicyConstraintRevisionToDto)
   };
 }

@@ -18,7 +18,15 @@ import {
   RequirementReconciliationRecordDtoSchema,
   FindingReconciliationRecordDtoSchema,
   ReconciliationRecordDtoSchema,
-  CreateRequirementsBaselineRequestDtoSchema
+  CreateRequirementsBaselineRequestDtoSchema,
+  PolicyConstraintStateSchema,
+  PolicyConstraintRevisionDtoSchema,
+  CreatePolicyConstraintRevisionRequestDtoSchema,
+  EngineeringDecisionStateSchema,
+  EngineeringDecisionDtoSchema,
+  CreateEngineeringDecisionRequestDtoSchema,
+  TransitionEngineeringDecisionRequestDtoSchema,
+  AuthorityBundleDtoSchema
 } from '../../src/requirements/index.js';
 
 describe('Requirements Contract Schemas', () => {
@@ -799,12 +807,159 @@ describe('Requirements Contract Schemas', () => {
       ).toThrow();
     });
 
-    it('rejects missing createdBy', () => {
+    it('allows optional policyConstraintRevisions array', () => {
+      const parsed = CreateRequirementsBaselineRequestDtoSchema.parse({
+        requirementRevisions: ['REQ-1-R1'],
+        policyConstraintRevisions: ['PC-SEC-001@r1'],
+        createdBy: 'REV-01'
+      });
+      expect(parsed.policyConstraintRevisions).toEqual(['PC-SEC-001@r1']);
+    });
+  });
+
+  describe('PolicyConstraintRevisionDtoSchema', () => {
+    it('validates valid policy constraint revision DTO', () => {
+      const raw = {
+        id: 'PC-SEC-001@r1',
+        policyConstraintId: 'PC-SEC-001',
+        revision: 1,
+        statement: 'TLS 1.3 required',
+        authorityReference: 'NIST-800-53',
+        state: 'ACCEPTED',
+        createdAt: '2026-09-15T12:00:00.000Z',
+        createdBy: 'sec-lead'
+      };
+      const parsed = PolicyConstraintRevisionDtoSchema.parse(raw);
+      expect(parsed).toEqual(raw);
+    });
+
+    it('rejects non-positive revision or empty fields', () => {
       expect(() =>
-        CreateRequirementsBaselineRequestDtoSchema.parse({
-          requirementRevisions: ['REQ-1-R1']
+        PolicyConstraintRevisionDtoSchema.parse({
+          id: 'PC-SEC-001@r1',
+          policyConstraintId: 'PC-SEC-001',
+          revision: 0,
+          statement: 'TLS 1.3 required',
+          authorityReference: 'NIST-800-53',
+          state: 'ACCEPTED',
+          createdAt: '2026-09-15T12:00:00.000Z',
+          createdBy: 'sec-lead'
         })
       ).toThrow();
+    });
+  });
+
+  describe('CreatePolicyConstraintRevisionRequestDtoSchema', () => {
+    it('defaults state to ACCEPTED', () => {
+      const parsed = CreatePolicyConstraintRevisionRequestDtoSchema.parse({
+        policyConstraintId: 'PC-SEC-001',
+        statement: 'TLS 1.3 required',
+        authorityReference: 'NIST-800-53',
+        createdBy: 'sec-lead'
+      });
+      expect(parsed.state).toBe('ACCEPTED');
+    });
+  });
+
+  describe('EngineeringDecisionDtoSchema', () => {
+    it('validates valid engineering decision DTO', () => {
+      const raw = {
+        id: 'ED-001',
+        baselineId: 'BASE-001',
+        statement: 'Use composite B-tree index',
+        rationale: 'Performance optimization',
+        requirementRevisionIds: ['R-100@r1'],
+        policyConstraintRevisionIds: ['PC-SEC-001@r1'],
+        state: 'PROPOSED',
+        createdAt: '2026-09-15T12:00:00.000Z',
+        createdBy: 'lead-dev'
+      };
+      const parsed = EngineeringDecisionDtoSchema.parse(raw);
+      expect(parsed).toEqual(raw);
+    });
+  });
+
+  describe('CreateEngineeringDecisionRequestDtoSchema', () => {
+    it('defaults requirementRevisionIds and policyConstraintRevisionIds to empty arrays', () => {
+      const parsed = CreateEngineeringDecisionRequestDtoSchema.parse({
+        baselineId: 'BASE-001',
+        statement: 'Use composite B-tree index',
+        rationale: 'Performance optimization',
+        createdBy: 'lead-dev'
+      });
+      expect(parsed.requirementRevisionIds).toEqual([]);
+      expect(parsed.policyConstraintRevisionIds).toEqual([]);
+    });
+  });
+
+  describe('TransitionEngineeringDecisionRequestDtoSchema', () => {
+    it('validates valid transition request DTO', () => {
+      const raw = {
+        newState: 'ACCEPTED',
+        rationale: 'Approved by architecture board',
+        actorId: 'REV-01'
+      };
+      const parsed = TransitionEngineeringDecisionRequestDtoSchema.parse(raw);
+      expect(parsed).toEqual(raw);
+    });
+  });
+
+  describe('AuthorityBundleDtoSchema', () => {
+    it('validates valid authority bundle DTO', () => {
+      const raw = {
+        baseline: {
+          id: 'BASE-001',
+          requirementRevisions: ['R-100@r1'],
+          policyConstraintRevisions: ['PC-SEC-001@r1'],
+          createdAt: '2026-09-15T12:00:00.000Z',
+          createdBy: 'REV-01'
+        },
+        requirements: [
+          {
+            id: 'R-100@r1',
+            requirementId: 'R-100',
+            revision: 1,
+            statement: 'Must do X',
+            category: 'business-rule',
+            origin: 'ASSUMED',
+            reviewState: 'ACCEPTED',
+            resolutionState: 'CLEAR',
+            evidence: []
+          }
+        ],
+        policyConstraints: [
+          {
+            id: 'PC-SEC-001@r1',
+            policyConstraintId: 'PC-SEC-001',
+            revision: 1,
+            statement: 'TLS 1.3 required',
+            authorityReference: 'NIST-800-53',
+            state: 'ACCEPTED',
+            createdAt: '2026-09-15T12:00:00.000Z',
+            createdBy: 'sec-lead'
+          }
+        ]
+      };
+      const parsed = AuthorityBundleDtoSchema.parse(raw);
+      expect(parsed).toEqual(raw);
+    });
+  });
+
+  describe('PolicyConstraintStateSchema', () => {
+    it('validates allowed states and rejects unknown states', () => {
+      expect(PolicyConstraintStateSchema.parse('PENDING')).toBe('PENDING');
+      expect(PolicyConstraintStateSchema.parse('ACCEPTED')).toBe('ACCEPTED');
+      expect(PolicyConstraintStateSchema.parse('REJECTED')).toBe('REJECTED');
+      expect(() => PolicyConstraintStateSchema.parse('UNKNOWN')).toThrow();
+    });
+  });
+
+  describe('EngineeringDecisionStateSchema', () => {
+    it('validates allowed states and rejects unknown states', () => {
+      expect(EngineeringDecisionStateSchema.parse('PROPOSED')).toBe('PROPOSED');
+      expect(EngineeringDecisionStateSchema.parse('ACCEPTED')).toBe('ACCEPTED');
+      expect(EngineeringDecisionStateSchema.parse('REJECTED')).toBe('REJECTED');
+      expect(() => EngineeringDecisionStateSchema.parse('UNKNOWN')).toThrow();
     });
   });
 });
