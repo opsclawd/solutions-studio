@@ -10,9 +10,10 @@
     "test:integration": "vitest run --dir test/integration",
     "tracer": "tsx scripts/run-tracer.ts",
     "harness": "tsx scripts/run-phase-1-exit-gate.ts",
-    "exit-gate": "tsx scripts/run-phase-1-exit-gate.ts && tsx scripts/run-phase-2-exit-gate.ts",
+    "exit-gate": "tsx scripts/run-phase-1-exit-gate.ts && tsx scripts/run-phase-2-exit-gate.ts && tsx scripts/run-phase-3-exit-gate.ts",
     "exit-gate:phase1": "tsx scripts/run-phase-1-exit-gate.ts",
     "exit-gate:phase2": "tsx scripts/run-phase-2-exit-gate.ts",
+    "exit-gate:phase3": "tsx scripts/run-phase-3-exit-gate.ts",
     "eval": "tsx scripts/run-evaluation.ts",
     "project": "tsx scripts/run-project-baseline.ts",
     "serve": "tsx scripts/run-http-server.ts"
