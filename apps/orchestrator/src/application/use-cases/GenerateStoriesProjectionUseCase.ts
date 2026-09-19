@@ -207,6 +207,7 @@ export class GenerateStoriesProjectionUseCase {
         rawText: s.rawText
       })),
       gherkinText: repairResult.content,
+      dependencies: parsedDoc.declaredStoryDependencies,
       createdAt: now()
     });
 
@@ -256,6 +257,7 @@ export class GenerateStoriesProjectionUseCase {
       acceptanceCriteria: story.acceptanceCriteria,
       gherkinText: story.gherkinText,
       metadata,
+      dependencies: story.dependencies,
       createdAt: story.createdAt
     };
 

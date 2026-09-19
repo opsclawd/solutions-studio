@@ -1465,7 +1465,8 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
           })
         )
       ),
-      acceptanceCriteria: Object.freeze(record.acceptanceCriteria)
+      acceptanceCriteria: Object.freeze(record.acceptanceCriteria),
+      dependencies: record.dependencies ? Object.freeze(record.dependencies) : undefined
     });
   }
 

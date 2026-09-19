@@ -297,4 +297,47 @@ describe('Story', () => {
       "Scenario 'Scenario with out-of-scope pol ref' references policy constraint revision 'POL-UNKNOWN-R1' which is not in story policy constraints"
     );
   });
+
+  it('supports declared story dependencies and freezes them', () => {
+    const story = createStory({
+      id: 'STORY-2',
+      baselineId,
+      title: 'Dependent Story',
+      narrative: { role: 'User', feature: 'F', benefit: 'B' },
+      requirementRevisionIds: [req1],
+      scenarios: [
+        {
+          title: 'S1',
+          requirementRevisionIds: [req1],
+          steps: [{ keyword: 'Given', text: 'step' }]
+        }
+      ],
+      gherkinText: 'Feature: F',
+      dependencies: ['STORY-1']
+    });
+
+    expect(story.dependencies).toEqual(['STORY-1']);
+    expect(Object.isFrozen(story.dependencies)).toBe(true);
+  });
+
+  it('rejects empty strings in story dependencies', () => {
+    expect(() =>
+      createStory({
+        id: 'STORY-2',
+        baselineId,
+        title: 'Dependent Story',
+        narrative: { role: 'User', feature: 'F', benefit: 'B' },
+        requirementRevisionIds: [req1],
+        scenarios: [
+          {
+            title: 'S1',
+            requirementRevisionIds: [req1],
+            steps: [{ keyword: 'Given', text: 'step' }]
+          }
+        ],
+        gherkinText: 'Feature: F',
+        dependencies: ['   ']
+      })
+    ).toThrow('Story dependencies must not contain empty identifiers');
+  });
 });

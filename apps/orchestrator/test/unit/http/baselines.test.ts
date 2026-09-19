@@ -16,7 +16,8 @@ import {
 } from '@solutions-studio/domain';
 import {
   RequirementsBaselineDtoSchema,
-  AuthorityBundleDtoSchema
+  AuthorityBundleDtoSchema,
+  BaselineRequirementCoverageDtoSchema
 } from '@solutions-studio/contracts';
 import { FilesystemRequirementsRepository } from '../../../src/infrastructure/persistence/filesystem/FilesystemRequirementsRepository.js';
 import { FakeGenerationGateway } from '../../fakes/FakeGenerationGateway.js';
@@ -444,6 +445,46 @@ describe('HTTP Boundary: Baselines API', () => {
       const res = await app.inject({
         method: 'GET',
         url: '/api/baselines/NONEXISTENT/authority-bundle'
+      });
+
+      expect(res.statusCode).toBe(404);
+      expect(res.json().code).toBe('BASELINE_NOT_FOUND');
+    });
+  });
+
+  describe('GET /api/baselines/:baselineId/coverage', () => {
+    it('returns 200 with baseline requirement coverage report', async () => {
+      const reqRev = await seedAuditedRequirement('REQ-COV-01', 'REQ-COV-01-R1');
+      await app.inject({
+        method: 'POST',
+        url: '/api/baselines',
+        payload: {
+          id: 'BASE-COV-001',
+          requirementRevisions: [reqRev.id],
+          createdBy: 'lead-reviewer'
+        }
+      });
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/baselines/BASE-COV-001/coverage'
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      const coverage = BaselineRequirementCoverageDtoSchema.parse(body);
+      expect(coverage.baselineId).toBe('BASE-COV-001');
+      expect(coverage.totalRequirements).toBe(1);
+      expect(coverage.coveredCount).toBe(0);
+      expect(coverage.uncoveredCount).toBe(1);
+      expect(coverage.uncoveredRequirementRevisionIds).toEqual([reqRev.id]);
+      expect(coverage.isFullyCovered).toBe(false);
+    });
+
+    it('returns 404 BASELINE_NOT_FOUND when baseline does not exist', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/baselines/NONEXISTENT/coverage'
       });
 
       expect(res.statusCode).toBe(404);

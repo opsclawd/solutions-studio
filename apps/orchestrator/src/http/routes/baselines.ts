@@ -4,7 +4,8 @@ import {
   CreateRequirementsBaselineRequestDtoSchema,
   GenerateProjectionRequestDtoSchema,
   ListRequirementsBaselinesResponseDtoSchema,
-  EngineeringDecisionStateSchema
+  EngineeringDecisionStateSchema,
+  BaselineRequirementCoverageDtoSchema
 } from '@solutions-studio/contracts';
 import { DomainError } from '@solutions-studio/domain';
 import type { CreateRequirementsBaselineUseCase } from '../../application/use-cases/CreateRequirementsBaselineUseCase.js';
@@ -13,12 +14,14 @@ import type { GetRequirementsReviewStateUseCase } from '../../application/use-ca
 import type { GetAuthorityBundleUseCase } from '../../application/use-cases/GetAuthorityBundleUseCase.js';
 import type { RecordEngineeringDecisionUseCase } from '../../application/use-cases/RecordEngineeringDecisionUseCase.js';
 import type { GetEngineeringDecisionsUseCase } from '../../application/use-cases/GetEngineeringDecisionsUseCase.js';
+import type { ComputeRequirementCoverageUseCase } from '../../application/use-cases/ComputeRequirementCoverageUseCase.js';
 import { UnknownProjectionError } from '../../application/use-cases/DiscoveryErrors.js';
 import {
   mapRequirementsBaselineToDto,
   mapProjectionRecordToDto,
   mapAuthorityBundleToDto,
-  mapEngineeringDecisionToDto
+  mapEngineeringDecisionToDto,
+  mapBaselineRequirementCoverageToDto
 } from '../dto-mappers.js';
 
 export interface BaselinesRoutesOptions {
@@ -28,6 +31,7 @@ export interface BaselinesRoutesOptions {
   readonly getAuthorityBundleUseCase?: GetAuthorityBundleUseCase;
   readonly recordEngineeringDecisionUseCase?: RecordEngineeringDecisionUseCase;
   readonly getEngineeringDecisionsUseCase?: GetEngineeringDecisionsUseCase;
+  readonly computeRequirementCoverageUseCase?: ComputeRequirementCoverageUseCase;
 }
 
 const baselineParamsSchema = z.object({
@@ -246,6 +250,29 @@ export const baselinesRoutes: FastifyPluginAsync<BaselinesRoutesOptions> = async
           state: request.query.state
         });
         return reply.status(200).send(result.map(mapEngineeringDecisionToDto));
+      }
+    );
+  }
+
+  if (options.computeRequirementCoverageUseCase) {
+    const computeRequirementCoverageUseCase = options.computeRequirementCoverageUseCase;
+    app.get<{
+      Params: z.infer<typeof baselineParamsSchema>;
+    }>(
+      '/api/baselines/:baselineId/coverage',
+      {
+        schema: {
+          params: baselineParamsSchema,
+          response: {
+            200: BaselineRequirementCoverageDtoSchema
+          }
+        }
+      },
+      async (request, reply) => {
+        const result = await computeRequirementCoverageUseCase.execute({
+          baselineId: request.params.baselineId
+        });
+        return reply.status(200).send(mapBaselineRequirementCoverageToDto(result));
       }
     );
   }

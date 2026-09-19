@@ -30,7 +30,14 @@ import {
   GenerateProjectionRequestDtoSchema,
   StoryDtoSchema,
   GenerateStoryRequestDtoSchema,
-  ListStoriesResponseDtoSchema
+  ListStoriesResponseDtoSchema,
+  StoryReadinessRuleIdSchema,
+  StoryReadinessFailureDtoSchema,
+  StoryReadinessPolicyDtoSchema,
+  StoryReadinessReportDtoSchema,
+  ListStoryReadinessReportsResponseDtoSchema,
+  RequirementCoverageEntryDtoSchema,
+  BaselineRequirementCoverageDtoSchema
 } from '../../src/requirements/index.js';
 
 describe('Requirements Contract Schemas', () => {
@@ -1034,6 +1041,150 @@ describe('Requirements Contract Schemas', () => {
 
       const list = ListStoriesResponseDtoSchema.parse([]);
       expect(list).toEqual([]);
+    });
+  });
+
+  describe('StoryDto with dependencies', () => {
+    it('validates a story with declared dependencies', () => {
+      const rawStory = {
+        id: 'STORY-002',
+        baselineId: 'BASE-001',
+        title: 'Story with dependencies',
+        narrative: { role: 'User', feature: 'F', benefit: 'B' },
+        requirementRevisionIds: ['REQ-001-R1'],
+        scenarios: [
+          {
+            title: 'S1',
+            requirementRevisionIds: ['REQ-001-R1'],
+            steps: [{ keyword: 'Given' as const, text: 'step 1' }]
+          }
+        ],
+        acceptanceCriteria: ['S1'],
+        gherkinText: 'Feature: F',
+        dependencies: ['STORY-001'],
+        createdAt: '2026-09-19T00:00:00.000Z'
+      };
+
+      const parsed = StoryDtoSchema.parse(rawStory);
+      expect(parsed.dependencies).toEqual(['STORY-001']);
+    });
+  });
+
+  describe('StoryReadinessReportDtoSchema', () => {
+    it('validates an implementation-ready report', () => {
+      const raw = {
+        storyId: 'STORY-001',
+        baselineId: 'BASE-001',
+        status: 'implementation-ready' as const,
+        isReady: true,
+        evaluatedAt: '2026-09-19T00:00:00.000Z',
+        failures: [],
+        passedRules: ['baseline-exists', 'requirement-revisions-belong-to-baseline']
+      };
+
+      const parsed = StoryReadinessReportDtoSchema.parse(raw);
+      expect(parsed.isReady).toBe(true);
+      expect(parsed.status).toBe('implementation-ready');
+      expect(parsed.failures).toHaveLength(0);
+    });
+
+    it('validates a not-ready report with structured failures', () => {
+      const raw = {
+        storyId: 'STORY-001',
+        baselineId: 'BASE-001',
+        status: 'not-ready' as const,
+        isReady: false,
+        evaluatedAt: '2026-09-19T00:00:00.000Z',
+        failures: [
+          {
+            ruleId: 'no-blocking-open-findings',
+            message: 'Blocking open candidate finding affects story lineage',
+            affectedIds: ['FND-001'],
+            details: { type: 'contradiction' }
+          }
+        ],
+        passedRules: ['baseline-exists'],
+        policy: {
+          requireSqlProjection: true,
+          allowDeferredEngineeringDecisions: false
+        }
+      };
+
+      const parsed = StoryReadinessReportDtoSchema.parse(raw);
+      expect(parsed.isReady).toBe(false);
+      expect(parsed.status).toBe('not-ready');
+      expect(parsed.failures).toHaveLength(1);
+      expect(parsed.failures[0].ruleId).toBe('no-blocking-open-findings');
+      expect(parsed.failures[0].affectedIds).toEqual(['FND-001']);
+      expect(parsed.policy?.requireSqlProjection).toBe(true);
+    });
+  });
+
+  describe('BaselineRequirementCoverageDtoSchema', () => {
+    it('validates a baseline requirement coverage report', () => {
+      const raw = {
+        baselineId: 'BASE-001',
+        totalRequirements: 3,
+        coveredCount: 2,
+        uncoveredCount: 1,
+        multiCoveredCount: 1,
+        coveredRequirements: [
+          {
+            requirementRevisionId: 'REQ-001-R1',
+            coveringStoryIds: ['STORY-001', 'STORY-002'],
+            coverageCount: 2
+          },
+          {
+            requirementRevisionId: 'REQ-002-R1',
+            coveringStoryIds: ['STORY-002'],
+            coverageCount: 1
+          }
+        ],
+        uncoveredRequirementRevisionIds: ['REQ-003-R1'],
+        multiCoveredRequirements: [
+          {
+            requirementRevisionId: 'REQ-001-R1',
+            coveringStoryIds: ['STORY-001', 'STORY-002'],
+            coverageCount: 2
+          }
+        ],
+        isFullyCovered: false,
+        computedAt: '2026-09-19T00:00:00.000Z'
+      };
+
+      const parsed = BaselineRequirementCoverageDtoSchema.parse(raw);
+      expect(parsed.totalRequirements).toBe(3);
+      expect(parsed.isFullyCovered).toBe(false);
+      expect(parsed.uncoveredRequirementRevisionIds).toEqual(['REQ-003-R1']);
+      expect(parsed.multiCoveredRequirements).toHaveLength(1);
+    });
+
+    it('validates individual requirement coverage entries and rule schemas', () => {
+      expect(StoryReadinessRuleIdSchema.parse('baseline-exists')).toBe('baseline-exists');
+      expect(StoryReadinessRuleIdSchema.safeParse('invalid-rule').success).toBe(false);
+
+      const failure = StoryReadinessFailureDtoSchema.parse({
+        ruleId: 'baseline-exists',
+        message: 'Baseline does not exist',
+        affectedIds: ['BASE-1']
+      });
+      expect(failure.ruleId).toBe('baseline-exists');
+
+      const policy = StoryReadinessPolicyDtoSchema.parse({
+        requireSqlProjection: true,
+        allowDeferredEngineeringDecisions: false
+      });
+      expect(policy.requireSqlProjection).toBe(true);
+
+      const listResponse = ListStoryReadinessReportsResponseDtoSchema.parse([]);
+      expect(listResponse).toEqual([]);
+
+      const entry = RequirementCoverageEntryDtoSchema.parse({
+        requirementRevisionId: 'REQ-001-R1',
+        coveringStoryIds: ['STORY-001'],
+        coverageCount: 1
+      });
+      expect(entry.coverageCount).toBe(1);
     });
   });
 });

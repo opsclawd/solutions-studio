@@ -30,6 +30,7 @@ export class GherkinValidatorAdapter implements IGherkinValidatorGateway {
     let declaredBaselineId: string | undefined;
     const declaredStoryReqIds = new Set<string>();
     const declaredStoryPolIds = new Set<string>();
+    const declaredStoryDependencies = new Set<string>();
 
     const scenarios: ParsedGherkinScenario[] = [];
 
@@ -114,6 +115,21 @@ export class GherkinValidatorAdapter implements IGherkinValidatorGateway {
           targetPols.add(id);
         }
       }
+
+      // story dependencies
+      const depMatches = text.matchAll(
+        /(?:#\s*(?:@depends-on|@dependencies)|(?:@depends-on|@dependencies))(?::)?\s*([^\r\n@#]+)/gi
+      );
+      for (const m of depMatches) {
+        const cleaned = m[1].replace(/^[:\s]+/, '').trim();
+        const ids = cleaned
+          .split(/[\s,]+/)
+          .map((s) => s.trim().replace(/^[:]+/, ''))
+          .filter((s) => s.length > 0 && !s.startsWith('@') && !s.startsWith('#') && s !== ':');
+        for (const id of ids) {
+          declaredStoryDependencies.add(id);
+        }
+      }
     };
 
     for (let i = 0; i < lines.length; i++) {
@@ -130,7 +146,9 @@ export class GherkinValidatorAdapter implements IGherkinValidatorGateway {
       if (insideScenario && currentScenarioSteps.length > 0) {
         if (
           line.startsWith('@') ||
-          /^#\s*@(requirements|req|implements|policy-constraints|baseline)/i.test(line)
+          /^#\s*@(requirements|req|implements|policy-constraints|baseline|depends-on|dependencies)/i.test(
+            line
+          )
         ) {
           finalizeCurrentScenario();
         }
@@ -334,6 +352,10 @@ export class GherkinValidatorAdapter implements IGherkinValidatorGateway {
       declaredRequirementRevisionIds: Object.freeze([...declaredStoryReqIds]),
       declaredPolicyConstraintRevisionIds:
         declaredStoryPolIds.size > 0 ? Object.freeze([...declaredStoryPolIds]) : undefined,
+      declaredStoryDependencies:
+        declaredStoryDependencies.size > 0
+          ? Object.freeze([...declaredStoryDependencies])
+          : undefined,
       scenarios: Object.freeze(scenarios)
     };
 

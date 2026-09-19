@@ -54,6 +54,7 @@ export interface Story {
   readonly acceptanceCriteria: readonly string[];
   readonly gherkinText: string;
   readonly createdAt: Instant;
+  readonly dependencies?: readonly StoryId[];
 }
 
 export interface CreateStoryParams {
@@ -81,6 +82,7 @@ export interface CreateStoryParams {
   }[];
   readonly acceptanceCriteria?: readonly string[];
   readonly gherkinText: string;
+  readonly dependencies?: readonly (StoryId | string)[];
   readonly createdAt?: Instant;
 }
 
@@ -260,6 +262,20 @@ export function createStory(params: CreateStoryParams): Story {
 
   const createdAt = params.createdAt ?? now();
 
+  let dependencies: readonly StoryId[] | undefined;
+  if (params.dependencies && params.dependencies.length > 0) {
+    const depIds: StoryId[] = [];
+    for (const dep of params.dependencies) {
+      if (typeof dep !== 'string' || dep.trim().length === 0) {
+        throw new StoryInvariantViolationError(
+          'Story dependencies must not contain empty identifiers'
+        );
+      }
+      depIds.push(createStoryId(dep));
+    }
+    dependencies = Object.freeze(depIds);
+  }
+
   return Object.freeze({
     id: storyId,
     baselineId,
@@ -270,6 +286,7 @@ export function createStory(params: CreateStoryParams): Story {
     scenarios: Object.freeze(scenarios),
     acceptanceCriteria,
     gherkinText: params.gherkinText.trim(),
-    createdAt
+    createdAt,
+    dependencies
   });
 }
