@@ -24,7 +24,8 @@ import {
   isParentForeignKey,
   hasBackingChildTable,
   stripSqlComments,
-  hasForeignKeyToParent
+  hasForeignKeyToParent,
+  detectTableRelationships
 } from '../../src/application/use-cases/crossValidation/schemaApiCrossValidator.js';
 
 describe('SchemaApiCrossValidator', () => {
@@ -1821,5 +1822,104 @@ describe('SchemaApiCrossValidator', () => {
     expect(stripped).not.toContain('Line comment at start');
     expect(stripped).not.toContain('inline comment');
     expect(stripped).not.toContain('block comment');
+  });
+
+  it('detectTableRelationships detects explicit, inferred, child, and association relationships', () => {
+    const sql = `
+      CREATE TABLE orders (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        customer_id VARCHAR(64) NOT NULL
+      );
+
+      CREATE TABLE products (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        sku VARCHAR(64) NOT NULL
+      );
+
+      CREATE TABLE order_line_items (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id UUID NOT NULL REFERENCES orders(id),
+        product_ref VARCHAR(64) NOT NULL,
+        qty INTEGER NOT NULL
+      );
+
+      CREATE TABLE order_items (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        order_id UUID NOT NULL,
+        product_id UUID NOT NULL REFERENCES products(id),
+        quantity INTEGER NOT NULL
+      );
+    `;
+
+    const tables = parseSqlTables(sql);
+    const relationships = detectTableRelationships(tables);
+
+    // order_line_items -> orders (explicit FK, isChildEntity: true)
+    const lineItemToOrders = relationships.find(
+      (r) => r.childTable === 'order_line_items' && r.parentTable === 'orders'
+    );
+    expect(lineItemToOrders).toBeDefined();
+    expect(lineItemToOrders?.foreignKeyColumn).toBe('order_id');
+    expect(lineItemToOrders?.referencedColumn).toBe('id');
+    expect(lineItemToOrders?.isChildEntity).toBe(true);
+
+    // order_items -> orders (inferred FK via order_id, isChildEntity: true)
+    const itemToOrders = relationships.find(
+      (r) => r.childTable === 'order_items' && r.parentTable === 'orders'
+    );
+    expect(itemToOrders).toBeDefined();
+    expect(itemToOrders?.foreignKeyColumn).toBe('order_id');
+    expect(itemToOrders?.isChildEntity).toBe(true);
+
+    // order_items -> products (explicit FK via product_id, isChildEntity: false)
+    const itemToProducts = relationships.find(
+      (r) => r.childTable === 'order_items' && r.parentTable === 'products'
+    );
+    expect(itemToProducts).toBeDefined();
+    expect(itemToProducts?.foreignKeyColumn).toBe('product_id');
+    expect(itemToProducts?.isChildEntity).toBe(false);
+  });
+
+  it('does not emit unrelated relationships for generic parent_id across distinct candidate parent tables (F-02c39a73)', () => {
+    const sql = `
+      CREATE TABLE accounts (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name VARCHAR(128) NOT NULL
+      );
+
+      CREATE TABLE nodes (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        parent_id UUID,
+        title VARCHAR(128) NOT NULL
+      );
+
+      CREATE TABLE tenants (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        code VARCHAR(32) NOT NULL
+      );
+    `;
+
+    const tables = parseSqlTables(sql);
+    const relationships = detectTableRelationships(tables);
+
+    // nodes.parent_id must NOT be related to accounts or tenants
+    const nodeToAccounts = relationships.find(
+      (r) => r.childTable === 'nodes' && r.parentTable === 'accounts'
+    );
+    expect(nodeToAccounts).toBeUndefined();
+
+    const nodeToTenants = relationships.find(
+      (r) => r.childTable === 'nodes' && r.parentTable === 'tenants'
+    );
+    expect(nodeToTenants).toBeUndefined();
+
+    // nodes.parent_id may be captured as self-reference on nodes
+    const nodeSelfRef = relationships.find(
+      (r) => r.childTable === 'nodes' && r.parentTable === 'nodes'
+    );
+    if (nodeSelfRef) {
+      expect(nodeSelfRef.foreignKeyColumn).toBe('parent_id');
+      expect(nodeSelfRef.isChildEntity).toBe(false);
+    }
   });
 });

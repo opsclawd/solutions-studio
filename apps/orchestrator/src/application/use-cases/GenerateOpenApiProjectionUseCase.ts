@@ -45,12 +45,15 @@ import {
 import {
   SchemaApiCrossValidator,
   parseSqlTables,
-  type SqlTableDefinition
+  detectTableRelationships,
+  type SqlTableDefinition,
+  type SqlTableRelationship
 } from './crossValidation/schemaApiCrossValidator.js';
 
 export interface SqlSchemaContext {
   readonly projectionId: string;
   readonly tables: readonly SqlTableDefinition[];
+  readonly relationships?: readonly SqlTableRelationship[];
   readonly decisions: readonly string[];
 }
 
@@ -84,6 +87,98 @@ export interface OpenApiProvenanceValidationResult {
   readonly isValid: boolean;
   readonly errorMessage?: string;
   readonly declaredProvenance?: DeclaredOpenApiProvenance;
+}
+
+export const NAMING_ALIGNMENT_INSTRUCTIONS = [
+  'OpenAPI Entity, Schema, and Field Naming Alignment Requirements:',
+  '- Entity and Schema Naming:',
+  '  - Component schemas representing database entities MUST match the SQL table name (e.g. table "<entities>" -> schema "<Entity>"; child table "<entities>_<items>" -> schema "<Entity><Item>" or "<Entity><Items>").',
+  '  - Do NOT independently invent divergent entity names (e.g. do NOT use unrelated synonyms when a backing table is defined in the relational schema).',
+  '- Field and Property Naming Consistency:',
+  '  - OpenAPI schema properties MUST use exact matching field names for corresponding SQL columns.',
+  '  - Ground domain concepts directly in the SQL column names chosen: use exact column names from the SQL table definitions; do NOT rename columns to synonyms.',
+  '  - Retain exact snake_case property naming matching the SQL columns.',
+  '- Parent-Child Array Relationships:',
+  '  - When an entity schema includes an array of child entities, the array items property MUST reference the matching child component schema (e.g. "$ref: \'#/components/schemas/<ChildEntity>\'").',
+  '  - In creation/input requests (e.g. "<Entity>CreateRequest"), child items represent nested records to be created; their parent foreign key (e.g. "<parent>_id") is implicit from the relationship and should NOT be required in the client request body, but all other child entity fields MUST strictly match the child table columns.',
+  '- Response Wrapper Schemas:',
+  '  - For collection or list responses, use standard naming with a "Response" suffix (e.g. "<Entity>ListResponse") or return an array directly ("<Entity>[]"), rather than inventing standalone envelope schemas without a Response suffix.'
+].join('\n');
+
+export function formatRelationalTableContext(
+  table: SqlTableDefinition,
+  relationships: readonly SqlTableRelationship[] = []
+): string {
+  const pkColNames =
+    table.primaryKeyColumns.length > 0 ? table.primaryKeyColumns.join(', ') : 'none';
+  const pkTypes =
+    table.primaryKeyColumns.length > 0
+      ? table.primaryKeyColumns
+          .map((colName) => {
+            const col = table.columns.find((c) => c.name.toLowerCase() === colName.toLowerCase());
+            return col ? col.type : 'UNKNOWN';
+          })
+          .join(', ')
+      : 'UNKNOWN';
+
+  const childRelations = relationships.filter((r) => r.childTable === table.name);
+  const relationNotes = childRelations.map((r) =>
+    r.isChildEntity
+      ? `  - Role: Child/related entity of parent table '${r.parentTable}' (linked via '${r.foreignKeyColumn}' -> '${r.parentTable}.${r.referencedColumn ?? 'id'}')`
+      : `  - Role: Related to table '${r.parentTable}' (linked via '${r.foreignKeyColumn}' -> '${r.parentTable}.${r.referencedColumn ?? 'id'}')`
+  );
+
+  const colLines = table.columns.map((col) => {
+    const flags: string[] = [];
+    if (col.isPrimaryKey) flags.push('PRIMARY KEY');
+    if (col.isNotNull) flags.push('NOT NULL');
+    if (col.hasDefault) flags.push('DEFAULT');
+    if (col.referencesTable) {
+      flags.push(`REFERENCES ${col.referencesTable}(${col.referencesColumn ?? 'id'})`);
+    }
+    if (col.checkValues && col.checkValues.length > 0) {
+      flags.push(`CHECK IN (${col.checkValues.map((v) => `'${v}'`).join(', ')})`);
+    }
+    const flagStr = flags.length > 0 ? ` [${flags.join(', ')}]` : '';
+    return `    - '${col.name}': ${col.type}${flagStr}`;
+  });
+
+  return [
+    `- Table '${table.name}': Primary key column '${pkColNames}' (Type: ${pkTypes})`,
+    ...relationNotes,
+    '  - Columns:',
+    ...(colLines.length > 0 ? colLines : ["    - 'none'"])
+  ].join('\n');
+}
+
+export function formatRelationalSchemaContext(
+  sqlContext: SqlSchemaContext,
+  baselineId: string
+): string {
+  const tableSections = sqlContext.tables.map((t) =>
+    formatRelationalTableContext(t, sqlContext.relationships ?? [])
+  );
+
+  const decisionLines =
+    sqlContext.decisions.length > 0
+      ? '\nRelational Engineering Decisions:\n' +
+        sqlContext.decisions.map((d) => `- ${d}`).join('\n')
+      : '';
+
+  return (
+    `\nRelational Schema Context (from SQL projection ${sqlContext.projectionId}):\n` +
+    `The relational database schema for baseline ${baselineId} defines the following tables, columns, and relationships:\n` +
+    (tableSections.length > 0 ? tableSections.join('\n\n') : '- No explicit tables defined') +
+    decisionLines +
+    '\n\nOpenAPI Identifier Alignment Requirements:\n' +
+    '- Authority Precedence: Accepted Engineering Decisions take precedence over relational schema context if any ambiguity arises.\n' +
+    '- All corresponding OpenAPI entity schemas and path parameters (e.g. {id}) MUST strictly match these primary key definitions:\n' +
+    "  - If SQL primary key is UUID: OpenAPI schema property must be type 'string' with format 'uuid'.\n" +
+    "  - If SQL primary key is integer/BIGINT/SERIAL: OpenAPI schema property must be type 'integer'.\n" +
+    '- Do NOT introduce an identifier type that contradicts the relational schema.\n\n' +
+    NAMING_ALIGNMENT_INSTRUCTIONS +
+    '\n'
+  );
 }
 
 export class GenerateOpenApiProjectionUseCase {
@@ -192,6 +287,7 @@ export class GenerateOpenApiProjectionUseCase {
     let sqlContext: SqlSchemaContext | undefined;
     if (sqlRecord && sqlRecord.content) {
       const tables = parseSqlTables(sqlRecord.content);
+      const relationships = detectTableRelationships(tables);
       const decisionMatches = [
         ...sqlRecord.content.matchAll(/(?:--|\/\*)\s*@decision:\s*([^\r\n*]+)/gi)
       ];
@@ -199,6 +295,7 @@ export class GenerateOpenApiProjectionUseCase {
       sqlContext = {
         projectionId: sqlRecord.id,
         tables,
+        relationships,
         decisions
       };
 
@@ -941,36 +1038,7 @@ export class GenerateOpenApiProjectionUseCase {
 
     let relationalContextSection = '';
     if (sqlContext && sqlContext.tables.length > 0) {
-      const pkLines: string[] = [];
-      for (const table of sqlContext.tables) {
-        if (table.primaryKeyColumns.length > 0) {
-          for (const pkColName of table.primaryKeyColumns) {
-            const col = table.columns.find((c) => c.name === pkColName);
-            const pkType = col ? col.type : 'UNKNOWN';
-            pkLines.push(
-              `- Table '${table.name}': Primary key column '${pkColName}' (Type: ${pkType})`
-            );
-          }
-        }
-      }
-
-      const decisionLines =
-        sqlContext.decisions.length > 0
-          ? '\nRelational Engineering Decisions:\n' +
-            sqlContext.decisions.map((d) => `- ${d}`).join('\n')
-          : '';
-
-      relationalContextSection =
-        `\nRelational Schema Context (from SQL projection ${sqlContext.projectionId}):\n` +
-        `The relational database schema for baseline ${baseline.id} defines the following primary keys:\n` +
-        (pkLines.length > 0 ? pkLines.join('\n') : '- No explicit primary keys defined') +
-        decisionLines +
-        '\n\nOpenAPI Identifier Alignment Requirements:\n' +
-        '- Authority Precedence: Accepted Engineering Decisions take precedence over relational schema context if any ambiguity arises.\n' +
-        '- All corresponding OpenAPI entity schemas and path parameters (e.g. {id}) MUST strictly match these primary key definitions:\n' +
-        "  - If SQL primary key is UUID: OpenAPI schema property must be type 'string' with format 'uuid'.\n" +
-        "  - If SQL primary key is integer/BIGINT/SERIAL: OpenAPI schema property must be type 'integer'.\n" +
-        '- Do NOT introduce an identifier type that contradicts the relational schema.\n';
+      relationalContextSection = formatRelationalSchemaContext(sqlContext, baseline.id);
     } else {
       relationalContextSection =
         '\nPrimary Key & Identifier Format Convention:\n' +
@@ -1004,6 +1072,11 @@ export class GenerateOpenApiProjectionUseCase {
     if (acceptedDecisions.length > 0) {
       requirementsList.push(
         `${stepNum++}. MUST strictly comply with and implement all Accepted Engineering Decisions above (including primary key types and surrogate key strategies).`
+      );
+    }
+    if (sqlContext && sqlContext.tables.length > 0) {
+      requirementsList.push(
+        `${stepNum++}. MUST strictly align component schema and property names with the relational tables and columns provided in the Relational Schema Context above.`
       );
     }
     requirementsList.push(
@@ -1052,26 +1125,19 @@ export class GenerateOpenApiProjectionUseCase {
 
     let alignmentSection = '';
     if (sqlContext && sqlContext.tables.length > 0) {
-      const pkLines: string[] = [];
-      for (const table of sqlContext.tables) {
-        if (table.primaryKeyColumns.length > 0) {
-          for (const pkColName of table.primaryKeyColumns) {
-            const col = table.columns.find((c) => c.name === pkColName);
-            const pkType = col ? col.type : 'UNKNOWN';
-            pkLines.push(
-              `- Table '${table.name}': Primary key column '${pkColName}' (Type: ${pkType})`
-            );
-          }
-        }
-      }
+      const tableSections = sqlContext.tables.map((t) =>
+        formatRelationalTableContext(t, sqlContext.relationships ?? [])
+      );
 
       alignmentSection = [
         'OpenAPI Identifier Alignment Requirements (MUST strictly match relational primary keys):',
         '- Authority Precedence: Accepted Engineering Decisions take precedence over relational schema context if any ambiguity arises.',
-        ...(pkLines.length > 0 ? pkLines : ['- No explicit primary keys defined']),
+        ...(tableSections.length > 0 ? tableSections : ['- No explicit tables defined']),
         "- If SQL primary key is UUID: OpenAPI schema property must be type 'string' with format 'uuid'.",
         "- If SQL primary key is integer/BIGINT/SERIAL: OpenAPI schema property must be type 'integer'.",
-        '- Do NOT introduce an identifier type that contradicts the relational schema.'
+        '- Do NOT introduce an identifier type that contradicts the relational schema.',
+        '',
+        NAMING_ALIGNMENT_INSTRUCTIONS
       ].join('\n');
     }
 

@@ -30,6 +30,14 @@ export interface SqlTableDefinition {
   readonly foreignKeys?: readonly SqlForeignKeyDefinition[];
 }
 
+export interface SqlTableRelationship {
+  readonly childTable: string;
+  readonly parentTable: string;
+  readonly foreignKeyColumn: string;
+  readonly referencedColumn?: string;
+  readonly isChildEntity: boolean;
+}
+
 export interface SqlEnumDefinition {
   readonly name: string;
   readonly values: readonly string[];
@@ -858,6 +866,125 @@ export function isChildTableOf(
   }
 
   return false;
+}
+
+export function detectTableRelationships(
+  tables: readonly SqlTableDefinition[]
+): SqlTableRelationship[] {
+  const relationships: SqlTableRelationship[] = [];
+  const tableMap = new Map<string, SqlTableDefinition>();
+  for (const t of tables) {
+    tableMap.set(normalizeName(t.name), t);
+  }
+
+  for (const childTable of tables) {
+    const normChild = normalizeName(childTable.name);
+    const seen = new Set<string>();
+
+    for (const parentTable of tables) {
+      if (childTable.name === parentTable.name) continue;
+      const normParent = normalizeName(parentTable.name);
+
+      // 1. Explicit foreign keys (from childTable.foreignKeys or childTable.columns)
+      const explicitFks: Array<{ column: string; referencedColumn?: string }> = [];
+
+      if (childTable.foreignKeys) {
+        for (const fk of childTable.foreignKeys) {
+          const normFkRef = normalizeName(fk.referencedTable);
+          if (
+            normFkRef === normParent ||
+            resolveTableAlias(normFkRef, tableMap)?.name === parentTable.name
+          ) {
+            explicitFks.push({
+              column: fk.column,
+              referencedColumn: fk.referencedColumn
+            });
+          }
+        }
+      }
+
+      for (const col of childTable.columns) {
+        if (col.referencesTable) {
+          const normColRef = normalizeName(col.referencesTable);
+          if (
+            normColRef === normParent ||
+            resolveTableAlias(normColRef, tableMap)?.name === parentTable.name
+          ) {
+            const alreadyInExplicit = explicitFks.some(
+              (fk) => fk.column.toLowerCase() === col.name.toLowerCase()
+            );
+            if (!alreadyInExplicit) {
+              explicitFks.push({
+                column: col.name,
+                referencedColumn: col.referencesColumn
+              });
+            }
+          }
+        }
+      }
+
+      for (const fk of explicitFks) {
+        const key = `${childTable.name}:${parentTable.name}:${fk.column}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          const isChild =
+            isChildTableOf(childTable, parentTable, tableMap) || normChild.startsWith(normParent);
+          relationships.push({
+            childTable: childTable.name,
+            parentTable: parentTable.name,
+            foreignKeyColumn: fk.column,
+            referencedColumn: fk.referencedColumn ?? parentTable.primaryKeyColumns[0] ?? 'id',
+            isChildEntity: isChild
+          });
+        }
+      }
+
+      // 2. Inferred foreign keys (no explicit REFERENCES constraint)
+      if (explicitFks.length === 0) {
+        for (const col of childTable.columns) {
+          const normCol = normalizeName(col.name);
+          const isParentCol = normCol === `${normParent}id`;
+          if (isParentCol) {
+            const key = `${childTable.name}:${parentTable.name}:${col.name}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              const isChild =
+                isChildTableOf(childTable, parentTable, tableMap) ||
+                normChild.startsWith(normParent);
+              relationships.push({
+                childTable: childTable.name,
+                parentTable: parentTable.name,
+                foreignKeyColumn: col.name,
+                referencedColumn: parentTable.primaryKeyColumns[0] ?? 'id',
+                isChildEntity: isChild
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // 3. Self-referential inferred foreign keys (e.g. parent_id on hierarchical nodes/categories)
+    for (const col of childTable.columns) {
+      if (col.referencesTable) continue;
+      const normCol = normalizeName(col.name);
+      if (normCol === 'parentid' || normCol === `parent${normChild}id`) {
+        const key = `${childTable.name}:${childTable.name}:${col.name}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          relationships.push({
+            childTable: childTable.name,
+            parentTable: childTable.name,
+            foreignKeyColumn: col.name,
+            referencedColumn: childTable.primaryKeyColumns[0] ?? 'id',
+            isChildEntity: false
+          });
+        }
+      }
+    }
+  }
+
+  return relationships;
 }
 
 export function isParentForeignKey(

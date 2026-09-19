@@ -1272,4 +1272,282 @@ describe('GenerateOpenApiProjectionUseCase', () => {
       "If SQL primary key is UUID: OpenAPI schema property must be type 'string' with format 'uuid'."
     );
   });
+
+  it('injects full column definitions, constraints, and child relationships into OpenAPI prompt (Phase 3.11)', async () => {
+    const rev1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-311-01-R1'),
+      requirementId: createRequirementId('REQ-311-01'),
+      revision: 1,
+      statement: 'Orders and line items',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR'
+    });
+    await repo.saveRequirementRevision(rev1);
+
+    const baseline = createRequirementsBaseline({
+      id: createRequirementsBaselineId('BASE-311-01'),
+      requirements: [rev1],
+      createdBy: createReviewerId('REV-LEAD')
+    });
+    await repo.saveRequirementsBaseline(baseline);
+
+    const sqlProjection: ProjectionRecord = {
+      id: 'PROJ-SQL-311-01',
+      baselineId: baseline.id,
+      requirementRevisionIds: baseline.requirementRevisions,
+      artifactType: 'sql-schema',
+      content: [
+        '-- @baseline BASE-311-01',
+        '-- @requirements REQ-311-01-R1',
+        '',
+        'CREATE TABLE orders (',
+        '  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),',
+        '  customer_id VARCHAR(64) NOT NULL',
+        ');',
+        '',
+        'CREATE TABLE order_line_items (',
+        '  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),',
+        '  order_id UUID NOT NULL REFERENCES orders(id),',
+        '  product_ref VARCHAR(64) NOT NULL,',
+        '  qty INTEGER NOT NULL,',
+        '  unit_price NUMERIC(10,2) NOT NULL',
+        ');'
+      ].join('\n'),
+      metadata: {
+        baselineId: baseline.id,
+        requirementRevisionIds: [...baseline.requirementRevisions],
+        artifactType: 'sql-schema',
+        declaredProvenance: {
+          baselineId: baseline.id,
+          requirementRevisionIds: [...baseline.requirementRevisions]
+        },
+        configuredExecution: { provider: 'fake', artifactType: 'sql-schema' },
+        measuredVerification: {
+          repairsNeeded: 0,
+          attemptCount: 1,
+          contentHash: 'hash',
+          verifiedAt: createInstant('2026-09-18T10:00:00.000Z')
+        }
+      },
+      createdAt: createInstant('2026-09-18T10:00:00.000Z')
+    };
+    await repo.saveProjectionRecord(sqlProjection);
+
+    const openApiContent = createValidOpenApi('BASE-311-01', ['REQ-311-01-R1']);
+    fakeGateway.queueResponse(openApiContent);
+
+    await useCase.execute({
+      baselineId: baseline.id,
+      sqlSchemaProjectionId: sqlProjection.id
+    });
+
+    const sentPrompt = fakeGateway.recordedRequests[0].prompt;
+
+    // Relational Schema Context header
+    expect(sentPrompt).toContain(
+      'Relational Schema Context (from SQL projection PROJ-SQL-311-01):'
+    );
+    expect(sentPrompt).toContain("Table 'orders': Primary key column 'id' (Type: UUID)");
+    expect(sentPrompt).toContain("Table 'order_line_items': Primary key column 'id' (Type: UUID)");
+
+    // Child entity relationship annotation
+    expect(sentPrompt).toContain(
+      "- Role: Child/related entity of parent table 'orders' (linked via 'order_id' -> 'orders.id')"
+    );
+
+    // Full column list with types and constraints
+    expect(sentPrompt).toContain("- 'customer_id': VARCHAR(64) [NOT NULL]");
+    expect(sentPrompt).toContain("- 'product_ref': VARCHAR(64) [NOT NULL]");
+    expect(sentPrompt).toContain("- 'qty': INTEGER [NOT NULL]");
+    expect(sentPrompt).toContain("- 'unit_price': NUMERIC(10,2) [NOT NULL]");
+
+    // Explicit naming alignment instructions
+    expect(sentPrompt).toContain(
+      'OpenAPI Entity, Schema, and Field Naming Alignment Requirements:'
+    );
+    expect(sentPrompt).toContain(
+      'Component schemas representing database entities MUST match the SQL table name'
+    );
+    expect(sentPrompt).toContain(
+      'OpenAPI schema properties MUST use exact matching field names for corresponding SQL columns.'
+    );
+    expect(sentPrompt).toContain('Ground domain concepts directly in the SQL column names chosen');
+    expect(sentPrompt).toContain(
+      'MUST strictly align component schema and property names with the relational tables and columns provided in the Relational Schema Context above.'
+    );
+  });
+
+  it('annotates non-child related tables with Related to table role (Phase 3.11)', async () => {
+    const rev1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-311-02-R1'),
+      requirementId: createRequirementId('REQ-311-02'),
+      revision: 1,
+      statement: 'Orders and customer accounts',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR'
+    });
+    await repo.saveRequirementRevision(rev1);
+
+    const baseline = createRequirementsBaseline({
+      id: createRequirementsBaselineId('BASE-311-02'),
+      requirements: [rev1],
+      createdBy: createReviewerId('REV-LEAD')
+    });
+    await repo.saveRequirementsBaseline(baseline);
+
+    const sqlProjection: ProjectionRecord = {
+      id: 'PROJ-SQL-311-02',
+      baselineId: baseline.id,
+      requirementRevisionIds: baseline.requirementRevisions,
+      artifactType: 'sql-schema',
+      content: [
+        '-- @baseline BASE-311-02',
+        '-- @requirements REQ-311-02-R1',
+        '',
+        'CREATE TABLE customer_accounts (',
+        '  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),',
+        '  account_number VARCHAR(32) NOT NULL',
+        ');',
+        '',
+        'CREATE TABLE orders (',
+        '  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),',
+        '  account_id UUID NOT NULL REFERENCES customer_accounts(id)',
+        ');'
+      ].join('\n'),
+      metadata: {
+        baselineId: baseline.id,
+        requirementRevisionIds: [...baseline.requirementRevisions],
+        artifactType: 'sql-schema',
+        declaredProvenance: {
+          baselineId: baseline.id,
+          requirementRevisionIds: [...baseline.requirementRevisions]
+        },
+        configuredExecution: { provider: 'fake', artifactType: 'sql-schema' },
+        measuredVerification: {
+          repairsNeeded: 0,
+          attemptCount: 1,
+          contentHash: 'hash',
+          verifiedAt: createInstant('2026-09-18T10:00:00.000Z')
+        }
+      },
+      createdAt: createInstant('2026-09-18T10:00:00.000Z')
+    };
+    await repo.saveProjectionRecord(sqlProjection);
+
+    const openApiContent = createValidOpenApi('BASE-311-02', ['REQ-311-02-R1']);
+    fakeGateway.queueResponse(openApiContent);
+
+    await useCase.execute({
+      baselineId: baseline.id,
+      sqlSchemaProjectionId: sqlProjection.id
+    });
+
+    const sentPrompt = fakeGateway.recordedRequests[0].prompt;
+    expect(sentPrompt).toContain(
+      "- Role: Related to table 'customer_accounts' (linked via 'account_id' -> 'customer_accounts.id')"
+    );
+  });
+
+  it('includes full column context, child roles, and naming alignment instructions in repair prompt (Phase 3.11)', async () => {
+    const rev1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-311-03-R1'),
+      requirementId: createRequirementId('REQ-311-03'),
+      revision: 1,
+      statement: 'Orders service repair',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR'
+    });
+    await repo.saveRequirementRevision(rev1);
+
+    const baseline = createRequirementsBaseline({
+      id: createRequirementsBaselineId('BASE-311-03'),
+      requirements: [rev1],
+      createdBy: createReviewerId('REV-LEAD')
+    });
+    await repo.saveRequirementsBaseline(baseline);
+
+    const sqlProjection: ProjectionRecord = {
+      id: 'PROJ-SQL-311-03',
+      baselineId: baseline.id,
+      requirementRevisionIds: baseline.requirementRevisions,
+      artifactType: 'sql-schema',
+      content: [
+        '-- @baseline BASE-311-03',
+        '-- @requirements REQ-311-03-R1',
+        '',
+        'CREATE TABLE orders (',
+        '  id UUID PRIMARY KEY DEFAULT gen_random_uuid()',
+        ');',
+        '',
+        'CREATE TABLE order_line_items (',
+        '  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),',
+        '  order_id UUID NOT NULL REFERENCES orders(id),',
+        '  product_ref VARCHAR(64) NOT NULL,',
+        '  qty INTEGER NOT NULL',
+        ');'
+      ].join('\n'),
+      metadata: {
+        baselineId: baseline.id,
+        requirementRevisionIds: [...baseline.requirementRevisions],
+        artifactType: 'sql-schema',
+        declaredProvenance: {
+          baselineId: baseline.id,
+          requirementRevisionIds: [...baseline.requirementRevisions]
+        },
+        configuredExecution: { provider: 'fake', artifactType: 'sql-schema' },
+        measuredVerification: {
+          repairsNeeded: 0,
+          attemptCount: 1,
+          contentHash: 'hash',
+          verifiedAt: createInstant('2026-09-18T10:00:00.000Z')
+        }
+      },
+      createdAt: createInstant('2026-09-18T10:00:00.000Z')
+    };
+    await repo.saveProjectionRecord(sqlProjection);
+
+    // Force first candidate to fail validation to trigger repair loop
+    fakeValidator.failNextNTimes(1, 'OpenAPI validation failed: schema error');
+
+    // Attempt 1: Initial candidate
+    const initialCandidate = createValidOpenApi('BASE-311-03', ['REQ-311-03-R1']);
+    fakeGateway.queueResponse(initialCandidate);
+
+    // Attempt 2: Repaired candidate
+    const validCandidate = createValidOpenApi('BASE-311-03', ['REQ-311-03-R1']);
+    fakeGateway.queueResponse(validCandidate);
+
+    const result = await useCase.execute({
+      baselineId: baseline.id,
+      sqlSchemaProjectionId: sqlProjection.id,
+      options: { maxRepairAttempts: 2 }
+    });
+
+    expect(result.metadata.measuredVerification.repairsNeeded).toBe(1);
+    expect(fakeGateway.recordedRequests).toHaveLength(2);
+
+    const repairPrompt = fakeGateway.recordedRequests[1].prompt;
+
+    expect(repairPrompt).toContain("Table 'orders': Primary key column 'id' (Type: UUID)");
+    expect(repairPrompt).toContain(
+      "Table 'order_line_items': Primary key column 'id' (Type: UUID)"
+    );
+    expect(repairPrompt).toContain(
+      "- Role: Child/related entity of parent table 'orders' (linked via 'order_id' -> 'orders.id')"
+    );
+    expect(repairPrompt).toContain("- 'product_ref': VARCHAR(64) [NOT NULL]");
+    expect(repairPrompt).toContain("- 'qty': INTEGER [NOT NULL]");
+    expect(repairPrompt).toContain(
+      'OpenAPI Entity, Schema, and Field Naming Alignment Requirements:'
+    );
+    expect(repairPrompt).toContain(
+      'Component schemas representing database entities MUST match the SQL table name'
+    );
+  });
 });
