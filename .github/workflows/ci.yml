@@ -50,6 +50,9 @@ jobs:
           PUPPETEER_CONFIG_PATH: ${{ github.workspace }}/.github/puppeteer-config.json
         run: pnpm -r --if-present test
 
+      - name: Run Orchestrator Integration Tests
+        run: pnpm --filter @solutions-studio/orchestrator test:integration
+
       - name: Run Phase 1 Exit Gate Integration
         run: pnpm --filter @solutions-studio/orchestrator exit-gate:phase1
 

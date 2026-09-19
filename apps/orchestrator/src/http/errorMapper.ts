@@ -40,6 +40,8 @@ import {
 import {
   UnknownProjectionError,
   ProjectionBaselineMismatchError,
+  ProjectionArtifactTypeMismatchError,
+  ConflictingSqlProjectionAuthorityError,
   RequirementAlreadyExistsError
 } from '../application/use-cases/DiscoveryErrors.js';
 import {
@@ -186,6 +188,35 @@ export function mapErrorToResponse(error: unknown): MappedErrorResponse {
           projectionId: error.projectionId,
           baselineId: error.expectedBaselineId,
           projectionBaselineId: error.projectionBaselineId
+        }
+      }
+    };
+  }
+
+  if (error instanceof ProjectionArtifactTypeMismatchError) {
+    return {
+      statusCode: 400,
+      body: {
+        code: 'VALIDATION_ERROR',
+        message: error.message,
+        details: {
+          projectionId: error.projectionId,
+          artifactType: error.projectionArtifactType,
+          expectedArtifactType: error.expectedArtifactType
+        }
+      }
+    };
+  }
+
+  if (error instanceof ConflictingSqlProjectionAuthorityError) {
+    return {
+      statusCode: 409,
+      body: {
+        code: 'VALIDATION_ERROR',
+        message: error.message,
+        details: {
+          projectionId: error.projectionId,
+          decisionId: error.decisionId
         }
       }
     };

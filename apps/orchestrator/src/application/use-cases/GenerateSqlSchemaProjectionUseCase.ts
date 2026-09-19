@@ -695,6 +695,40 @@ export class GenerateSqlSchemaProjectionUseCase {
         ? `   -- @engineering-decisions ${acceptedDecisions.map((d) => d.id).join(', ')}\n`
         : '';
 
+    const requirementsList: string[] = [
+      '1. MUST begin with the exact SQL comment provenance header declaring baseline and implemented revision IDs:',
+      `   -- @baseline ${baseline.id}`,
+      `   -- @requirements ${baseline.requirementRevisions.join(', ')}`
+    ];
+    if (polHeaderRequirement) {
+      requirementsList.push(polHeaderRequirement.trimEnd());
+    }
+    if (edHeaderRequirement) {
+      requirementsList.push(edHeaderRequirement.trimEnd());
+    }
+
+    let stepNum = 2;
+    if (acceptedDecisions.length > 0) {
+      requirementsList.push(
+        `${stepNum++}. MUST strictly comply with and implement all Accepted Engineering Decisions above (including primary key types, surrogate key strategies, and column naming).`
+      );
+    }
+    requirementsList.push(
+      `${stepNum++}. Primary Key & Surrogate Key Strategy:\n` +
+        '   - If an accepted engineering decision specifies the primary key type or strategy (e.g. UUID vs. BIGINT identity), MUST strictly follow that accepted decision.\n' +
+        "   - In the absence of an accepted engineering decision specifying an alternative, use UUID surrogate primary keys ('id UUID PRIMARY KEY DEFAULT gen_random_uuid()') as the standard primary key strategy for relational tables.\n" +
+        '   - If making an explicit technical choice regarding primary keys, output: -- @decision: <Statement> | <Rationale>',
+      `${stepNum++}. Tables, columns, keys, and foreign keys must reflect the business entities and invariants in the authority requirements.`,
+      `${stepNum++}. Must be valid PostgreSQL DDL (CREATE TABLE, ALTER TABLE, CREATE INDEX, CHECK constraints, column defaults).`,
+      `${stepNum++}. If foreign keys reference other tables, ensure tables are declared in valid dependency order.`,
+      `${stepNum++}. Decision Boundary Rules:\n` +
+        '   - If making a legitimate technical choice (e.g. index strategy, surrogate keys, optimistic concurrency), output:\n' +
+        '     -- @decision: <Statement> | <Rationale>\n' +
+        '   - If encountering missing product behavior or policy ambiguity (e.g. undefined cardinality, whether multiple approvals are allowed, retention/encryption rules), DO NOT guess or invent requirements. Output:\n' +
+        '     -- @finding: <FindingType> | <Rationale> [| <RequirementRevisionIds>]',
+      `${stepNum++}. Return ONLY the executable SQL code enclosed in a \`\`\`sql markdown block without conversational filler.`
+    );
+
     return [
       `Generate a PostgreSQL-compatible relational schema (DDL) for requirements baseline ${baseline.id}:`,
       reqStatements,
@@ -702,20 +736,7 @@ export class GenerateSqlSchemaProjectionUseCase {
       edStatements,
       customPrompt ? `\nAdditional reviewer instructions:\n${customPrompt}\n` : '',
       'Requirements for generated SQL DDL:',
-      '1. MUST begin with the exact SQL comment provenance header declaring baseline and implemented revision IDs:',
-      `   -- @baseline ${baseline.id}`,
-      `   -- @requirements ${baseline.requirementRevisions.join(', ')}`,
-      polHeaderRequirement,
-      edHeaderRequirement,
-      '2. Tables, columns, keys, and foreign keys must reflect the business entities and invariants in the authority requirements.',
-      '3. Must be valid PostgreSQL DDL (CREATE TABLE, ALTER TABLE, CREATE INDEX, CHECK constraints, column defaults).',
-      '4. If foreign keys reference other tables, ensure tables are declared in valid dependency order.',
-      '5. Decision Boundary Rules:',
-      '   - If making a legitimate technical choice (e.g. index strategy, surrogate keys, optimistic concurrency), output:',
-      '     -- @decision: <Statement> | <Rationale>',
-      '   - If encountering missing product behavior or policy ambiguity (e.g. undefined cardinality, whether multiple approvals are allowed, retention/encryption rules), DO NOT guess or invent requirements. Output:',
-      '     -- @finding: <FindingType> | <Rationale> [| <RequirementRevisionIds>]',
-      '6. Return ONLY the executable SQL code enclosed in a ```sql markdown block without conversational filler.'
+      ...requirementsList
     ]
       .filter((line) => line !== '')
       .join('\n');

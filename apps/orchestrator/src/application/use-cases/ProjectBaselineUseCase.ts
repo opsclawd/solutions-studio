@@ -34,6 +34,7 @@ export interface ProjectBaselineInput {
   readonly prompt?: string;
   readonly options?: GenerateArtifactOptions;
   readonly id?: string;
+  readonly sqlSchemaProjectionId?: string;
 }
 
 export type { BaselineProjectionResult };
@@ -88,7 +89,8 @@ export class ProjectBaselineUseCase {
         baselineId: input.baselineId,
         prompt: input.prompt,
         options: input.options,
-        id: input.id
+        id: input.id,
+        sqlSchemaProjectionId: input.sqlSchemaProjectionId
       });
     }
 

@@ -32,11 +32,27 @@ import {
   UnknownEngineeringDecisionError
 } from './ReconciliationErrors.js';
 import {
+  UnknownProjectionError,
+  ProjectionBaselineMismatchError,
+  ProjectionArtifactTypeMismatchError,
+  ConflictingSqlProjectionAuthorityError
+} from './DiscoveryErrors.js';
+import {
   OpenApiProvenanceValidationError,
   UnacceptedEngineeringDecisionError,
   RepairRetryExhaustionError
 } from './OpenApiProjectionErrors.js';
-import { SchemaApiCrossValidator } from './crossValidation/schemaApiCrossValidator.js';
+import {
+  SchemaApiCrossValidator,
+  parseSqlTables,
+  type SqlTableDefinition
+} from './crossValidation/schemaApiCrossValidator.js';
+
+export interface SqlSchemaContext {
+  readonly projectionId: string;
+  readonly tables: readonly SqlTableDefinition[];
+  readonly decisions: readonly string[];
+}
 
 export interface OpenApiProjectionResult {
   readonly projectionId: string;
@@ -142,28 +158,121 @@ export class GenerateOpenApiProjectionUseCase {
       acceptedDecisions.push(...decisions);
     }
 
-    // 4. Build prompt and generate initial candidate
+    // 4. Resolve SQL schema projection context (if available) to ensure cross-projection consistency
+    let sqlRecord: ProjectionRecord | undefined;
+    if (input.sqlSchemaProjectionId) {
+      sqlRecord = await this.repository.getProjectionRecord(input.sqlSchemaProjectionId);
+      if (!sqlRecord) {
+        throw new UnknownProjectionError(input.sqlSchemaProjectionId);
+      }
+      if (sqlRecord.baselineId !== baseline.id) {
+        throw new ProjectionBaselineMismatchError(
+          input.sqlSchemaProjectionId,
+          sqlRecord.baselineId,
+          baseline.id
+        );
+      }
+      if (sqlRecord.artifactType !== 'sql-schema') {
+        throw new ProjectionArtifactTypeMismatchError(
+          input.sqlSchemaProjectionId,
+          sqlRecord.artifactType,
+          'sql-schema'
+        );
+      }
+    } else {
+      const projections = await this.repository.listProjectionRecords(baseline.id);
+      const sqlProjections = projections
+        .filter((p) => p.artifactType === 'sql-schema')
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+      if (sqlProjections.length > 0) {
+        sqlRecord = sqlProjections[0];
+      }
+    }
+
+    let sqlContext: SqlSchemaContext | undefined;
+    if (sqlRecord && sqlRecord.content) {
+      const tables = parseSqlTables(sqlRecord.content);
+      const decisionMatches = [
+        ...sqlRecord.content.matchAll(/(?:--|\/\*)\s*@decision:\s*([^\r\n*]+)/gi)
+      ];
+      const decisions = decisionMatches.map((m) => m[1].trim()).filter((s) => s.length > 0);
+      sqlContext = {
+        projectionId: sqlRecord.id,
+        tables,
+        decisions
+      };
+
+      // Check for authority conflicts between accepted EngineeringDecisions and relational schema primary keys
+      if (acceptedDecisions.length > 0 && sqlContext.tables.length > 0) {
+        for (const decision of acceptedDecisions) {
+          const isUuidDecision =
+            /(?:primary\s+key|surrogate\s+key|id(?:entifier)?).*uuid|uuid.*(?:primary\s+key|surrogate\s+key|id(?:entifier)?)/i.test(
+              decision.statement
+            );
+          const isBigIntDecision =
+            /(?:primary\s+key|surrogate\s+key|id(?:entifier)?).*(?:bigint|identity|serial|integer)|(?:bigint|identity|serial|integer).*(?:primary\s+key|surrogate\s+key|id(?:entifier)?)/i.test(
+              decision.statement
+            );
+
+          if (isUuidDecision || isBigIntDecision) {
+            for (const table of sqlContext.tables) {
+              for (const pkColName of table.primaryKeyColumns) {
+                const col = table.columns.find((c) => c.name === pkColName);
+                if (col) {
+                  const upperType = col.type.toUpperCase();
+                  const isSqlBigInt =
+                    upperType.includes('BIGINT') ||
+                    upperType.includes('INT') ||
+                    upperType.includes('SERIAL') ||
+                    upperType.includes('IDENTITY');
+                  const isSqlUuid = upperType.includes('UUID');
+
+                  if (isUuidDecision && isSqlBigInt) {
+                    throw new ConflictingSqlProjectionAuthorityError(
+                      sqlRecord.id,
+                      decision.id,
+                      `SQL schema projection '${sqlRecord.id}' primary key column '${pkColName}' has type '${col.type}', which conflicts with accepted EngineeringDecision '${decision.id}': '${decision.statement}'`
+                    );
+                  }
+                  if (isBigIntDecision && isSqlUuid) {
+                    throw new ConflictingSqlProjectionAuthorityError(
+                      sqlRecord.id,
+                      decision.id,
+                      `SQL schema projection '${sqlRecord.id}' primary key column '${pkColName}' has type '${col.type}', which conflicts with accepted EngineeringDecision '${decision.id}': '${decision.statement}'`
+                    );
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // 5. Build prompt and generate initial candidate
     const prompt = this.buildInitialPrompt(
       baseline,
       revisions,
       policyConstraints,
       acceptedDecisions,
-      input.prompt
+      input.prompt,
+      sqlContext
     );
     const initialGeneration = await this.generationGateway.generate({ prompt });
     const initialCandidate = this.extractOpenApiContent(initialGeneration.text);
 
-    // 5. Bounded closed-loop repair
+    // 6. Bounded closed-loop repair
     const repairResult = await this.validateAndRepair(
       initialCandidate,
       baseline,
       acceptedDecisions,
-      input.options
+      input.options,
+      sqlContext
     );
 
     const projectionId = input.id ?? `PROJ-${randomUUID()}`;
 
-    // 6. Discovery Extraction & Lineage Population
+    // 7. Discovery Extraction & Lineage Population
     const autoRecord = input.autoRecordDiscoveries !== false;
     const { proposedDecisions, candidateFindings: discoveryFindings } =
       await this.extractAndRecordDiscoveries(
@@ -174,13 +283,14 @@ export class GenerateOpenApiProjectionUseCase {
         autoRecord
       );
 
-    // 7. Targeted Cross-Validation against SQL schema projection
+    // 8. Targeted Cross-Validation against SQL schema projection
     const crossValidationFindings = await this.executeCrossValidation(
       baseline,
       repairResult.parsedDocument,
       projectionId,
       input.sqlSchemaProjectionId,
-      autoRecord
+      autoRecord,
+      sqlRecord
     );
 
     const allCandidateFindings = [...discoveryFindings, ...crossValidationFindings];
@@ -252,7 +362,8 @@ export class GenerateOpenApiProjectionUseCase {
     initialCandidate: string,
     baseline: RequirementsBaseline,
     acceptedDecisions: readonly EngineeringDecision[],
-    options?: GenerateArtifactOptions
+    options?: GenerateArtifactOptions,
+    sqlContext?: SqlSchemaContext
   ): Promise<{
     content: string;
     repairsNeeded: number;
@@ -295,7 +406,8 @@ export class GenerateOpenApiProjectionUseCase {
         currentCandidate,
         lastError,
         baseline,
-        acceptedDecisions
+        acceptedDecisions,
+        sqlContext
       );
 
       const repairGeneration = await this.generationGateway.generate({
@@ -748,17 +860,20 @@ export class GenerateOpenApiProjectionUseCase {
     openApiDoc: Record<string, unknown>,
     openApiProjectionId: string,
     explicitSqlProjectionId?: string,
-    autoRecord?: boolean
+    autoRecord?: boolean,
+    resolvedSqlRecord?: ProjectionRecord
   ): Promise<CandidateFinding[]> {
-    let sqlRecord: ProjectionRecord | undefined;
+    let sqlRecord: ProjectionRecord | undefined = resolvedSqlRecord;
 
-    if (explicitSqlProjectionId) {
-      sqlRecord = await this.repository.getProjectionRecord(explicitSqlProjectionId);
-    } else {
-      const projections = await this.repository.listProjectionRecords(baseline.id);
-      const sqlProjections = projections.filter((p) => p.artifactType === 'sql-schema');
-      if (sqlProjections.length > 0) {
-        sqlRecord = sqlProjections[sqlProjections.length - 1];
+    if (!sqlRecord) {
+      if (explicitSqlProjectionId) {
+        sqlRecord = await this.repository.getProjectionRecord(explicitSqlProjectionId);
+      } else {
+        const projections = await this.repository.listProjectionRecords(baseline.id);
+        const sqlProjections = projections.filter((p) => p.artifactType === 'sql-schema');
+        if (sqlProjections.length > 0) {
+          sqlRecord = sqlProjections[sqlProjections.length - 1];
+        }
       }
     }
 
@@ -801,7 +916,8 @@ export class GenerateOpenApiProjectionUseCase {
     revisions: readonly RequirementRevision[],
     policyConstraints: readonly PolicyConstraintRevision[],
     acceptedDecisions: readonly EngineeringDecision[],
-    customPrompt?: string
+    customPrompt?: string,
+    sqlContext?: SqlSchemaContext
   ): string {
     const reqStatements = revisions
       .map((r) => `- [${r.id}] (${r.category}) ${r.statement}`)
@@ -823,6 +939,44 @@ export class GenerateOpenApiProjectionUseCase {
             .join('\n')
         : '';
 
+    let relationalContextSection = '';
+    if (sqlContext && sqlContext.tables.length > 0) {
+      const pkLines: string[] = [];
+      for (const table of sqlContext.tables) {
+        if (table.primaryKeyColumns.length > 0) {
+          for (const pkColName of table.primaryKeyColumns) {
+            const col = table.columns.find((c) => c.name === pkColName);
+            const pkType = col ? col.type : 'UNKNOWN';
+            pkLines.push(
+              `- Table '${table.name}': Primary key column '${pkColName}' (Type: ${pkType})`
+            );
+          }
+        }
+      }
+
+      const decisionLines =
+        sqlContext.decisions.length > 0
+          ? '\nRelational Engineering Decisions:\n' +
+            sqlContext.decisions.map((d) => `- ${d}`).join('\n')
+          : '';
+
+      relationalContextSection =
+        `\nRelational Schema Context (from SQL projection ${sqlContext.projectionId}):\n` +
+        `The relational database schema for baseline ${baseline.id} defines the following primary keys:\n` +
+        (pkLines.length > 0 ? pkLines.join('\n') : '- No explicit primary keys defined') +
+        decisionLines +
+        '\n\nOpenAPI Identifier Alignment Requirements:\n' +
+        '- Authority Precedence: Accepted Engineering Decisions take precedence over relational schema context if any ambiguity arises.\n' +
+        '- All corresponding OpenAPI entity schemas and path parameters (e.g. {id}) MUST strictly match these primary key definitions:\n' +
+        "  - If SQL primary key is UUID: OpenAPI schema property must be type 'string' with format 'uuid'.\n" +
+        "  - If SQL primary key is integer/BIGINT/SERIAL: OpenAPI schema property must be type 'integer'.\n" +
+        '- Do NOT introduce an identifier type that contradicts the relational schema.\n';
+    } else {
+      relationalContextSection =
+        '\nPrimary Key & Identifier Format Convention:\n' +
+        "- In the absence of an accepted engineering decision or relational schema context specifying an alternative, use UUID format ('id: { type: string, format: uuid }') as the standard primary key format.\n";
+    }
+
     const polHeaderRequirement =
       policyConstraints.length > 0
         ? `   # @policy-constraints ${policyConstraints.map((p) => p.id).join(', ')}\n`
@@ -833,29 +987,47 @@ export class GenerateOpenApiProjectionUseCase {
         ? `   # @engineering-decisions ${acceptedDecisions.map((d) => d.id).join(', ')}\n`
         : '';
 
+    const requirementsList: string[] = [
+      '1. MUST declare openapi: 3.1.0 and root info with title and version.',
+      '2. MUST begin with exact comment provenance headers (or info.x-* extensions):',
+      `   # @baseline ${baseline.id}`,
+      `   # @requirements ${baseline.requirementRevisions.join(', ')}`
+    ];
+    if (polHeaderRequirement) {
+      requirementsList.push(polHeaderRequirement.trimEnd());
+    }
+    if (edHeaderRequirement) {
+      requirementsList.push(edHeaderRequirement.trimEnd());
+    }
+
+    let stepNum = 3;
+    if (acceptedDecisions.length > 0) {
+      requirementsList.push(
+        `${stepNum++}. MUST strictly comply with and implement all Accepted Engineering Decisions above (including primary key types and surrogate key strategies).`
+      );
+    }
+    requirementsList.push(
+      `${stepNum++}. Paths, operations, parameters, request bodies, and responses must reflect authority requirements.`,
+      `${stepNum++}. Every operation MUST declare a non-empty responses object.`,
+      `${stepNum++}. Path template parameters (e.g. {id}) must have matching parameter definitions with in: path and required: true.`,
+      `${stepNum++}. All $ref pointers must be resolvable within the document.`,
+      `${stepNum++}. Decision Boundary Rules:\n` +
+        '   - If making a legitimate technical choice (e.g. pagination mechanics, problem details envelope, caching headers), output:\n' +
+        '     # @decision: <Statement> | <Rationale>\n' +
+        '   - If encountering missing product behavior or policy ambiguity (e.g. unstated authorization scopes, undefined cardinality, missing failure recovery), DO NOT guess or invent requirements. Output:\n' +
+        '     # @finding: <FindingType> | <Rationale> [| <RequirementRevisionIds>]',
+      `${stepNum++}. Return ONLY the OpenAPI specification enclosed in a \`\`\`yaml or \`\`\`json markdown block without conversational filler.`
+    );
+
     return [
       `Generate an OpenAPI 3.1 contract specification (YAML or JSON) for requirements baseline ${baseline.id}:`,
       reqStatements,
       polStatements,
       edStatements,
+      relationalContextSection,
       customPrompt ? `\nAdditional reviewer instructions:\n${customPrompt}\n` : '',
       'Requirements for generated OpenAPI 3.1 contract:',
-      '1. MUST declare openapi: 3.1.0 and root info with title and version.',
-      '2. MUST begin with exact comment provenance headers (or info.x-* extensions):',
-      `   # @baseline ${baseline.id}`,
-      `   # @requirements ${baseline.requirementRevisions.join(', ')}`,
-      polHeaderRequirement,
-      edHeaderRequirement,
-      '3. Paths, operations, parameters, request bodies, and responses must reflect authority requirements.',
-      '4. Every operation MUST declare a non-empty responses object.',
-      '5. Path template parameters (e.g. {id}) must have matching parameter definitions with in: path and required: true.',
-      '6. All $ref pointers must be resolvable within the document.',
-      '7. Decision Boundary Rules:',
-      '   - If making a legitimate technical choice (e.g. pagination mechanics, problem details envelope, caching headers), output:',
-      '     # @decision: <Statement> | <Rationale>',
-      '   - If encountering missing product behavior or policy ambiguity (e.g. unstated authorization scopes, undefined cardinality, missing failure recovery), DO NOT guess or invent requirements. Output:',
-      '     # @finding: <FindingType> | <Rationale> [| <RequirementRevisionIds>]',
-      '8. Return ONLY the OpenAPI specification enclosed in a ```yaml or ```json markdown block without conversational filler.'
+      ...requirementsList
     ]
       .filter((line) => line !== '')
       .join('\n');
@@ -865,7 +1037,8 @@ export class GenerateOpenApiProjectionUseCase {
     currentCandidate: string,
     errorMessage: string,
     baseline: RequirementsBaseline,
-    acceptedDecisions: readonly EngineeringDecision[]
+    acceptedDecisions: readonly EngineeringDecision[],
+    sqlContext?: SqlSchemaContext
   ): string {
     const polHeader =
       baseline.policyConstraintRevisions && baseline.policyConstraintRevisions.length > 0
@@ -877,10 +1050,36 @@ export class GenerateOpenApiProjectionUseCase {
         ? `\n# @engineering-decisions ${acceptedDecisions.map((d) => d.id).join(', ')}`
         : '';
 
+    let alignmentSection = '';
+    if (sqlContext && sqlContext.tables.length > 0) {
+      const pkLines: string[] = [];
+      for (const table of sqlContext.tables) {
+        if (table.primaryKeyColumns.length > 0) {
+          for (const pkColName of table.primaryKeyColumns) {
+            const col = table.columns.find((c) => c.name === pkColName);
+            const pkType = col ? col.type : 'UNKNOWN';
+            pkLines.push(
+              `- Table '${table.name}': Primary key column '${pkColName}' (Type: ${pkType})`
+            );
+          }
+        }
+      }
+
+      alignmentSection = [
+        'OpenAPI Identifier Alignment Requirements (MUST strictly match relational primary keys):',
+        '- Authority Precedence: Accepted Engineering Decisions take precedence over relational schema context if any ambiguity arises.',
+        ...(pkLines.length > 0 ? pkLines : ['- No explicit primary keys defined']),
+        "- If SQL primary key is UUID: OpenAPI schema property must be type 'string' with format 'uuid'.",
+        "- If SQL primary key is integer/BIGINT/SERIAL: OpenAPI schema property must be type 'integer'.",
+        '- Do NOT introduce an identifier type that contradicts the relational schema.'
+      ].join('\n');
+    }
+
     return [
       'The following OpenAPI 3.1 contract failed validation:',
       `${errorMessage}`,
       '',
+      ...(alignmentSection ? [alignmentSection, ''] : []),
       'Correct the OpenAPI contract to fix the error.',
       'Ensure the contract begins with the required provenance comment headers (or info.x-* extensions):',
       `# @baseline ${baseline.id}`,
