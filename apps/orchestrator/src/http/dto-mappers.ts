@@ -4,7 +4,9 @@ import type {
   RequirementsBaseline,
   PolicyConstraintRevision,
   EngineeringDecision,
-  AuthorityBundle
+  AuthorityBundle,
+  StoryReadinessReport,
+  BaselineRequirementCoverage
 } from '@solutions-studio/domain';
 import type {
   RequirementRevisionDto,
@@ -17,7 +19,9 @@ import type {
   PolicyConstraintRevisionDto,
   EngineeringDecisionDto,
   AuthorityBundleDto,
-  StoryDto
+  StoryDto,
+  StoryReadinessReportDto,
+  BaselineRequirementCoverageDto
 } from '@solutions-studio/contracts';
 import type {
   ReconciliationRecord,
@@ -237,7 +241,64 @@ export function mapStoryRecordToDto(record: StoryRecord): StoryDto {
     })),
     acceptanceCriteria: [...record.acceptanceCriteria],
     gherkinText: record.gherkinText,
+    dependencies: record.dependencies ? [...record.dependencies] : undefined,
     metadata: record.metadata,
     createdAt: record.createdAt
+  };
+}
+
+export function mapStoryReadinessReportToDto(
+  report: StoryReadinessReport
+): StoryReadinessReportDto {
+  return {
+    storyId: report.storyId,
+    baselineId: report.baselineId,
+    status: report.status,
+    isReady: report.isReady,
+    evaluatedAt: report.evaluatedAt,
+    failures: report.failures.map((f) => ({
+      ruleId: f.ruleId,
+      message: f.message,
+      affectedIds: [...f.affectedIds],
+      ...(f.details !== undefined ? { details: f.details } : {})
+    })),
+    passedRules: [...report.passedRules],
+    ...(report.policy !== undefined
+      ? {
+          policy: {
+            requireSqlProjection: report.policy.requireSqlProjection,
+            requireOpenApiProjection: report.policy.requireOpenApiProjection,
+            allowDeferredEngineeringDecisions: report.policy.allowDeferredEngineeringDecisions,
+            blockingFindingTypes: report.policy.blockingFindingTypes
+              ? [...report.policy.blockingFindingTypes]
+              : undefined
+          }
+        }
+      : {})
+  };
+}
+
+export function mapBaselineRequirementCoverageToDto(
+  coverage: BaselineRequirementCoverage
+): BaselineRequirementCoverageDto {
+  return {
+    baselineId: coverage.baselineId,
+    totalRequirements: coverage.totalRequirements,
+    coveredCount: coverage.coveredCount,
+    uncoveredCount: coverage.uncoveredCount,
+    multiCoveredCount: coverage.multiCoveredCount,
+    coveredRequirements: coverage.coveredRequirements.map((c) => ({
+      requirementRevisionId: c.requirementRevisionId,
+      coveringStoryIds: [...c.coveringStoryIds],
+      coverageCount: c.coverageCount
+    })),
+    uncoveredRequirementRevisionIds: [...coverage.uncoveredRequirementRevisionIds],
+    multiCoveredRequirements: coverage.multiCoveredRequirements.map((c) => ({
+      requirementRevisionId: c.requirementRevisionId,
+      coveringStoryIds: [...c.coveringStoryIds],
+      coverageCount: c.coverageCount
+    })),
+    isFullyCovered: coverage.isFullyCovered,
+    computedAt: coverage.computedAt
   };
 }

@@ -111,4 +111,27 @@ Feature: Feature with empty scenario
     expect(result.isValid).toBe(false);
     expect(result.errorMessage).toContain("Scenario 'Empty scenario' must have at least one step");
   });
+
+  it('parses declared story dependencies from comments and tags', async () => {
+    const gherkin = `
+# @baseline BASE-001
+# @requirements REQ-001-R1
+# @depends-on STORY-001, STORY-002
+@depends-on:STORY-003
+
+Feature: Dependent Feature
+  As a user
+  I want a feature
+  So that I get value
+
+  @requirements:REQ-001-R1
+  Scenario: Scenario 1
+    Given step 1
+`;
+    const result = await adapter.validate(gherkin);
+    expect(result.isValid).toBe(true);
+    expect(result.parsedDocument?.declaredStoryDependencies).toEqual(
+      expect.arrayContaining(['STORY-001', 'STORY-002', 'STORY-003'])
+    );
+  });
 });

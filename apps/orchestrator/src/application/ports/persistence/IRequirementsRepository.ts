@@ -122,6 +122,7 @@ export interface StoryRecord {
   readonly gherkinText: string;
   readonly metadata: ProjectionMetadataDto;
   readonly createdAt: Instant;
+  readonly dependencies?: readonly StoryId[];
 }
 
 export class ImmutableRecordConflictError extends Error {

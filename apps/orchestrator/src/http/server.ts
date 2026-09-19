@@ -14,6 +14,8 @@ import type { RecordPolicyConstraintRevisionUseCase } from '../application/use-c
 import type { GetPolicyConstraintRevisionUseCase } from '../application/use-cases/GetPolicyConstraintRevisionUseCase.js';
 import type { GenerateStoriesProjectionUseCase } from '../application/use-cases/GenerateStoriesProjectionUseCase.js';
 import type { GetStoriesUseCase } from '../application/use-cases/GetStoriesUseCase.js';
+import type { EvaluateStoryReadinessUseCase } from '../application/use-cases/EvaluateStoryReadinessUseCase.js';
+import type { ComputeRequirementCoverageUseCase } from '../application/use-cases/ComputeRequirementCoverageUseCase.js';
 import { mapErrorToResponse } from './errorMapper.js';
 import { reviewRoutes } from './routes/review.js';
 import { requirementsRoutes } from './routes/requirements.js';
@@ -38,6 +40,8 @@ export interface OrchestratorServerDependencies {
   readonly getPolicyConstraintRevisionUseCase?: GetPolicyConstraintRevisionUseCase;
   readonly generateStoriesProjectionUseCase?: GenerateStoriesProjectionUseCase;
   readonly getStoriesUseCase?: GetStoriesUseCase;
+  readonly evaluateStoryReadinessUseCase?: EvaluateStoryReadinessUseCase;
+  readonly computeRequirementCoverageUseCase?: ComputeRequirementCoverageUseCase;
 }
 
 export function buildServer(
@@ -89,7 +93,8 @@ export function buildServer(
     reviewStateUseCase: deps.reviewStateUseCase,
     getAuthorityBundleUseCase: deps.getAuthorityBundleUseCase,
     recordEngineeringDecisionUseCase: deps.recordEngineeringDecisionUseCase,
-    getEngineeringDecisionsUseCase: deps.getEngineeringDecisionsUseCase
+    getEngineeringDecisionsUseCase: deps.getEngineeringDecisionsUseCase,
+    computeRequirementCoverageUseCase: deps.computeRequirementCoverageUseCase
   });
 
   if (deps.recordDiscoveryUseCase) {
@@ -115,7 +120,8 @@ export function buildServer(
   if (deps.generateStoriesProjectionUseCase && deps.getStoriesUseCase) {
     app.register(storiesRoutes, {
       generateStoriesProjectionUseCase: deps.generateStoriesProjectionUseCase,
-      getStoriesUseCase: deps.getStoriesUseCase
+      getStoriesUseCase: deps.getStoriesUseCase,
+      evaluateStoryReadinessUseCase: deps.evaluateStoryReadinessUseCase
     });
   }
 

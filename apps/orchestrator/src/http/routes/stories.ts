@@ -3,16 +3,21 @@ import { z } from 'zod';
 import {
   GenerateStoryRequestDtoSchema,
   StoryDtoSchema,
-  ListStoriesResponseDtoSchema
+  ListStoriesResponseDtoSchema,
+  StoryReadinessPolicyDtoSchema,
+  StoryReadinessReportDtoSchema,
+  ListStoryReadinessReportsResponseDtoSchema
 } from '@solutions-studio/contracts';
 import type { GenerateStoriesProjectionUseCase } from '../../application/use-cases/GenerateStoriesProjectionUseCase.js';
 import type { GetStoriesUseCase } from '../../application/use-cases/GetStoriesUseCase.js';
+import type { EvaluateStoryReadinessUseCase } from '../../application/use-cases/EvaluateStoryReadinessUseCase.js';
 import { UnknownStoryError } from '../../application/use-cases/StoryProjectionErrors.js';
-import { mapStoryRecordToDto } from '../dto-mappers.js';
+import { mapStoryRecordToDto, mapStoryReadinessReportToDto } from '../dto-mappers.js';
 
 export interface StoriesRoutesOptions {
   readonly generateStoriesProjectionUseCase: GenerateStoriesProjectionUseCase;
   readonly getStoriesUseCase: GetStoriesUseCase;
+  readonly evaluateStoryReadinessUseCase?: EvaluateStoryReadinessUseCase;
 }
 
 const baselineParamsSchema = z.object({
@@ -87,4 +92,92 @@ export const storiesRoutes: FastifyPluginAsync<StoriesRoutesOptions> = async (ap
       return reply.status(200).send(mapStoryRecordToDto(story));
     }
   );
+
+  if (options.evaluateStoryReadinessUseCase) {
+    const evaluateStoryReadinessUseCase = options.evaluateStoryReadinessUseCase;
+
+    const readinessQuerySchema = z.object({
+      requireSqlProjection: z
+        .union([z.boolean(), z.enum(['true', 'false'])])
+        .transform((val) => val === true || val === 'true')
+        .optional(),
+      requireOpenApiProjection: z
+        .union([z.boolean(), z.enum(['true', 'false'])])
+        .transform((val) => val === true || val === 'true')
+        .optional(),
+      allowDeferredEngineeringDecisions: z
+        .union([z.boolean(), z.enum(['true', 'false'])])
+        .transform((val) => val === true || val === 'true')
+        .optional()
+    });
+
+    app.get<{
+      Params: z.infer<typeof storyParamsSchema>;
+      Querystring: z.infer<typeof readinessQuerySchema>;
+    }>(
+      '/api/stories/:storyId/readiness',
+      {
+        schema: {
+          params: storyParamsSchema,
+          querystring: readinessQuerySchema,
+          response: {
+            200: StoryReadinessReportDtoSchema
+          }
+        }
+      },
+      async (request, reply) => {
+        const report = await evaluateStoryReadinessUseCase.execute({
+          storyId: request.params.storyId,
+          policy: request.query
+        });
+        return reply.status(200).send(mapStoryReadinessReportToDto(report));
+      }
+    );
+
+    app.post<{
+      Params: z.infer<typeof storyParamsSchema>;
+      Body: z.infer<typeof StoryReadinessPolicyDtoSchema>;
+    }>(
+      '/api/stories/:storyId/readiness',
+      {
+        schema: {
+          params: storyParamsSchema,
+          body: StoryReadinessPolicyDtoSchema.optional(),
+          response: {
+            200: StoryReadinessReportDtoSchema
+          }
+        }
+      },
+      async (request, reply) => {
+        const report = await evaluateStoryReadinessUseCase.execute({
+          storyId: request.params.storyId,
+          policy: request.body
+        });
+        return reply.status(200).send(mapStoryReadinessReportToDto(report));
+      }
+    );
+
+    app.get<{
+      Params: z.infer<typeof baselineParamsSchema>;
+      Querystring: z.infer<typeof readinessQuerySchema>;
+    }>(
+      '/api/baselines/:baselineId/stories/readiness',
+      {
+        schema: {
+          params: baselineParamsSchema,
+          querystring: readinessQuerySchema,
+          response: {
+            200: ListStoryReadinessReportsResponseDtoSchema
+          }
+        }
+      },
+      async (request, reply) => {
+        const reports = await evaluateStoryReadinessUseCase.executeForBaseline(
+          request.params.baselineId,
+          request.query
+        );
+        return reply.status(200).send(reports.map(mapStoryReadinessReportToDto));
+      }
+    );
+  }
 };

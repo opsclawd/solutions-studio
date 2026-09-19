@@ -17,6 +17,8 @@ import { GenerateSqlSchemaProjectionUseCase } from '../application/use-cases/Gen
 import { GenerateOpenApiProjectionUseCase } from '../application/use-cases/GenerateOpenApiProjectionUseCase.js';
 import { GenerateStoriesProjectionUseCase } from '../application/use-cases/GenerateStoriesProjectionUseCase.js';
 import { GetStoriesUseCase } from '../application/use-cases/GetStoriesUseCase.js';
+import { EvaluateStoryReadinessUseCase } from '../application/use-cases/EvaluateStoryReadinessUseCase.js';
+import { ComputeRequirementCoverageUseCase } from '../application/use-cases/ComputeRequirementCoverageUseCase.js';
 import { ProjectBaselineUseCase } from '../application/use-cases/ProjectBaselineUseCase.js';
 import { GetRequirementsReviewStateUseCase } from '../application/use-cases/GetRequirementsReviewStateUseCase.js';
 import { RecordRequirementsDiscoveryUseCase } from '../application/use-cases/RecordRequirementsDiscoveryUseCase.js';
@@ -65,6 +67,8 @@ export interface ComposeHttpServerOptions {
   readonly generateOpenApiProjectionUseCase?: GenerateOpenApiProjectionUseCase;
   readonly generateStoriesProjectionUseCase?: GenerateStoriesProjectionUseCase;
   readonly getStoriesUseCase?: GetStoriesUseCase;
+  readonly evaluateStoryReadinessUseCase?: EvaluateStoryReadinessUseCase;
+  readonly computeRequirementCoverageUseCase?: ComputeRequirementCoverageUseCase;
   readonly projectBaselineUseCase?: ProjectBaselineUseCase;
   readonly reviewStateUseCase?: GetRequirementsReviewStateUseCase;
   readonly recordDiscoveryUseCase?: RecordRequirementsDiscoveryUseCase;
@@ -96,6 +100,8 @@ export interface ComposedHttpServer {
   readonly generateOpenApiProjectionUseCase: GenerateOpenApiProjectionUseCase;
   readonly generateStoriesProjectionUseCase: GenerateStoriesProjectionUseCase;
   readonly getStoriesUseCase: GetStoriesUseCase;
+  readonly evaluateStoryReadinessUseCase: EvaluateStoryReadinessUseCase;
+  readonly computeRequirementCoverageUseCase: ComputeRequirementCoverageUseCase;
   readonly projectBaselineUseCase: ProjectBaselineUseCase;
   readonly reviewStateUseCase: GetRequirementsReviewStateUseCase;
   readonly recordDiscoveryUseCase: RecordRequirementsDiscoveryUseCase;
@@ -246,6 +252,13 @@ export function composeOrchestratorHttpServer(
   const getEngineeringDecisionsUseCase =
     options.getEngineeringDecisionsUseCase ?? new GetEngineeringDecisionsUseCase(repository);
 
+  const evaluateStoryReadinessUseCase =
+    options.evaluateStoryReadinessUseCase ??
+    new EvaluateStoryReadinessUseCase(repository, sqlValidatorGateway, openApiValidatorGateway);
+
+  const computeRequirementCoverageUseCase =
+    options.computeRequirementCoverageUseCase ?? new ComputeRequirementCoverageUseCase(repository);
+
   const app = buildServer(
     {
       reviewStateUseCase,
@@ -260,7 +273,9 @@ export function composeOrchestratorHttpServer(
       transitionEngineeringDecisionUseCase,
       getEngineeringDecisionsUseCase,
       generateStoriesProjectionUseCase,
-      getStoriesUseCase
+      getStoriesUseCase,
+      evaluateStoryReadinessUseCase,
+      computeRequirementCoverageUseCase
     },
     options.fastifyOptions
   );
@@ -285,6 +300,8 @@ export function composeOrchestratorHttpServer(
     generateOpenApiProjectionUseCase,
     generateStoriesProjectionUseCase,
     getStoriesUseCase,
+    evaluateStoryReadinessUseCase,
+    computeRequirementCoverageUseCase,
     projectBaselineUseCase,
     reviewStateUseCase,
     recordDiscoveryUseCase,

@@ -15,7 +15,12 @@ import {
   createPolicyConstraintRevisionId,
   now
 } from '@solutions-studio/domain';
-import { StoryDtoSchema, ProjectionRecordDtoSchema } from '@solutions-studio/contracts';
+import {
+  StoryDtoSchema,
+  ProjectionRecordDtoSchema,
+  StoryReadinessReportDtoSchema,
+  ListStoryReadinessReportsResponseDtoSchema
+} from '@solutions-studio/contracts';
 import { FilesystemRequirementsRepository } from '../../../src/infrastructure/persistence/filesystem/FilesystemRequirementsRepository.js';
 import { FakeGenerationGateway } from '../../fakes/FakeGenerationGateway.js';
 import { FakeMermaidLinterGateway } from '../../fakes/FakeMermaidLinterGateway.js';
@@ -354,6 +359,83 @@ Feature: Ungrounded Feature
       // Verify stories were also persisted
       const stories = await repo.listStories('BASE-001' as any);
       expect(stories).toHaveLength(1);
+    });
+  });
+
+  describe('Story Readiness HTTP Endpoints', () => {
+    it('GET /api/stories/:storyId/readiness returns 200 with implementation-ready report when valid', async () => {
+      await seedBaseline('BASE-001', 'REQ-001', 'REQ-001-R1');
+
+      fakeGen.setDefaultResponse(createValidGherkin('BASE-001', ['REQ-001-R1']));
+
+      const createRes = await app.inject({
+        method: 'POST',
+        url: '/api/baselines/BASE-001/stories',
+        payload: {}
+      });
+      const created = createRes.json();
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/stories/${created.id}/readiness`
+      });
+
+      expect(res.statusCode).toBe(200);
+      const report = StoryReadinessReportDtoSchema.parse(res.json());
+      expect(report.storyId).toBe(created.id);
+      expect(report.isReady).toBe(true);
+      expect(report.status).toBe('implementation-ready');
+      expect(report.failures).toHaveLength(0);
+    });
+
+    it('POST /api/stories/:storyId/readiness evaluates with custom policy', async () => {
+      await seedBaseline('BASE-001', 'REQ-001', 'REQ-001-R1');
+
+      fakeGen.setDefaultResponse(createValidGherkin('BASE-001', ['REQ-001-R1']));
+
+      const createRes = await app.inject({
+        method: 'POST',
+        url: '/api/baselines/BASE-001/stories',
+        payload: {}
+      });
+      const created = createRes.json();
+
+      // Policy requiring SQL projection when none exists in repo
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/stories/${created.id}/readiness`,
+        payload: {
+          requireSqlProjection: true
+        }
+      });
+
+      expect(res.statusCode).toBe(200);
+      const report = StoryReadinessReportDtoSchema.parse(res.json());
+      expect(report.isReady).toBe(false);
+      expect(report.status).toBe('not-ready');
+      expect(report.failures.some((f) => f.ruleId === 'sql-projection-valid')).toBe(true);
+    });
+
+    it('GET /api/baselines/:baselineId/stories/readiness returns reports for all baseline stories', async () => {
+      await seedBaseline('BASE-001', 'REQ-001', 'REQ-001-R1');
+
+      fakeGen.setDefaultResponse(createValidGherkin('BASE-001', ['REQ-001-R1']));
+
+      await app.inject({
+        method: 'POST',
+        url: '/api/baselines/BASE-001/stories',
+        payload: {}
+      });
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/baselines/BASE-001/stories/readiness'
+      });
+
+      expect(res.statusCode).toBe(200);
+      const reports = ListStoryReadinessReportsResponseDtoSchema.parse(res.json());
+      expect(reports).toHaveLength(1);
+      expect(reports[0].isReady).toBe(true);
     });
   });
 });

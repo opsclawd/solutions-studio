@@ -32,6 +32,7 @@ export interface ParsedGherkinDocument {
   readonly declaredBaselineId?: string;
   readonly declaredRequirementRevisionIds: readonly string[];
   readonly declaredPolicyConstraintRevisionIds?: readonly string[];
+  readonly declaredStoryDependencies?: readonly string[];
   readonly scenarios: readonly ParsedGherkinScenario[];
 }
 

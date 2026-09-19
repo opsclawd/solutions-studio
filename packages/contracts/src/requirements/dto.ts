@@ -52,7 +52,14 @@ import type {
   GherkinScenarioDtoSchema,
   StoryDtoSchema,
   GenerateStoryRequestDtoSchema,
-  ListStoriesResponseDtoSchema
+  ListStoriesResponseDtoSchema,
+  StoryReadinessRuleIdSchema,
+  StoryReadinessFailureDtoSchema,
+  StoryReadinessPolicyDtoSchema,
+  StoryReadinessReportDtoSchema,
+  ListStoryReadinessReportsResponseDtoSchema,
+  RequirementCoverageEntryDtoSchema,
+  BaselineRequirementCoverageDtoSchema
 } from './schemas.js';
 
 export type InstantDto = z.infer<typeof InstantDtoSchema>;
@@ -130,3 +137,13 @@ export type GherkinScenarioDto = z.infer<typeof GherkinScenarioDtoSchema>;
 export type StoryDto = z.infer<typeof StoryDtoSchema>;
 export type GenerateStoryRequestDto = z.infer<typeof GenerateStoryRequestDtoSchema>;
 export type ListStoriesResponseDto = z.infer<typeof ListStoriesResponseDtoSchema>;
+
+export type StoryReadinessRuleIdDto = z.infer<typeof StoryReadinessRuleIdSchema>;
+export type StoryReadinessFailureDto = z.infer<typeof StoryReadinessFailureDtoSchema>;
+export type StoryReadinessPolicyDto = z.infer<typeof StoryReadinessPolicyDtoSchema>;
+export type StoryReadinessReportDto = z.infer<typeof StoryReadinessReportDtoSchema>;
+export type ListStoryReadinessReportsResponseDto = z.infer<
+  typeof ListStoryReadinessReportsResponseDtoSchema
+>;
+export type RequirementCoverageEntryDto = z.infer<typeof RequirementCoverageEntryDtoSchema>;
+export type BaselineRequirementCoverageDto = z.infer<typeof BaselineRequirementCoverageDtoSchema>;

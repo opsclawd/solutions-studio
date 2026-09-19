@@ -12,6 +12,7 @@ import {
   DISCOVERED_BY,
   POLICY_CONSTRAINT_STATES,
   ENGINEERING_DECISION_STATES,
+  STORY_READINESS_RULE_IDS,
   isValidInstant
 } from '@solutions-studio/domain';
 
@@ -503,6 +504,7 @@ export const StoryDtoSchema = z.object({
   scenarios: z.array(GherkinScenarioDtoSchema).min(1),
   acceptanceCriteria: z.array(z.string().min(1)),
   gherkinText: z.string().min(1),
+  dependencies: z.array(z.string().min(1)).optional(),
   metadata: ProjectionMetadataDtoSchema.optional(),
   createdAt: InstantDtoSchema
 });
@@ -514,3 +516,51 @@ export const GenerateStoryRequestDtoSchema = z.object({
 });
 
 export const ListStoriesResponseDtoSchema = z.array(StoryDtoSchema);
+
+export const StoryReadinessRuleIdSchema = z.enum(STORY_READINESS_RULE_IDS);
+
+export const StoryReadinessFailureDtoSchema = z.object({
+  ruleId: z.string().min(1),
+  message: z.string().min(1),
+  affectedIds: z.array(z.string()),
+  details: z.record(z.unknown()).optional()
+});
+
+export const StoryReadinessPolicyDtoSchema = z.object({
+  requireSqlProjection: z.boolean().optional(),
+  requireOpenApiProjection: z.boolean().optional(),
+  allowDeferredEngineeringDecisions: z.boolean().optional(),
+  blockingFindingTypes: z.array(z.enum(FINDING_TYPES)).optional()
+});
+
+export const StoryReadinessReportDtoSchema = z.object({
+  storyId: z.string().min(1),
+  baselineId: z.string().min(1),
+  status: z.enum(['implementation-ready', 'not-ready']),
+  isReady: z.boolean(),
+  evaluatedAt: InstantDtoSchema,
+  failures: z.array(StoryReadinessFailureDtoSchema),
+  passedRules: z.array(z.string()),
+  policy: StoryReadinessPolicyDtoSchema.optional()
+});
+
+export const ListStoryReadinessReportsResponseDtoSchema = z.array(StoryReadinessReportDtoSchema);
+
+export const RequirementCoverageEntryDtoSchema = z.object({
+  requirementRevisionId: z.string().min(1),
+  coveringStoryIds: z.array(z.string().min(1)),
+  coverageCount: z.number().int().nonnegative()
+});
+
+export const BaselineRequirementCoverageDtoSchema = z.object({
+  baselineId: z.string().min(1),
+  totalRequirements: z.number().int().nonnegative(),
+  coveredCount: z.number().int().nonnegative(),
+  uncoveredCount: z.number().int().nonnegative(),
+  multiCoveredCount: z.number().int().nonnegative(),
+  coveredRequirements: z.array(RequirementCoverageEntryDtoSchema),
+  uncoveredRequirementRevisionIds: z.array(z.string().min(1)),
+  multiCoveredRequirements: z.array(RequirementCoverageEntryDtoSchema),
+  isFullyCovered: z.boolean(),
+  computedAt: InstantDtoSchema
+});
