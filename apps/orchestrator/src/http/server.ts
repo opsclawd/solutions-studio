@@ -35,6 +35,9 @@ import { storiesRoutes } from './routes/stories.js';
 import { dependencyGraphRoutes } from './routes/dependency-graph.js';
 import { handoffRoutes } from './routes/handoff.js';
 import { governanceRoutes } from './routes/governance.js';
+import type { ExportBacklogUseCase } from '../application/use-cases/ExportBacklogUseCase.js';
+import type { GetBacklogExportMappingsUseCase } from '../application/use-cases/GetBacklogExportMappingsUseCase.js';
+import { backlogRoutes } from './routes/backlog.js';
 import type { RecordValidationRunUseCase } from '../application/use-cases/governance/RecordValidationRunUseCase.js';
 import type { ApproveCandidateUseCase } from '../application/use-cases/governance/ApproveCandidateUseCase.js';
 import type { EvaluateCandidatePromotionStatusUseCase } from '../application/use-cases/governance/EvaluateCandidatePromotionStatusUseCase.js';
@@ -74,6 +77,8 @@ export interface OrchestratorServerDependencies {
   readonly evaluateCandidatePromotionStatusUseCase?: EvaluateCandidatePromotionStatusUseCase;
   readonly revokeGovernanceApprovalUseCase?: RevokeGovernanceApprovalUseCase;
   readonly exportGovernanceAuditUseCase?: ExportGovernanceAuditUseCase;
+  readonly exportBacklogUseCase?: ExportBacklogUseCase;
+  readonly getBacklogExportMappingsUseCase?: GetBacklogExportMappingsUseCase;
 }
 
 export function buildServer(
@@ -294,6 +299,14 @@ export function buildServer(
       evaluateStatusUseCase: deps.evaluateCandidatePromotionStatusUseCase,
       revokeUseCase: deps.revokeGovernanceApprovalUseCase,
       exportUseCase: deps.exportGovernanceAuditUseCase
+    });
+  }
+
+  if (deps.exportBacklogUseCase && deps.getBacklogExportMappingsUseCase) {
+    app.register(backlogRoutes, {
+      exportBacklogUseCase: deps.exportBacklogUseCase,
+      getBacklogExportMappingsUseCase: deps.getBacklogExportMappingsUseCase,
+      authorizer: deps.authorizer
     });
   }
 

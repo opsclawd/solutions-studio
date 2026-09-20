@@ -12,7 +12,8 @@ import {
   UnknownGovernanceApprovalError,
   InvalidGovernanceApprovalStateError,
   StaleGovernanceApprovalError,
-  InvalidCandidateShaError
+  InvalidCandidateShaError,
+  StoryNotReadyForExportError
 } from '@solutions-studio/domain';
 import type { ApiErrorDto } from '@solutions-studio/contracts';
 import {
@@ -65,6 +66,12 @@ import {
   AuthenticationError,
   ForbiddenError
 } from '../application/ports/identity/IdentityErrors.js';
+import {
+  RealBacklogMutationForbiddenError,
+  ProviderAuthenticationError,
+  ProviderRateLimitError,
+  BacklogExportGatewayError
+} from '../application/ports/backlog/BacklogExportErrors.js';
 
 export interface MappedErrorResponse {
   readonly statusCode: number;
@@ -661,6 +668,63 @@ export function mapErrorToResponse(error: unknown): MappedErrorResponse {
         code: 'INVALID_CANDIDATE_SHA',
         message: error.message,
         details: { invalidValue: error.invalidValue }
+      }
+    };
+  }
+
+  if (error instanceof StoryNotReadyForExportError) {
+    return {
+      statusCode: 400,
+      body: {
+        code: 'STORY_NOT_READY_FOR_EXPORT',
+        message: error.message,
+        details: {
+          storyId: error.storyId,
+          violations: error.rejectionReasons
+        }
+      }
+    };
+  }
+
+  if (error instanceof RealBacklogMutationForbiddenError) {
+    return {
+      statusCode: 403,
+      body: {
+        code: 'REAL_MUTATION_FORBIDDEN',
+        message: error.message
+      }
+    };
+  }
+
+  if (error instanceof ProviderAuthenticationError) {
+    return {
+      statusCode: 502,
+      body: {
+        code: 'PROVIDER_AUTHENTICATION_ERROR',
+        message: error.message
+      }
+    };
+  }
+
+  if (error instanceof ProviderRateLimitError) {
+    return {
+      statusCode: 502,
+      body: {
+        code: 'PROVIDER_RATE_LIMIT_ERROR',
+        message: error.message,
+        details: {
+          retryAfterSeconds: error.retryAfterSeconds
+        }
+      }
+    };
+  }
+
+  if (error instanceof BacklogExportGatewayError) {
+    return {
+      statusCode: 502,
+      body: {
+        code: 'BACKLOG_EXPORT_FAILED',
+        message: error.message
       }
     };
   }

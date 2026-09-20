@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import {
   createSourceId,
   createSourceRevisionId,
@@ -54,19 +55,23 @@ import {
   type CandidateApprovalRecord,
   type GovernanceApprovalId,
   type GovernanceApprovalStatus,
-  type SourceType
+  type SourceType,
+  type BacklogExportMapping,
+  type BacklogExportMappingId,
+  createBacklogExportMapping
 } from '@solutions-studio/domain';
-import type {
-  IRequirementsRepository,
-  SourceRevisionRecord,
-  CaptureSourceRevisionInput,
-  LocatorIndexEntry,
-  ReconciliationRecord,
-  EvaluationRunRecord,
-  FindingReconciliationRecord,
-  RequirementReconciliationRecord,
-  ProjectionRecord,
-  StoryRecord
+import {
+  ImmutableRecordConflictError,
+  type IRequirementsRepository,
+  type SourceRevisionRecord,
+  type CaptureSourceRevisionInput,
+  type LocatorIndexEntry,
+  type ReconciliationRecord,
+  type EvaluationRunRecord,
+  type FindingReconciliationRecord,
+  type RequirementReconciliationRecord,
+  type ProjectionRecord,
+  type StoryRecord
 } from '../../../application/ports/persistence/IRequirementsRepository.js';
 import type { StorageHealthReport } from '../../../application/ports/persistence/IStorageHealthCheck.js';
 import {
@@ -85,7 +90,8 @@ import {
 import {
   EvaluationRunRecordSchema,
   ValidationRunRecordDtoSchema,
-  CandidateApprovalRecordDtoSchema
+  CandidateApprovalRecordDtoSchema,
+  type BacklogExportMappingDto
 } from '@solutions-studio/contracts';
 import type { FindingDisposition } from '@solutions-studio/domain';
 import { computeContentHash, deriveLocatorIndex } from '../markdown/deriveLocatorIndex.js';
@@ -169,9 +175,14 @@ export function getCandidateApprovalLockKey(candidateSha: string): string {
   return `candidate-approval:${candidateSha}`;
 }
 
+export function getBacklogMappingLockKey(key: string): string {
+  return `bmap:${key}`;
+}
+
 export class FilesystemRequirementsRepository implements IRequirementsRepository {
   private readonly baseDir: string;
   private readonly entityLocks = new Map<string, Promise<void>>();
+  private readonly heldLocks = new AsyncLocalStorage<Set<string>>();
 
   constructor(options: FilesystemRequirementsRepositoryOptions) {
     this.baseDir = options.baseDir;
@@ -196,46 +207,56 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
   }
 
   private async acquireFileLock<T>(lockKey: string, action: () => Promise<T>): Promise<T> {
-    return this.acquireEntityLock(lockKey, async () => {
-      const lockDir = path.resolve(this.baseDir, '.locks');
-      await fs.mkdir(lockDir, { recursive: true });
-      const safeName = encodeURIComponent(lockKey).replace(/%/g, '_');
-      const lockPath = path.resolve(lockDir, `${safeName}.lock`);
-      const timeoutMs = 15000;
-      const start = Date.now();
-      let handle: fs.FileHandle | null = null;
+    const currentHeld = this.heldLocks.getStore();
+    if (currentHeld?.has(lockKey)) {
+      return action();
+    }
 
-      while (!handle) {
-        try {
-          handle = await fs.open(lockPath, 'wx');
-          await handle.writeFile(JSON.stringify({ pid: process.pid, createdAt: Date.now() }));
-        } catch (err) {
-          if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
-            if (Date.now() - start > timeoutMs) {
-              throw new Error(`Timed out waiting to acquire file lock for '${lockKey}'`);
+    const nextHeld = new Set<string>(currentHeld);
+    nextHeld.add(lockKey);
+
+    return this.heldLocks.run(nextHeld, () =>
+      this.acquireEntityLock(lockKey, async () => {
+        const lockDir = path.resolve(this.baseDir, '.locks');
+        await fs.mkdir(lockDir, { recursive: true });
+        const safeName = encodeURIComponent(lockKey).replace(/%/g, '_');
+        const lockPath = path.resolve(lockDir, `${safeName}.lock`);
+        const timeoutMs = 15000;
+        const start = Date.now();
+        let handle: fs.FileHandle | null = null;
+
+        while (!handle) {
+          try {
+            handle = await fs.open(lockPath, 'wx');
+            await handle.writeFile(JSON.stringify({ pid: process.pid, createdAt: Date.now() }));
+          } catch (err) {
+            if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+              if (Date.now() - start > timeoutMs) {
+                throw new Error(`Timed out waiting to acquire file lock for '${lockKey}'`);
+              }
+              await new Promise((r) => setTimeout(r, 20 + Math.random() * 20));
+            } else {
+              throw err;
             }
-            await new Promise((r) => setTimeout(r, 20 + Math.random() * 20));
-          } else {
-            throw err;
           }
         }
-      }
 
-      try {
-        return await action();
-      } finally {
         try {
-          await handle.close();
-        } catch {
-          // ignore
+          return await action();
+        } finally {
+          try {
+            await handle.close();
+          } catch {
+            // ignore
+          }
+          try {
+            await fs.unlink(lockPath);
+          } catch {
+            // ignore
+          }
         }
-        try {
-          await fs.unlink(lockPath);
-        } catch {
-          // ignore
-        }
-      }
-    });
+      })
+    );
   }
 
   private async acquireLocks<T>(
@@ -2122,6 +2143,156 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
       const validated = CandidateApprovalRecordDtoSchema.parse(approval);
       await writeJsonAtomic(filePath, validated);
     });
+  }
+
+  async saveBacklogExportMapping(mapping: BacklogExportMapping): Promise<void> {
+    assertSafeIdentifier(mapping.id, 'mappingId');
+    assertSafeIdentifier(mapping.storyId, 'storyId');
+    assertSafeIdentifier(mapping.baselineId, 'baselineId');
+
+    const lockKey = getBacklogMappingLockKey(
+      `${mapping.provider}:${mapping.externalContainer}:${mapping.storyId}`
+    );
+    return this.acquireFileLock(lockKey, async () => {
+      const existing = await this.listBacklogExportMappings({
+        provider: mapping.provider,
+        externalContainer: mapping.externalContainer,
+        storyId: mapping.storyId
+      });
+      if (existing.length > 0 && existing[0].id !== mapping.id) {
+        throw new ImmutableRecordConflictError(
+          resolveStorePath(this.baseDir, 'backlog-mappings', `${mapping.id}.json`),
+          `Backlog export mapping already exists for provider '${mapping.provider}', container '${mapping.externalContainer}', story '${mapping.storyId}'`
+        );
+      }
+
+      const filePath = resolveStorePath(this.baseDir, 'backlog-mappings', `${mapping.id}.json`);
+      const payload: BacklogExportMappingDto = {
+        id: mapping.id,
+        storyId: mapping.storyId,
+        baselineId: mapping.baselineId,
+        provider: mapping.provider,
+        externalContainer: mapping.externalContainer,
+        externalWorkItemId: mapping.externalWorkItemId,
+        externalUrl: mapping.externalUrl,
+        exportContentHash: mapping.exportContentHash,
+        exportedAt: mapping.exportedAt,
+        exportedBy: mapping.exportedBy,
+        metadata: mapping.metadata ? { ...mapping.metadata } : undefined
+      };
+      await writeJsonExclusive(filePath, payload);
+    });
+  }
+
+  async getBacklogExportMapping(
+    id: BacklogExportMappingId | string
+  ): Promise<BacklogExportMapping | undefined> {
+    assertSafeIdentifier(id, 'mappingId');
+    const filePath = resolveStorePath(this.baseDir, 'backlog-mappings', `${id}.json`);
+    const record = await readJson<BacklogExportMappingDto>(filePath);
+    if (!record) {
+      return undefined;
+    }
+    return createBacklogExportMapping({
+      id: record.id,
+      storyId: record.storyId,
+      baselineId: record.baselineId,
+      provider: record.provider,
+      externalContainer: record.externalContainer,
+      externalWorkItemId: record.externalWorkItemId,
+      externalUrl: record.externalUrl,
+      exportContentHash: record.exportContentHash,
+      exportedAt: record.exportedAt,
+      exportedBy: record.exportedBy,
+      metadata: record.metadata
+    });
+  }
+
+  async findBacklogExportMapping(filter: {
+    provider: string;
+    externalContainer: string;
+    storyId: StoryId | string;
+  }): Promise<BacklogExportMapping | undefined> {
+    const list = await this.listBacklogExportMappings({
+      provider: filter.provider,
+      externalContainer: filter.externalContainer,
+      storyId: filter.storyId
+    });
+    return list.length > 0 ? list[0] : undefined;
+  }
+
+  async listBacklogExportMappings(filter?: {
+    baselineId?: RequirementsBaselineId | string;
+    storyId?: StoryId | string;
+    provider?: string;
+    externalContainer?: string;
+  }): Promise<readonly BacklogExportMapping[]> {
+    const dirPath = path.resolve(this.baseDir, 'backlog-mappings');
+    try {
+      const files = await fs.readdir(dirPath);
+      const jsonFiles = files.filter((f) => f.endsWith('.json')).sort();
+      const results: BacklogExportMapping[] = [];
+      for (const file of jsonFiles) {
+        const rawId = file.replace(/\.json$/, '');
+        assertSafeIdentifier(rawId, 'mappingId');
+        const mapping = await this.getBacklogExportMapping(rawId);
+        if (mapping) {
+          if (filter?.baselineId && mapping.baselineId !== filter.baselineId) {
+            continue;
+          }
+          if (filter?.storyId && mapping.storyId !== filter.storyId) {
+            continue;
+          }
+          if (filter?.provider && mapping.provider !== filter.provider) {
+            continue;
+          }
+          if (filter?.externalContainer && mapping.externalContainer !== filter.externalContainer) {
+            continue;
+          }
+          results.push(mapping);
+        }
+      }
+      results.sort((a, b) => a.exportedAt.localeCompare(b.exportedAt) || a.id.localeCompare(b.id));
+      return Object.freeze(results);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return Object.freeze([]);
+      }
+      throw err;
+    }
+  }
+
+  async updateBacklogExportMapping(mapping: BacklogExportMapping): Promise<void> {
+    assertSafeIdentifier(mapping.id, 'mappingId');
+    const existing = await this.getBacklogExportMapping(mapping.id);
+    if (!existing) {
+      throw new Error(`Backlog export mapping '${mapping.id}' not found`);
+    }
+    const filePath = resolveStorePath(this.baseDir, 'backlog-mappings', `${mapping.id}.json`);
+    const payload: BacklogExportMappingDto = {
+      id: mapping.id,
+      storyId: mapping.storyId,
+      baselineId: mapping.baselineId,
+      provider: mapping.provider,
+      externalContainer: mapping.externalContainer,
+      externalWorkItemId: mapping.externalWorkItemId,
+      externalUrl: mapping.externalUrl,
+      exportContentHash: mapping.exportContentHash,
+      exportedAt: mapping.exportedAt,
+      exportedBy: mapping.exportedBy,
+      metadata: mapping.metadata ? { ...mapping.metadata } : undefined
+    };
+    await writeJsonAtomic(filePath, payload);
+  }
+
+  async withBacklogExportLock<T>(
+    key: { provider: string; externalContainer: string; storyId: StoryId | string },
+    action: () => Promise<T>
+  ): Promise<T> {
+    const lockKey = getBacklogMappingLockKey(
+      `${key.provider}:${key.externalContainer}:${key.storyId}`
+    );
+    return this.acquireFileLock(lockKey, action);
   }
 
   async checkStorageHealth(): Promise<StorageHealthReport> {

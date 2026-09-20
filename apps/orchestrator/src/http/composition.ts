@@ -38,6 +38,9 @@ import { ApproveCandidateUseCase } from '../application/use-cases/governance/App
 import { EvaluateCandidatePromotionStatusUseCase } from '../application/use-cases/governance/EvaluateCandidatePromotionStatusUseCase.js';
 import { RevokeGovernanceApprovalUseCase } from '../application/use-cases/governance/RevokeGovernanceApprovalUseCase.js';
 import { ExportGovernanceAuditUseCase } from '../application/use-cases/governance/ExportGovernanceAuditUseCase.js';
+import { ExportBacklogUseCase } from '../application/use-cases/ExportBacklogUseCase.js';
+import { GetBacklogExportMappingsUseCase } from '../application/use-cases/GetBacklogExportMappingsUseCase.js';
+import { BacklogExportGatewayFactory } from '../infrastructure/backlog/BacklogExportGatewayFactory.js';
 import {
   RepositoryFactory,
   createRequirementsRepository
@@ -116,6 +119,9 @@ export interface ComposeHttpServerOptions {
   readonly evaluateCandidatePromotionStatusUseCase?: EvaluateCandidatePromotionStatusUseCase;
   readonly revokeGovernanceApprovalUseCase?: RevokeGovernanceApprovalUseCase;
   readonly exportGovernanceAuditUseCase?: ExportGovernanceAuditUseCase;
+  readonly backlogGatewayFactory?: BacklogExportGatewayFactory;
+  readonly exportBacklogUseCase?: ExportBacklogUseCase;
+  readonly getBacklogExportMappingsUseCase?: GetBacklogExportMappingsUseCase;
 }
 
 export interface ComposedHttpServer {
@@ -148,6 +154,8 @@ export interface ComposedHttpServer {
   readonly evaluateCandidatePromotionStatusUseCase: EvaluateCandidatePromotionStatusUseCase;
   readonly revokeGovernanceApprovalUseCase: RevokeGovernanceApprovalUseCase;
   readonly exportGovernanceAuditUseCase: ExportGovernanceAuditUseCase;
+  readonly exportBacklogUseCase: ExportBacklogUseCase;
+  readonly getBacklogExportMappingsUseCase: GetBacklogExportMappingsUseCase;
   readonly projectBaselineUseCase: ProjectBaselineUseCase;
   readonly reviewStateUseCase: GetRequirementsReviewStateUseCase;
   readonly recordDiscoveryUseCase: RecordRequirementsDiscoveryUseCase;
@@ -412,6 +420,21 @@ export function composeOrchestratorHttpServer(
     options.exportGovernanceAuditUseCase ??
     new ExportGovernanceAuditUseCase(repository, evaluateCandidatePromotionStatusUseCase);
 
+  const backlogGatewayFactory = options.backlogGatewayFactory ?? new BacklogExportGatewayFactory();
+  const exportBacklogUseCase =
+    options.exportBacklogUseCase ??
+    new ExportBacklogUseCase(
+      repository,
+      (providerId) => backlogGatewayFactory.getGateway(providerId),
+      authorizer,
+      getAuthorityBundleUseCase,
+      evaluateStoryReadinessUseCase,
+      buildStoryDependencyGraphUseCase
+    );
+
+  const getBacklogExportMappingsUseCase =
+    options.getBacklogExportMappingsUseCase ?? new GetBacklogExportMappingsUseCase(repository);
+
   const app = buildServer(
     {
       repository,
@@ -439,7 +462,9 @@ export function composeOrchestratorHttpServer(
       approveCandidateUseCase,
       evaluateCandidatePromotionStatusUseCase,
       revokeGovernanceApprovalUseCase,
-      exportGovernanceAuditUseCase
+      exportGovernanceAuditUseCase,
+      exportBacklogUseCase,
+      getBacklogExportMappingsUseCase
     },
     options.fastifyOptions
   );
@@ -487,6 +512,8 @@ export function composeOrchestratorHttpServer(
     evaluateCandidatePromotionStatusUseCase,
     revokeGovernanceApprovalUseCase,
     exportGovernanceAuditUseCase,
+    exportBacklogUseCase,
+    getBacklogExportMappingsUseCase,
     projectBaselineUseCase,
     reviewStateUseCase,
     recordDiscoveryUseCase,

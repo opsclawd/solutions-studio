@@ -30,7 +30,9 @@ import type {
   ValidationRunId,
   CandidateApprovalRecord,
   GovernanceApprovalId,
-  GovernanceApprovalStatus
+  GovernanceApprovalStatus,
+  BacklogExportMapping,
+  BacklogExportMappingId
 } from '@solutions-studio/domain';
 import type {
   ProjectionMetadataDto,
@@ -250,6 +252,26 @@ export interface IRequirementsRepository {
     newApproval: CandidateApprovalRecord,
     expectedActiveApprovalId?: string
   ): Promise<void>;
+  saveBacklogExportMapping(mapping: BacklogExportMapping): Promise<void>;
+  getBacklogExportMapping(
+    id: BacklogExportMappingId | string
+  ): Promise<BacklogExportMapping | undefined>;
+  findBacklogExportMapping(filter: {
+    provider: string;
+    externalContainer: string;
+    storyId: StoryId | string;
+  }): Promise<BacklogExportMapping | undefined>;
+  listBacklogExportMappings(filter?: {
+    baselineId?: RequirementsBaselineId | string;
+    storyId?: StoryId | string;
+    provider?: string;
+    externalContainer?: string;
+  }): Promise<readonly BacklogExportMapping[]>;
+  updateBacklogExportMapping(mapping: BacklogExportMapping): Promise<void>;
+  withBacklogExportLock?<T>(
+    key: { provider: string; externalContainer: string; storyId: StoryId | string },
+    action: () => Promise<T>
+  ): Promise<T>;
   checkStorageHealth?(): Promise<StorageHealthReport>;
   checkHealth?(): Promise<StorageHealthReport>;
 }

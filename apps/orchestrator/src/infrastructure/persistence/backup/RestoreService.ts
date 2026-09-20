@@ -28,6 +28,7 @@ export interface RestoreVerificationResult {
   readonly verifiedSourceRevisions: readonly string[];
   readonly verifiedProjections: readonly string[];
   readonly verifiedStories: readonly string[];
+  readonly verifiedBacklogExportMappings?: readonly string[];
   readonly verifiedValidationRuns?: readonly string[];
   readonly verifiedGovernanceApprovals?: readonly string[];
   readonly errors: readonly string[];
@@ -147,6 +148,7 @@ export class RestoreService {
     // Truncate / delete all tables in reverse order
     await this.db.transaction(async (tx) => {
       await tx.exec(`
+        DELETE FROM backlog_export_mappings;
         DELETE FROM governance_approvals;
         DELETE FROM validation_runs;
         DELETE FROM evaluation_runs;
@@ -431,7 +433,33 @@ export class RestoreService {
         );
       }
 
-      // 14. evaluation_runs
+      // 14. backlog_export_mappings
+      for (const row of await loadRows('backlog_export_mappings')) {
+        await tx.query(
+          `INSERT INTO backlog_export_mappings (
+             id, story_id, baseline_id, provider, external_container,
+             external_work_item_id, external_url, export_content_hash,
+             exported_at, exported_by, metadata, created_at, updated_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13);`,
+          [
+            row.id,
+            row.story_id,
+            row.baseline_id,
+            row.provider,
+            row.external_container,
+            row.external_work_item_id,
+            row.external_url ?? null,
+            row.export_content_hash,
+            row.exported_at,
+            row.exported_by,
+            jsonCol(row.metadata),
+            row.created_at ?? new Date().toISOString(),
+            row.updated_at ?? new Date().toISOString()
+          ]
+        );
+      }
+
+      // 15. evaluation_runs
       for (const row of await loadRows('evaluation_runs')) {
         await tx.query(
           `INSERT INTO evaluation_runs (
@@ -519,6 +547,7 @@ export class RestoreService {
     const verifiedSourceRevisions: string[] = [];
     const verifiedProjections: string[] = [];
     const verifiedStories: string[] = [];
+    const verifiedBacklogExportMappings: string[] = [];
     const verifiedValidationRuns: string[] = [];
     const verifiedGovernanceApprovals: string[] = [];
 
@@ -661,6 +690,19 @@ export class RestoreService {
         }
       }
 
+      // Verify backlog export mappings
+      const bmapRes = await this.db.query<{ id: string }>(
+        `SELECT id FROM backlog_export_mappings ORDER BY id ASC;`
+      );
+      for (const bm of bmapRes.rows) {
+        const mapping = await this.repo.getBacklogExportMapping(bm.id);
+        if (!mapping) {
+          errors.push(`Backlog export mapping '${bm.id}' not found after restore`);
+        } else {
+          verifiedBacklogExportMappings.push(bm.id);
+        }
+      }
+
       // Verify validation runs
       const valRunRes = await this.db.query<{ id: string; evidence_digest: string }>(
         `SELECT id, evidence_digest FROM validation_runs ORDER BY id ASC;`
@@ -718,6 +760,7 @@ export class RestoreService {
       verifiedSourceRevisions,
       verifiedProjections,
       verifiedStories,
+      verifiedBacklogExportMappings,
       verifiedValidationRuns,
       verifiedGovernanceApprovals,
       errors
