@@ -1549,5 +1549,83 @@ describe('GenerateOpenApiProjectionUseCase', () => {
     expect(repairPrompt).toContain(
       'Component schemas representing database entities MUST match the SQL table name'
     );
+    expect(repairPrompt).toContain('- Sub-Resource and Entity Boundary Constraints:');
+    expect(repairPrompt).toContain(
+      'Every OpenAPI sub-resource path (e.g. "/<parents>/{id}/<children>") and component schema representing a separate child entity MUST correspond to a backing table defined in the Relational Schema Context.'
+    );
+  });
+
+  it('injects Sub-Resource and Entity Boundary Constraints into initial and repair prompts (Phase 3.14)', async () => {
+    const rev1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-314-01-R1'),
+      requirementId: createRequirementId('REQ-314-01'),
+      revision: 1,
+      statement: 'Order payment verification',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR'
+    });
+    await repo.saveRequirementRevision(rev1);
+
+    const baseline = createRequirementsBaseline({
+      id: createRequirementsBaselineId('BASE-314-01'),
+      requirements: [rev1],
+      createdBy: createReviewerId('REV-LEAD')
+    });
+    await repo.saveRequirementsBaseline(baseline);
+
+    const sqlProjection: ProjectionRecord = {
+      id: 'PROJ-SQL-314-01',
+      baselineId: baseline.id,
+      requirementRevisionIds: baseline.requirementRevisions,
+      artifactType: 'sql-schema',
+      content: [
+        '-- @baseline BASE-314-01',
+        '-- @requirements REQ-314-01-R1',
+        '',
+        'CREATE TABLE orders (',
+        '  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),',
+        '  status VARCHAR(32) NOT NULL',
+        ');'
+      ].join('\n'),
+      metadata: {
+        baselineId: baseline.id,
+        requirementRevisionIds: [...baseline.requirementRevisions],
+        artifactType: 'sql-schema',
+        declaredProvenance: {
+          baselineId: baseline.id,
+          requirementRevisionIds: [...baseline.requirementRevisions]
+        },
+        configuredExecution: { provider: 'fake', artifactType: 'sql-schema' },
+        measuredVerification: {
+          repairsNeeded: 0,
+          attemptCount: 1,
+          contentHash: 'hash',
+          verifiedAt: createInstant('2026-09-18T10:00:00.000Z')
+        }
+      },
+      createdAt: createInstant('2026-09-18T10:00:00.000Z')
+    };
+    await repo.saveProjectionRecord(sqlProjection);
+
+    // Initial attempt prompt check
+    const validCandidate = createValidOpenApi('BASE-314-01', ['REQ-314-01-R1']);
+    fakeGateway.queueResponse(validCandidate);
+
+    await useCase.execute({
+      baselineId: baseline.id,
+      sqlSchemaProjectionId: sqlProjection.id
+    });
+
+    expect(fakeGateway.recordedRequests).toHaveLength(1);
+    const initialPrompt = fakeGateway.recordedRequests[0].prompt;
+    expect(initialPrompt).toContain('- Sub-Resource and Entity Boundary Constraints:');
+    expect(initialPrompt).toContain(
+      'Every OpenAPI sub-resource path (e.g. "/<parents>/{id}/<children>") and component schema representing a separate child entity MUST correspond to a backing table defined in the Relational Schema Context.'
+    );
+    expect(initialPrompt).toContain(
+      'Do NOT invent child sub-resource paths or component schemas representing separate data entities when no corresponding child table exists in the relational schema.'
+    );
   });
 });

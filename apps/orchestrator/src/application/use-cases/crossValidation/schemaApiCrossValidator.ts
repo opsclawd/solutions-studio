@@ -1278,12 +1278,17 @@ export function isParentTableView(
       const props = extractProperties(resolved, openApiDoc);
       for (const [propKey, propVal] of Object.entries(props)) {
         const normPropKey = normalizeName(propKey);
-        if (
-          (normPropKey === normTerminal ||
-            (rawTerminalClean && normPropKey === rawTerminalClean)) &&
-          propVal &&
-          typeof propVal === 'object'
-        ) {
+        const rawPropClean = propKey.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const isWrapperMatch =
+          normPropKey === normTerminal ||
+          (rawTerminalClean && normPropKey === rawTerminalClean) ||
+          (normTerminal &&
+            ((normTerminal.endsWith('s') && normTerminal.slice(0, -1) === normPropKey) ||
+              (normPropKey.endsWith('s') && normPropKey.slice(0, -1) === normTerminal))) ||
+          (rawTerminalClean &&
+            ((rawTerminalClean.endsWith('s') && rawTerminalClean.slice(0, -1) === rawPropClean) ||
+              (rawPropClean.endsWith('s') && rawPropClean.slice(0, -1) === rawTerminalClean)));
+        if (isWrapperMatch && propVal && typeof propVal === 'object') {
           const innerResolved =
             resolveSchemaRef(propVal, openApiDoc) ?? (propVal as Record<string, unknown>);
           if (
@@ -1407,6 +1412,32 @@ export function isParentTableView(
         if (stripped && (rootColNames.has(stripped) || rootColNames.has(normalizeName(stripped)))) {
           continue;
         }
+      }
+    }
+
+    // Decomposed constituent words of terminal (e.g. terminal 'payment-authorization' -> words 'payment', 'authorization')
+    if (terminal) {
+      const segments = terminal.split(/[^a-zA-Z0-9]+/).filter(Boolean);
+      let matchedSegment = false;
+      for (const seg of segments) {
+        const normSeg = normalizeName(seg);
+        if (normSeg.length < 3) continue;
+        const candidates = [normSeg];
+        if (normSeg.endsWith('s')) {
+          candidates.push(normSeg.slice(0, -1));
+        }
+        for (const cand of candidates) {
+          const segComp1 = normalizeName(`${cand}_${normProp}`);
+          const segComp2 = normalizeName(`${cand}${normProp}`);
+          if (rootColNames.has(segComp1) || rootColNames.has(segComp2)) {
+            matchedSegment = true;
+            break;
+          }
+        }
+        if (matchedSegment) break;
+      }
+      if (matchedSegment) {
+        continue;
       }
     }
 

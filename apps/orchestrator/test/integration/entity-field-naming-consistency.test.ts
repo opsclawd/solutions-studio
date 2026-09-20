@@ -10,7 +10,9 @@ import {
   createRequirementsBaseline,
   createReviewerId,
   createInstant,
-  createRequirementRevision
+  createRequirementRevision,
+  createSourceRevisionId,
+  createEvidenceLocator
 } from '@solutions-studio/domain';
 import { FilesystemRequirementsRepository } from '../../src/infrastructure/persistence/filesystem/FilesystemRequirementsRepository.js';
 import {
@@ -866,6 +868,199 @@ describe(
       expect(repairPrompt).toContain(
         'Component schemas representing database entities MUST match the SQL table name'
       );
+      expect(repairPrompt).toContain('- Sub-Resource and Entity Boundary Constraints:');
+    });
+
+    it('Scenario 7: When SQL schema lacks dedicated payment_authorizations table, OpenAPI prompt grounds generator to use parent entity status / lifecycle transitions and cross-validation passes closed', async () => {
+      const rev1 = createRequirementRevision({
+        id: createRequirementRevisionId('REQ-ORD-01-R1'),
+        requirementId: createRequirementId('REQ-ORD-01'),
+        revision: 1,
+        statement: 'Orders must record customer ID and lifecycle status.',
+        category: 'business-rule',
+        origin: 'EXPLICIT',
+        reviewState: 'ACCEPTED',
+        resolutionState: 'CLEAR',
+        evidence: [
+          {
+            sourceRevisionId: createSourceRevisionId('SRC-ORD-01-R1'),
+            locator: createEvidenceLocator('orders#1')
+          }
+        ]
+      });
+      const rev2 = createRequirementRevision({
+        id: createRequirementRevisionId('REQ-ORD-02-R1'),
+        requirementId: createRequirementId('REQ-ORD-02'),
+        revision: 1,
+        statement:
+          'Order payment authorization must be verified before transitioning order status to PAID.',
+        category: 'business-rule',
+        origin: 'EXPLICIT',
+        reviewState: 'ACCEPTED',
+        resolutionState: 'CLEAR',
+        evidence: [
+          {
+            sourceRevisionId: createSourceRevisionId('SRC-ORD-02-R1'),
+            locator: createEvidenceLocator('orders#2')
+          }
+        ]
+      });
+      await repo.saveRequirementRevision(rev1);
+      await repo.saveRequirementRevision(rev2);
+
+      const baseline = createRequirementsBaseline({
+        id: createRequirementsBaselineId('BASE-PAY-001'),
+        requirements: [rev1, rev2],
+        createdBy: createReviewerId('REV-LEAD'),
+        createdAt: createInstant('2026-09-19T12:00:00.000Z')
+      });
+      await repo.saveRequirementsBaseline(baseline);
+
+      const validSql = [
+        '-- @baseline BASE-PAY-001',
+        '-- @requirements REQ-ORD-01-R1, REQ-ORD-02-R1',
+        '',
+        'CREATE TABLE orders (',
+        '  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),',
+        '  customer_id UUID NOT NULL,',
+        '  status VARCHAR(32) NOT NULL,',
+        '  total_amount NUMERIC(10, 2) NOT NULL',
+        ');',
+        '',
+        'CREATE TABLE order_items (',
+        '  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),',
+        '  order_id UUID NOT NULL REFERENCES orders(id),',
+        '  quantity INTEGER NOT NULL',
+        ');'
+      ].join('\n');
+      fakeGen.queueResponse(`\`\`\`sql\n${validSql}\n\`\`\``);
+
+      const sqlResult = await sqlUseCase.execute({
+        baselineId: baseline.id
+      });
+
+      // Grounded OpenAPI candidate modeling payment authorization through PATCH /orders/{id}
+      const groundedOpenApi = [
+        '# @baseline BASE-PAY-001',
+        '# @requirements REQ-ORD-01-R1, REQ-ORD-02-R1',
+        'openapi: 3.1.0',
+        'info:',
+        '  title: Orders API',
+        '  version: 1.0.0',
+        'paths:',
+        '  /orders/{id}:',
+        '    patch:',
+        '      summary: Update order status for payment verification',
+        '      parameters:',
+        '        - name: id',
+        '          in: path',
+        '          required: true',
+        '          schema:',
+        '            type: string',
+        '            format: uuid',
+        '      requestBody:',
+        '        required: true',
+        '        content:',
+        '          application/json:',
+        '            schema:',
+        '              type: object',
+        '              properties:',
+        '                status:',
+        '                  type: string',
+        '      responses:',
+        "        '200':",
+        '          description: OK',
+        'components:',
+        '  schemas:',
+        '    Order:',
+        '      type: object',
+        '      required:',
+        '        - id',
+        '        - customer_id',
+        '        - status',
+        '        - total_amount',
+        '      properties:',
+        '        id:',
+        '          type: string',
+        '          format: uuid',
+        '        customer_id:',
+        '          type: string',
+        '          format: uuid',
+        '        status:',
+        '          type: string',
+        '        total_amount:',
+        '          type: number'
+      ].join('\n');
+      fakeGen.queueResponse(`\`\`\`yaml\n${groundedOpenApi}\n\`\`\``);
+
+      const openApiResult = await openApiUseCase.execute({
+        baselineId: baseline.id,
+        sqlSchemaProjectionId: sqlResult.projectionId
+      });
+
+      const openApiPrompt = fakeGen.recordedRequests[1].prompt;
+      expect(openApiPrompt).toContain('- Sub-Resource and Entity Boundary Constraints:');
+      expect(openApiPrompt).toContain(
+        'Do NOT invent child sub-resource paths or component schemas'
+      );
+      expect(openApiResult.candidateFindings ?? []).toHaveLength(0);
+
+      // Causal contrast: an ungrounded candidate inventing /orders/{id}/payment-authorizations with unbacked fields fails closed
+      const ungroundedOpenApi = [
+        '# @baseline BASE-PAY-001',
+        '# @requirements REQ-ORD-01-R1, REQ-ORD-02-R1',
+        'openapi: 3.1.0',
+        'info:',
+        '  title: Orders API',
+        '  version: 1.0.0',
+        'paths:',
+        '  /orders/{id}/payment-authorizations:',
+        '    post:',
+        '      summary: Create payment authorization',
+        '      parameters:',
+        '        - name: id',
+        '          in: path',
+        '          required: true',
+        '          schema:',
+        '            type: string',
+        '            format: uuid',
+        '      requestBody:',
+        '        required: true',
+        '        content:',
+        '          application/json:',
+        '            schema:',
+        '              type: object',
+        '              properties:',
+        '                authorization_code:',
+        '                  type: string',
+        '                gateway_reference:',
+        '                  type: string',
+        '      responses:',
+        "        '201':",
+        '          description: Created',
+        'components:',
+        '  schemas:',
+        '    Order:',
+        '      type: object',
+        '      properties:',
+        '        id:',
+        '          type: string',
+        '          format: uuid'
+      ].join('\n');
+      fakeGen.queueResponse(`\`\`\`yaml\n${ungroundedOpenApi}\n\`\`\``);
+
+      const ungroundedResult = await openApiUseCase.execute({
+        baselineId: baseline.id,
+        sqlSchemaProjectionId: sqlResult.projectionId
+      });
+
+      expect(
+        (ungroundedResult.candidateFindings ?? []).some(
+          (f) =>
+            f.type === 'data-boundary-ambiguity' &&
+            f.rationale?.includes('/orders/{id}/payment-authorizations')
+        )
+      ).toBe(true);
     });
   }
 );

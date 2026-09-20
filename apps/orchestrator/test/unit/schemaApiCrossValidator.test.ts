@@ -2996,5 +2996,370 @@ describe('SchemaApiCrossValidator', () => {
       };
       expect(isParentTableView(invoiceNumberPathItem, ordersTable, {}, 'invoice')).toBe(false);
     });
+
+    describe('Phase 3.14: payment-authorization(s) sub-resource boundary tests (#90)', () => {
+      it('UT-3.14.1: fail-closed guard: /orders/{id}/payment-authorization with unbacked domain fields is flagged as data-boundary-ambiguity', () => {
+        const sql = `
+          CREATE TABLE orders (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            customer_id UUID NOT NULL,
+            status VARCHAR(32) NOT NULL,
+            total_amount NUMERIC(10, 2) NOT NULL,
+            created_at TIMESTAMPTZ DEFAULT now(),
+            updated_at TIMESTAMPTZ DEFAULT now()
+          );
+        `;
+
+        const openApiDoc = {
+          openapi: '3.1.0',
+          info: { title: 'Order Payment Authorization API', version: '1.0.0' },
+          paths: {
+            '/orders/{id}/payment-authorization': {
+              post: {
+                summary: 'Create payment authorization',
+                requestBody: {
+                  required: true,
+                  content: {
+                    'application/json': {
+                      schema: {
+                        type: 'object',
+                        required: ['authorization_code', 'gateway_reference'],
+                        properties: {
+                          authorization_code: { type: 'string' },
+                          gateway_reference: { type: 'string' },
+                          amount: { type: 'number' }
+                        }
+                      }
+                    }
+                  }
+                },
+                responses: {
+                  '201': {
+                    description: 'Authorization created',
+                    content: {
+                      'application/json': {
+                        schema: {
+                          type: 'object',
+                          properties: {
+                            id: { type: 'string', format: 'uuid' },
+                            authorization_code: { type: 'string' },
+                            gateway_reference: { type: 'string' },
+                            verified_at: { type: 'string', format: 'date-time' }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            '/orders/{id}/payment-authorizations': {
+              get: {
+                summary: 'List payment authorizations',
+                responses: {
+                  '200': {
+                    description: 'List of authorizations',
+                    content: {
+                      'application/json': {
+                        schema: {
+                          type: 'array',
+                          items: {
+                            type: 'object',
+                            properties: {
+                              authorization_code: { type: 'string' },
+                              gateway_reference: { type: 'string' }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        };
+
+        const findings = validator.validate({
+          openApiDoc,
+          sqlSchemaContent: sql,
+          baseline,
+          openApiProjectionId: 'PROJ-OAS-90-1',
+          sqlSchemaProjectionId: 'PROJ-SQL-90-1'
+        });
+
+        const singularFinding = findings.find(
+          (f) =>
+            f.type === 'data-boundary-ambiguity' &&
+            f.rationale?.includes('/orders/{id}/payment-authorization')
+        );
+        expect(singularFinding).toBeDefined();
+        expect(singularFinding?.rationale).toContain(
+          "OpenAPI declares resource path '/orders/{id}/payment-authorization' (resource 'payment-authorization'), but no corresponding table exists in relational schema projection 'PROJ-SQL-90-1'."
+        );
+
+        const pluralFinding = findings.find(
+          (f) =>
+            f.type === 'data-boundary-ambiguity' &&
+            f.rationale?.includes('/orders/{id}/payment-authorizations')
+        );
+        expect(pluralFinding).toBeDefined();
+        expect(pluralFinding?.rationale).toContain(
+          "OpenAPI declares resource path '/orders/{id}/payment-authorizations' (resource 'payment-authorizations'), but no corresponding table exists in relational schema projection 'PROJ-SQL-90-1'."
+        );
+      });
+
+      it('UT-3.14.2: sub-resource view /orders/{id}/payment-authorization touching parent columns via decomposed prefix is exempted', () => {
+        const sql = `
+          CREATE TABLE orders (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            customer_id UUID NOT NULL,
+            status VARCHAR(32) NOT NULL,
+            payment_status VARCHAR(32) NOT NULL,
+            payment_authorized BOOLEAN NOT NULL DEFAULT false
+          );
+        `;
+
+        const openApiDoc = {
+          openapi: '3.1.0',
+          info: { title: 'Order Payment Authorization View API', version: '1.0.0' },
+          paths: {
+            '/orders/{id}/payment-authorization': {
+              get: {
+                summary: 'Get payment authorization status',
+                responses: {
+                  '200': {
+                    description: 'Payment authorization status view',
+                    content: {
+                      'application/json': {
+                        schema: {
+                          type: 'object',
+                          properties: {
+                            id: { type: 'string', format: 'uuid' },
+                            status: { type: 'string' },
+                            authorized: { type: 'boolean' }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              patch: {
+                summary: 'Update payment authorization status',
+                requestBody: {
+                  required: true,
+                  content: {
+                    'application/json': {
+                      schema: {
+                        type: 'object',
+                        properties: {
+                          payment_status: { type: 'string' }
+                        }
+                      }
+                    }
+                  }
+                },
+                responses: {
+                  '200': {
+                    description: 'Updated',
+                    content: {
+                      'application/json': {
+                        schema: {
+                          type: 'object',
+                          properties: {
+                            id: { type: 'string', format: 'uuid' },
+                            payment_status: { type: 'string' }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        };
+
+        const findings = validator.validate({
+          openApiDoc,
+          sqlSchemaContent: sql,
+          baseline,
+          openApiProjectionId: 'PROJ-OAS-90-2',
+          sqlSchemaProjectionId: 'PROJ-SQL-90-2'
+        });
+
+        const payAuthFinding = findings.find(
+          (f) =>
+            f.rationale?.includes('/orders/{id}/payment-authorization') ||
+            f.rationale?.includes("'payment-authorization'")
+        );
+        expect(payAuthFinding).toBeUndefined();
+      });
+
+      it('UT-3.14.3: strict action verb invariant: noun forms do NOT bypass table validation without backing tables or parent views', () => {
+        const sql = `
+          CREATE TABLE orders (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            customer_id UUID NOT NULL
+          );
+        `;
+
+        const openApiDoc = {
+          openapi: '3.1.0',
+          info: { title: 'Order Noun Sub-resource API', version: '1.0.0' },
+          paths: {
+            '/orders/{id}/authorization': {
+              post: {
+                summary: 'Authorization noun path with unbacked fields',
+                requestBody: {
+                  content: {
+                    'application/json': {
+                      schema: {
+                        type: 'object',
+                        properties: { token: { type: 'string' } }
+                      }
+                    }
+                  }
+                },
+                responses: {
+                  '200': { description: 'OK' }
+                }
+              }
+            },
+            '/orders/{id}/payment': {
+              post: {
+                summary: 'Payment noun path with unbacked fields',
+                requestBody: {
+                  content: {
+                    'application/json': {
+                      schema: {
+                        type: 'object',
+                        properties: { transaction_ref: { type: 'string' } }
+                      }
+                    }
+                  }
+                },
+                responses: {
+                  '200': { description: 'OK' }
+                }
+              }
+            }
+          }
+        };
+
+        const findings = validator.validate({
+          openApiDoc,
+          sqlSchemaContent: sql,
+          baseline,
+          openApiProjectionId: 'PROJ-OAS-90-3',
+          sqlSchemaProjectionId: 'PROJ-SQL-90-3'
+        });
+
+        expect(
+          findings.some(
+            (f) =>
+              f.type === 'data-boundary-ambiguity' &&
+              f.rationale?.includes('/orders/{id}/authorization')
+          )
+        ).toBe(true);
+
+        expect(
+          findings.some(
+            (f) =>
+              f.type === 'data-boundary-ambiguity' && f.rationale?.includes('/orders/{id}/payment')
+          )
+        ).toBe(true);
+      });
+
+      it('UT-3.14.4: plural terminal wrapper unwrapping in isParentTableView', () => {
+        const sql = `
+          CREATE TABLE orders (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            payment_status VARCHAR(32) NOT NULL
+          );
+        `;
+        const tables = parseSqlTables(sql);
+        const ordersTable = tables[0];
+
+        const singularWrapperPluralPath = {
+          get: {
+            responses: {
+              '200': {
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'object',
+                      properties: {
+                        payment_authorization: {
+                          type: 'object',
+                          properties: { status: { type: 'string' } }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        };
+        expect(
+          isParentTableView(singularWrapperPluralPath, ordersTable, {}, 'payment-authorizations')
+        ).toBe(true);
+      });
+
+      it('UT-3.14.5: fail-closed guard: generic parent suffix column (orders.code) does NOT exempt unbacked child property (payment-authorization.authorization_code)', () => {
+        const sql = `
+          CREATE TABLE orders (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            customer_id UUID NOT NULL,
+            code VARCHAR(64) NOT NULL
+          );
+        `;
+
+        const openApiDoc = {
+          openapi: '3.1.0',
+          info: { title: 'Order Payment Authorization API', version: '1.0.0' },
+          paths: {
+            '/orders/{id}/payment-authorization': {
+              post: {
+                summary: 'Payment authorization with unbacked authorization_code',
+                requestBody: {
+                  content: {
+                    'application/json': {
+                      schema: {
+                        type: 'object',
+                        properties: { authorization_code: { type: 'string' } }
+                      }
+                    }
+                  }
+                },
+                responses: {
+                  '200': { description: 'OK' }
+                }
+              }
+            }
+          }
+        };
+
+        const findings = validator.validate({
+          openApiDoc,
+          sqlSchemaContent: sql,
+          baseline,
+          openApiProjectionId: 'PROJ-OAS-90-5',
+          sqlSchemaProjectionId: 'PROJ-SQL-90-5'
+        });
+
+        const finding = findings.find(
+          (f) =>
+            f.type === 'data-boundary-ambiguity' &&
+            f.rationale?.includes('/orders/{id}/payment-authorization')
+        );
+        expect(finding).toBeDefined();
+        expect(finding?.rationale).toContain(
+          "OpenAPI declares resource path '/orders/{id}/payment-authorization'"
+        );
+      });
+    });
   });
 });
