@@ -33,6 +33,8 @@ describe('HTTP Boundary: Composition Root & Server CLI', () => {
     expect(composed.generateArtifactUseCase).toBeDefined();
     expect(composed.projectBaselineUseCase).toBeDefined();
     expect(composed.reviewStateUseCase).toBeDefined();
+    expect(composed.evaluateStoryReadinessUseCase).toBeDefined();
+    expect(composed.computeRequirementCoverageUseCase).toBeDefined();
   });
 
   it('starts and serves over real socket via listen(0)', async () => {

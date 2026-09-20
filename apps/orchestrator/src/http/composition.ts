@@ -5,14 +5,32 @@ import type { IRequirementsRepository } from '../application/ports/persistence/I
 import type { IGenerationGateway } from '../application/ports/generation/IGenerationGateway.js';
 import type { IMermaidLinterGateway } from '../application/ports/validation/IMermaidLinterGateway.js';
 import type { IPrototypeValidatorGateway } from '../application/ports/validation/IPrototypeValidatorGateway.js';
+import type { ISqlValidatorGateway } from '../application/ports/validation/ISqlValidatorGateway.js';
+import type { IOpenApiValidatorGateway } from '../application/ports/validation/IOpenApiValidatorGateway.js';
+import type { IGherkinValidatorGateway } from '../application/ports/validation/IGherkinValidatorGateway.js';
 import { CompileRequirementsUseCase } from '../application/use-cases/CompileRequirementsUseCase.js';
 import { ReconcileRequirementsUseCase } from '../application/use-cases/ReconcileRequirementsUseCase.js';
 import { CreateRequirementsBaselineUseCase } from '../application/use-cases/CreateRequirementsBaselineUseCase.js';
 import { GenerateArtifactUseCase } from '../application/use-cases/GenerateArtifactUseCase.js';
 import { GeneratePrototypeProjectionUseCase } from '../application/use-cases/GeneratePrototypeProjectionUseCase.js';
+import { GenerateSqlSchemaProjectionUseCase } from '../application/use-cases/GenerateSqlSchemaProjectionUseCase.js';
+import { GenerateOpenApiProjectionUseCase } from '../application/use-cases/GenerateOpenApiProjectionUseCase.js';
+import { GenerateStoriesProjectionUseCase } from '../application/use-cases/GenerateStoriesProjectionUseCase.js';
+import { GetStoriesUseCase } from '../application/use-cases/GetStoriesUseCase.js';
+import { EvaluateStoryReadinessUseCase } from '../application/use-cases/EvaluateStoryReadinessUseCase.js';
+import { ComputeRequirementCoverageUseCase } from '../application/use-cases/ComputeRequirementCoverageUseCase.js';
 import { ProjectBaselineUseCase } from '../application/use-cases/ProjectBaselineUseCase.js';
 import { GetRequirementsReviewStateUseCase } from '../application/use-cases/GetRequirementsReviewStateUseCase.js';
 import { RecordRequirementsDiscoveryUseCase } from '../application/use-cases/RecordRequirementsDiscoveryUseCase.js';
+import { RecordPolicyConstraintRevisionUseCase } from '../application/use-cases/RecordPolicyConstraintRevisionUseCase.js';
+import { GetPolicyConstraintRevisionUseCase } from '../application/use-cases/GetPolicyConstraintRevisionUseCase.js';
+import { GetAuthorityBundleUseCase } from '../application/use-cases/GetAuthorityBundleUseCase.js';
+import { RecordEngineeringDecisionUseCase } from '../application/use-cases/RecordEngineeringDecisionUseCase.js';
+import { TransitionEngineeringDecisionUseCase } from '../application/use-cases/TransitionEngineeringDecisionUseCase.js';
+import { GetEngineeringDecisionsUseCase } from '../application/use-cases/GetEngineeringDecisionsUseCase.js';
+import { BuildStoryDependencyGraphUseCase } from '../application/use-cases/BuildStoryDependencyGraphUseCase.js';
+import { UpdateStoryDependenciesUseCase } from '../application/use-cases/UpdateStoryDependenciesUseCase.js';
+import { GetEngineeringHandoffBundleUseCase } from '../application/use-cases/GetEngineeringHandoffBundleUseCase.js';
 import { FilesystemRequirementsRepository } from '../infrastructure/persistence/filesystem/FilesystemRequirementsRepository.js';
 import {
   GatewayFactory,
@@ -22,6 +40,9 @@ import {
 import { DeterministicFallbackGateway } from '../infrastructure/generation/DeterministicFallbackGateway.js';
 import { MermaidCliLinterAdapter } from '../infrastructure/validation/MermaidCliLinterAdapter.js';
 import { BabelTsxValidatorAdapter } from '../infrastructure/validation/BabelTsxValidatorAdapter.js';
+import { PGliteSqlValidatorAdapter } from '../infrastructure/validation/PGliteSqlValidatorAdapter.js';
+import { OpenApiStructuralValidatorAdapter } from '../infrastructure/validation/OpenApiStructuralValidatorAdapter.js';
+import { GherkinValidatorAdapter } from '../infrastructure/validation/GherkinValidatorAdapter.js';
 import { buildServer } from './server.js';
 
 export interface ComposeHttpServerOptions {
@@ -35,6 +56,9 @@ export interface ComposeHttpServerOptions {
   readonly generationGateway?: IGenerationGateway;
   readonly linterGateway?: IMermaidLinterGateway;
   readonly prototypeValidatorGateway?: IPrototypeValidatorGateway;
+  readonly sqlValidatorGateway?: ISqlValidatorGateway;
+  readonly openApiValidatorGateway?: IOpenApiValidatorGateway;
+  readonly gherkinValidatorGateway?: IGherkinValidatorGateway;
   readonly fastifyOptions?: FastifyServerOptions;
   // Use cases overrides (e.g. for testing)
   readonly compileUseCase?: CompileRequirementsUseCase;
@@ -42,9 +66,24 @@ export interface ComposeHttpServerOptions {
   readonly baselineUseCase?: CreateRequirementsBaselineUseCase;
   readonly generateArtifactUseCase?: GenerateArtifactUseCase;
   readonly generatePrototypeProjectionUseCase?: GeneratePrototypeProjectionUseCase;
+  readonly generateSqlSchemaProjectionUseCase?: GenerateSqlSchemaProjectionUseCase;
+  readonly generateOpenApiProjectionUseCase?: GenerateOpenApiProjectionUseCase;
+  readonly generateStoriesProjectionUseCase?: GenerateStoriesProjectionUseCase;
+  readonly getStoriesUseCase?: GetStoriesUseCase;
+  readonly evaluateStoryReadinessUseCase?: EvaluateStoryReadinessUseCase;
+  readonly computeRequirementCoverageUseCase?: ComputeRequirementCoverageUseCase;
   readonly projectBaselineUseCase?: ProjectBaselineUseCase;
   readonly reviewStateUseCase?: GetRequirementsReviewStateUseCase;
   readonly recordDiscoveryUseCase?: RecordRequirementsDiscoveryUseCase;
+  readonly recordPolicyConstraintRevisionUseCase?: RecordPolicyConstraintRevisionUseCase;
+  readonly getPolicyConstraintRevisionUseCase?: GetPolicyConstraintRevisionUseCase;
+  readonly getAuthorityBundleUseCase?: GetAuthorityBundleUseCase;
+  readonly recordEngineeringDecisionUseCase?: RecordEngineeringDecisionUseCase;
+  readonly transitionEngineeringDecisionUseCase?: TransitionEngineeringDecisionUseCase;
+  readonly getEngineeringDecisionsUseCase?: GetEngineeringDecisionsUseCase;
+  readonly buildStoryDependencyGraphUseCase?: BuildStoryDependencyGraphUseCase;
+  readonly updateStoryDependenciesUseCase?: UpdateStoryDependenciesUseCase;
+  readonly getEngineeringHandoffBundleUseCase?: GetEngineeringHandoffBundleUseCase;
 }
 
 export interface ComposedHttpServer {
@@ -55,14 +94,32 @@ export interface ComposedHttpServer {
   readonly generationGateway: IGenerationGateway;
   readonly linterGateway: IMermaidLinterGateway;
   readonly prototypeValidatorGateway: IPrototypeValidatorGateway;
+  readonly sqlValidatorGateway: ISqlValidatorGateway;
+  readonly openApiValidatorGateway: IOpenApiValidatorGateway;
+  readonly gherkinValidatorGateway: IGherkinValidatorGateway;
   readonly compileUseCase: CompileRequirementsUseCase;
   readonly reconcileUseCase: ReconcileRequirementsUseCase;
   readonly baselineUseCase: CreateRequirementsBaselineUseCase;
   readonly generateArtifactUseCase: GenerateArtifactUseCase;
   readonly generatePrototypeProjectionUseCase: GeneratePrototypeProjectionUseCase;
+  readonly generateSqlSchemaProjectionUseCase: GenerateSqlSchemaProjectionUseCase;
+  readonly generateOpenApiProjectionUseCase: GenerateOpenApiProjectionUseCase;
+  readonly generateStoriesProjectionUseCase: GenerateStoriesProjectionUseCase;
+  readonly getStoriesUseCase: GetStoriesUseCase;
+  readonly evaluateStoryReadinessUseCase: EvaluateStoryReadinessUseCase;
+  readonly computeRequirementCoverageUseCase: ComputeRequirementCoverageUseCase;
+  readonly buildStoryDependencyGraphUseCase: BuildStoryDependencyGraphUseCase;
+  readonly updateStoryDependenciesUseCase: UpdateStoryDependenciesUseCase;
+  readonly getEngineeringHandoffBundleUseCase: GetEngineeringHandoffBundleUseCase;
   readonly projectBaselineUseCase: ProjectBaselineUseCase;
   readonly reviewStateUseCase: GetRequirementsReviewStateUseCase;
   readonly recordDiscoveryUseCase: RecordRequirementsDiscoveryUseCase;
+  readonly recordPolicyConstraintRevisionUseCase: RecordPolicyConstraintRevisionUseCase;
+  readonly getPolicyConstraintRevisionUseCase: GetPolicyConstraintRevisionUseCase;
+  readonly getAuthorityBundleUseCase: GetAuthorityBundleUseCase;
+  readonly recordEngineeringDecisionUseCase: RecordEngineeringDecisionUseCase;
+  readonly transitionEngineeringDecisionUseCase: TransitionEngineeringDecisionUseCase;
+  readonly getEngineeringDecisionsUseCase: GetEngineeringDecisionsUseCase;
 }
 
 export function composeOrchestratorHttpServer(
@@ -108,6 +165,13 @@ export function composeOrchestratorHttpServer(
   const prototypeValidatorGateway =
     options.prototypeValidatorGateway ?? new BabelTsxValidatorAdapter();
 
+  const sqlValidatorGateway = options.sqlValidatorGateway ?? new PGliteSqlValidatorAdapter();
+
+  const openApiValidatorGateway =
+    options.openApiValidatorGateway ?? new OpenApiStructuralValidatorAdapter();
+
+  const gherkinValidatorGateway = options.gherkinValidatorGateway ?? new GherkinValidatorAdapter();
+
   const compileUseCase =
     options.compileUseCase ?? new CompileRequirementsUseCase(generationGateway, repository);
 
@@ -129,13 +193,45 @@ export function composeOrchestratorHttpServer(
       provider
     );
 
+  const generateSqlSchemaProjectionUseCase =
+    options.generateSqlSchemaProjectionUseCase ??
+    new GenerateSqlSchemaProjectionUseCase(
+      generationGateway,
+      sqlValidatorGateway,
+      repository,
+      provider
+    );
+
+  const generateOpenApiProjectionUseCase =
+    options.generateOpenApiProjectionUseCase ??
+    new GenerateOpenApiProjectionUseCase(
+      generationGateway,
+      openApiValidatorGateway,
+      repository,
+      provider
+    );
+
+  const generateStoriesProjectionUseCase =
+    options.generateStoriesProjectionUseCase ??
+    new GenerateStoriesProjectionUseCase(
+      generationGateway,
+      gherkinValidatorGateway,
+      repository,
+      provider
+    );
+
+  const getStoriesUseCase = options.getStoriesUseCase ?? new GetStoriesUseCase(repository);
+
   const projectBaselineUseCase =
     options.projectBaselineUseCase ??
     new ProjectBaselineUseCase(
       generateArtifactUseCase,
       repository,
       provider,
-      generatePrototypeProjectionUseCase
+      generatePrototypeProjectionUseCase,
+      generateSqlSchemaProjectionUseCase,
+      generateOpenApiProjectionUseCase,
+      generateStoriesProjectionUseCase
     );
 
   const reviewStateUseCase =
@@ -144,13 +240,71 @@ export function composeOrchestratorHttpServer(
   const recordDiscoveryUseCase =
     options.recordDiscoveryUseCase ?? new RecordRequirementsDiscoveryUseCase(repository);
 
+  const recordPolicyConstraintRevisionUseCase =
+    options.recordPolicyConstraintRevisionUseCase ??
+    new RecordPolicyConstraintRevisionUseCase(repository);
+
+  const getPolicyConstraintRevisionUseCase =
+    options.getPolicyConstraintRevisionUseCase ??
+    new GetPolicyConstraintRevisionUseCase(repository);
+
+  const getAuthorityBundleUseCase =
+    options.getAuthorityBundleUseCase ?? new GetAuthorityBundleUseCase(repository);
+
+  const recordEngineeringDecisionUseCase =
+    options.recordEngineeringDecisionUseCase ?? new RecordEngineeringDecisionUseCase(repository);
+
+  const transitionEngineeringDecisionUseCase =
+    options.transitionEngineeringDecisionUseCase ??
+    new TransitionEngineeringDecisionUseCase(repository);
+
+  const getEngineeringDecisionsUseCase =
+    options.getEngineeringDecisionsUseCase ?? new GetEngineeringDecisionsUseCase(repository);
+
+  const evaluateStoryReadinessUseCase =
+    options.evaluateStoryReadinessUseCase ??
+    new EvaluateStoryReadinessUseCase(repository, sqlValidatorGateway, openApiValidatorGateway);
+
+  const computeRequirementCoverageUseCase =
+    options.computeRequirementCoverageUseCase ?? new ComputeRequirementCoverageUseCase(repository);
+
+  const buildStoryDependencyGraphUseCase =
+    options.buildStoryDependencyGraphUseCase ??
+    new BuildStoryDependencyGraphUseCase(repository, evaluateStoryReadinessUseCase);
+
+  const updateStoryDependenciesUseCase =
+    options.updateStoryDependenciesUseCase ?? new UpdateStoryDependenciesUseCase(repository);
+
+  const getEngineeringHandoffBundleUseCase =
+    options.getEngineeringHandoffBundleUseCase ??
+    new GetEngineeringHandoffBundleUseCase(
+      repository,
+      getAuthorityBundleUseCase,
+      evaluateStoryReadinessUseCase,
+      computeRequirementCoverageUseCase,
+      buildStoryDependencyGraphUseCase
+    );
+
   const app = buildServer(
     {
       reviewStateUseCase,
       reconcileUseCase,
       baselineUseCase,
       projectBaselineUseCase,
-      recordDiscoveryUseCase
+      recordDiscoveryUseCase,
+      recordPolicyConstraintRevisionUseCase,
+      getPolicyConstraintRevisionUseCase,
+      getAuthorityBundleUseCase,
+      recordEngineeringDecisionUseCase,
+      transitionEngineeringDecisionUseCase,
+      getEngineeringDecisionsUseCase,
+      generateStoriesProjectionUseCase,
+      getStoriesUseCase,
+      evaluateStoryReadinessUseCase,
+      computeRequirementCoverageUseCase,
+      buildStoryDependencyGraphUseCase,
+      updateStoryDependenciesUseCase,
+      getEngineeringHandoffBundleUseCase
     },
     options.fastifyOptions
   );
@@ -163,13 +317,31 @@ export function composeOrchestratorHttpServer(
     generationGateway,
     linterGateway,
     prototypeValidatorGateway,
+    sqlValidatorGateway,
+    openApiValidatorGateway,
+    gherkinValidatorGateway,
     compileUseCase,
     reconcileUseCase,
     baselineUseCase,
     generateArtifactUseCase,
     generatePrototypeProjectionUseCase,
+    generateSqlSchemaProjectionUseCase,
+    generateOpenApiProjectionUseCase,
+    generateStoriesProjectionUseCase,
+    getStoriesUseCase,
+    evaluateStoryReadinessUseCase,
+    computeRequirementCoverageUseCase,
+    buildStoryDependencyGraphUseCase,
+    updateStoryDependenciesUseCase,
+    getEngineeringHandoffBundleUseCase,
     projectBaselineUseCase,
     reviewStateUseCase,
-    recordDiscoveryUseCase
+    recordDiscoveryUseCase,
+    recordPolicyConstraintRevisionUseCase,
+    getPolicyConstraintRevisionUseCase,
+    getAuthorityBundleUseCase,
+    recordEngineeringDecisionUseCase,
+    transitionEngineeringDecisionUseCase,
+    getEngineeringDecisionsUseCase
   };
 }

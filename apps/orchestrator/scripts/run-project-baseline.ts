@@ -13,13 +13,18 @@ import type {
 import { MermaidCliLinterAdapter } from '../src/infrastructure/validation/MermaidCliLinterAdapter.js';
 import { GenerateArtifactUseCase } from '../src/application/use-cases/GenerateArtifactUseCase.js';
 import { GeneratePrototypeProjectionUseCase } from '../src/application/use-cases/GeneratePrototypeProjectionUseCase.js';
+import { GenerateSqlSchemaProjectionUseCase } from '../src/application/use-cases/GenerateSqlSchemaProjectionUseCase.js';
+import { GenerateOpenApiProjectionUseCase } from '../src/application/use-cases/GenerateOpenApiProjectionUseCase.js';
 import { BabelTsxValidatorAdapter } from '../src/infrastructure/validation/BabelTsxValidatorAdapter.js';
+import { PGliteSqlValidatorAdapter } from '../src/infrastructure/validation/PGliteSqlValidatorAdapter.js';
+import { OpenApiStructuralValidatorAdapter } from '../src/infrastructure/validation/OpenApiStructuralValidatorAdapter.js';
 import {
   ProjectBaselineUseCase,
   type BaselineProjectionResult
 } from '../src/application/use-cases/ProjectBaselineUseCase.js';
 
-export type ArtifactType = 'process-diagram' | 'state-diagram' | 'prototype';
+export type ArtifactType =
+  'process-diagram' | 'state-diagram' | 'prototype' | 'sql-schema' | 'openapi';
 export type CliProviderType = 'agy' | 'opencode';
 export const VALID_CLI_PROVIDERS: readonly CliProviderType[] = ['agy', 'opencode'];
 
@@ -120,7 +125,13 @@ export function parseArgs(args: string[]): CliArgs {
     throw new Error("Option '--artifact-type' is required");
   }
 
-  const validArtifactTypes: ArtifactType[] = ['process-diagram', 'state-diagram', 'prototype'];
+  const validArtifactTypes: ArtifactType[] = [
+    'process-diagram',
+    'state-diagram',
+    'prototype',
+    'sql-schema',
+    'openapi'
+  ];
   if (!validArtifactTypes.includes(artifactType)) {
     throw new Error(
       `Invalid artifact type '${artifactType}'. Allowed values: ${validArtifactTypes.join(', ')}`
@@ -230,11 +241,29 @@ export function composeProjectBaselineComponents(
     provider
   );
 
+  const sqlValidator = new PGliteSqlValidatorAdapter();
+  const generateSqlSchemaProjectionUseCase = new GenerateSqlSchemaProjectionUseCase(
+    generationGateway,
+    sqlValidator,
+    repository,
+    provider
+  );
+
+  const openApiValidator = new OpenApiStructuralValidatorAdapter();
+  const generateOpenApiProjectionUseCase = new GenerateOpenApiProjectionUseCase(
+    generationGateway,
+    openApiValidator,
+    repository,
+    provider
+  );
+
   const projectBaselineUseCase = new ProjectBaselineUseCase(
     generateArtifactUseCase,
     repository,
     provider,
-    generatePrototypeProjectionUseCase
+    generatePrototypeProjectionUseCase,
+    generateSqlSchemaProjectionUseCase,
+    generateOpenApiProjectionUseCase
   );
 
   return {

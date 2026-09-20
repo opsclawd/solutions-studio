@@ -17,16 +17,26 @@ import {
   createEvidenceLocator,
   createRequirementRevision,
   createCandidateFinding,
-  createRequirementsBaseline
+  createRequirementsBaseline,
+  createPolicyConstraintId,
+  createPolicyConstraintRevisionId,
+  createEngineeringDecisionId,
+  createPolicyConstraintRevision,
+  createEngineeringDecision,
+  transitionEngineeringDecision,
+  createStoryId
 } from '@solutions-studio/domain';
 import { FilesystemRequirementsRepository } from '../../src/infrastructure/persistence/filesystem/FilesystemRequirementsRepository.js';
 import {
   ImmutableRecordConflictError,
-  type EvaluationRunRecord
+  type EvaluationRunRecord,
+  type StoryRecord
 } from '../../src/application/ports/persistence/IRequirementsRepository.js';
 import {
   StaleRevisionTargetError,
-  UnknownRequirementRevisionError
+  UnknownRequirementRevisionError,
+  UnknownEngineeringDecisionError,
+  InvalidEngineeringDecisionStateError
 } from '../../src/application/use-cases/ReconciliationErrors.js';
 import { computeContentHash } from '../../src/infrastructure/persistence/markdown/deriveLocatorIndex.js';
 import { writeJsonExclusive } from '../../src/infrastructure/persistence/filesystem/atomicFile.js';
@@ -1791,6 +1801,7 @@ describe('FilesystemRequirementsRepository', () => {
       const baseline = {
         id: baselineId,
         requirementRevisions: [nonExistentRevId],
+        policyConstraintRevisions: [],
         createdBy: createReviewerId('REV-1'),
         createdAt: createInstant('2026-09-16T12:00:00.000Z')
       };
@@ -1944,6 +1955,497 @@ describe('FilesystemRequirementsRepository', () => {
         createRequirementsBaselineId('BASE-OTHER')
       );
       expect(listByOther).toHaveLength(0);
+    });
+  });
+
+  describe('Policy Constraint Persistence', () => {
+    it('saves and retrieves policy constraint revisions and updates index', async () => {
+      const pcId = createPolicyConstraintId('PC-SEC-001');
+      const rev1 = createPolicyConstraintRevision({
+        policyConstraintId: pcId,
+        revision: 1,
+        statement: 'TLS 1.3 required on all endpoints',
+        authorityReference: 'NIST-800-53',
+        state: 'ACCEPTED',
+        createdBy: 'sec-lead'
+      });
+
+      await repo.savePolicyConstraintRevision(rev1);
+
+      const retrieved = await repo.getPolicyConstraintRevision(rev1.id);
+      expect(retrieved).toBeDefined();
+      expect(retrieved?.id).toBe('PC-SEC-001@r1');
+      expect(retrieved?.statement).toBe('TLS 1.3 required on all endpoints');
+      expect(retrieved?.state).toBe('ACCEPTED');
+
+      const rev2 = createPolicyConstraintRevision({
+        policyConstraintId: pcId,
+        revision: 2,
+        statement: 'TLS 1.3 required on all internal and external endpoints',
+        authorityReference: 'NIST-800-53-REV5',
+        state: 'ACCEPTED',
+        createdBy: 'sec-lead',
+        supersedes: rev1.id
+      });
+      await repo.savePolicyConstraintRevision(rev2);
+
+      const revisions = await repo.listPolicyConstraintRevisions(pcId);
+      expect(revisions).toHaveLength(2);
+      expect(revisions[0].id).toBe('PC-SEC-001@r1');
+      expect(revisions[1].id).toBe('PC-SEC-001@r2');
+
+      const allIds = await repo.listPolicyConstraintIds();
+      expect(allIds).toContain('PC-SEC-001');
+    });
+
+    it('rejects duplicate write to immutable policy constraint revision path with ImmutableRecordConflictError', async () => {
+      const pcId = createPolicyConstraintId('PC-SEC-IMMUTABLE');
+      const rev = createPolicyConstraintRevision({
+        policyConstraintId: pcId,
+        revision: 1,
+        statement: 'Immutable policy',
+        authorityReference: 'REF-1',
+        state: 'ACCEPTED',
+        createdBy: 'sec-lead'
+      });
+
+      await repo.savePolicyConstraintRevision(rev);
+
+      await expect(repo.savePolicyConstraintRevision(rev)).rejects.toThrow(
+        ImmutableRecordConflictError
+      );
+    });
+
+    it('rolls back revision file on index write failure and allows successful retry', async () => {
+      const pcId = createPolicyConstraintId('PC-FAULT-INJECT');
+      const rev = createPolicyConstraintRevision({
+        policyConstraintId: pcId,
+        revision: 1,
+        statement: 'Fault injection test policy',
+        authorityReference: 'TEST-REF',
+        state: 'ACCEPTED',
+        createdBy: 'sec-lead'
+      });
+
+      // Cause index write to fail by blocking its path with a directory
+      const indexPath = path.resolve(tempDir, 'policy-constraint-index', `${pcId}.json`);
+      await fs.mkdir(path.dirname(indexPath), { recursive: true });
+      await fs.mkdir(indexPath);
+
+      // Attempt save - should fail on atomic index write
+      await expect(repo.savePolicyConstraintRevision(rev)).rejects.toThrow();
+
+      // Verify revision file was removed during rollback
+      const revFilePath = path.resolve(tempDir, 'policy-constraint-revisions', `${rev.id}.json`);
+      await expect(fs.access(revFilePath)).rejects.toThrow();
+
+      // Heal the fault
+      await fs.rm(indexPath, { recursive: true, force: true });
+
+      // Retry save - must succeed without collision
+      await repo.savePolicyConstraintRevision(rev);
+      const loaded = await repo.getPolicyConstraintRevision(rev.id);
+      expect(loaded).toBeDefined();
+      expect(loaded?.id).toBe(rev.id);
+    });
+  });
+
+  describe('Engineering Decision Persistence', () => {
+    it('saves, updates, and lists engineering decisions with filtering', async () => {
+      const baseId1 = createRequirementsBaselineId('BASE-001');
+      const baseId2 = createRequirementsBaselineId('BASE-002');
+      const decId = createEngineeringDecisionId('ED-001');
+
+      const decision = createEngineeringDecision({
+        id: decId,
+        baselineId: baseId1,
+        statement: 'Use optimistic concurrency control',
+        rationale: 'Performance and deadlock avoidance',
+        createdBy: 'arch-lead'
+      });
+
+      await repo.saveEngineeringDecision(decision);
+
+      const retrieved = await repo.getEngineeringDecision(decId);
+      expect(retrieved).toBeDefined();
+      expect(retrieved?.id).toBe('ED-001');
+      expect(retrieved?.state).toBe('PROPOSED');
+
+      // Transition to ACCEPTED and update
+      const accepted = transitionEngineeringDecision(decision, {
+        newState: 'ACCEPTED',
+        rationale: 'Approved in architecture review',
+        actorId: 'REV-LEAD'
+      });
+      await repo.updateEngineeringDecision(accepted);
+
+      const updated = await repo.getEngineeringDecision(decId);
+      expect(updated?.state).toBe('ACCEPTED');
+      expect(updated?.acceptedBy).toBe('REV-LEAD');
+
+      // Create a second decision for baseId2
+      const dec2 = createEngineeringDecision({
+        id: createEngineeringDecisionId('ED-002'),
+        baselineId: baseId2,
+        statement: 'Use Redis for caching',
+        rationale: 'Fast response times',
+        createdBy: 'dev-lead'
+      });
+      await repo.saveEngineeringDecision(dec2);
+
+      // List all
+      const all = await repo.listEngineeringDecisions();
+      expect(all).toHaveLength(2);
+
+      // Filter by baselineId
+      const base1Decisions = await repo.listEngineeringDecisions({ baselineId: baseId1 });
+      expect(base1Decisions).toHaveLength(1);
+      expect(base1Decisions[0].id).toBe('ED-001');
+
+      // Filter by state
+      const acceptedDecisions = await repo.listEngineeringDecisions({ state: 'ACCEPTED' });
+      expect(acceptedDecisions).toHaveLength(1);
+      expect(acceptedDecisions[0].id).toBe('ED-001');
+
+      const proposedDecisions = await repo.listEngineeringDecisions({ state: 'PROPOSED' });
+      expect(proposedDecisions).toHaveLength(1);
+      expect(proposedDecisions[0].id).toBe('ED-002');
+    });
+
+    it('rejects update for non-existent engineering decision with UnknownEngineeringDecisionError', async () => {
+      const decision = createEngineeringDecision({
+        id: createEngineeringDecisionId('ED-NONEXISTENT'),
+        baselineId: createRequirementsBaselineId('BASE-001'),
+        statement: 'Non-existent',
+        rationale: 'None',
+        createdBy: 'dev'
+      });
+
+      await expect(repo.updateEngineeringDecision(decision)).rejects.toThrow(
+        UnknownEngineeringDecisionError
+      );
+    });
+
+    it('rejects stale concurrent state transition for engineering decision', async () => {
+      const decId = createEngineeringDecisionId('ED-CONCURRENT');
+      const decision = createEngineeringDecision({
+        id: decId,
+        baselineId: createRequirementsBaselineId('BASE-001'),
+        statement: 'Test concurrent transitions',
+        rationale: 'Concurrency test',
+        createdBy: 'dev'
+      });
+      await repo.saveEngineeringDecision(decision);
+
+      const accepted = transitionEngineeringDecision(decision, {
+        newState: 'ACCEPTED',
+        rationale: 'Accepted by reviewer 1',
+        actorId: 'REV-01'
+      });
+      const rejected = transitionEngineeringDecision(decision, {
+        newState: 'REJECTED',
+        rationale: 'Rejected by reviewer 2',
+        actorId: 'REV-02'
+      });
+
+      // Concurrent execution where both expect prior state to be PROPOSED
+      const [res1, res2] = await Promise.allSettled([
+        repo.updateEngineeringDecision(accepted, 'PROPOSED'),
+        repo.updateEngineeringDecision(rejected, 'PROPOSED')
+      ]);
+
+      const fulfilled = [res1, res2].filter((r) => r.status === 'fulfilled');
+      const rejectedSettled = [res1, res2].filter((r) => r.status === 'rejected');
+
+      expect(fulfilled).toHaveLength(1);
+      expect(rejectedSettled).toHaveLength(1);
+      expect((rejectedSettled[0] as PromiseRejectedResult).reason).toBeInstanceOf(
+        InvalidEngineeringDecisionStateError
+      );
+    });
+  });
+
+  describe('Baseline Persistence with Policy Constraints', () => {
+    it('saves baseline with policy constraints under atomic lock and validates latest revisions', async () => {
+      // 1. Create requirement revision
+      const reqId = createRequirementId('REQ-PC-TEST');
+      const reqRev = createRequirementRevision({
+        id: createRequirementRevisionId('REQ-PC-TEST-R1'),
+        requirementId: reqId,
+        revision: 1,
+        statement: 'Test requirement',
+        category: 'business-rule',
+        origin: 'ASSUMED',
+        reviewState: 'ACCEPTED',
+        resolutionState: 'CLEAR'
+      });
+      await repo.saveRequirementRevision(reqRev);
+
+      // 2. Create policy constraint revision
+      const pcId = createPolicyConstraintId('PC-BASELINE-TEST');
+      const pcRev1 = createPolicyConstraintRevision({
+        id: createPolicyConstraintRevisionId('PC-BASELINE-TEST@r1'),
+        policyConstraintId: pcId,
+        revision: 1,
+        statement: 'Test policy',
+        authorityReference: 'TEST-REF',
+        state: 'ACCEPTED',
+        createdBy: 'lead'
+      });
+      await repo.savePolicyConstraintRevision(pcRev1);
+
+      // 3. Create and save baseline
+      const baseId = createRequirementsBaselineId('BASE-WITH-PC');
+      const baseline = createRequirementsBaseline({
+        id: baseId,
+        requirements: [reqRev],
+        policyConstraints: [pcRev1],
+        createdBy: createReviewerId('REV-01')
+      });
+
+      await repo.saveRequirementsBaselineConditional(baseline, [reqRev.id], [pcRev1.id]);
+
+      const loaded = await repo.getRequirementsBaseline(baseId);
+      expect(loaded).toBeDefined();
+      expect(loaded?.requirementRevisions).toEqual([reqRev.id]);
+      expect(loaded?.policyConstraintRevisions).toEqual([pcRev1.id]);
+    });
+
+    it('rejects conditional save when expected policy constraint revision is stale', async () => {
+      const reqId = createRequirementId('REQ-STALE-TEST');
+      const reqRev = createRequirementRevision({
+        id: createRequirementRevisionId('REQ-STALE-TEST-R1'),
+        requirementId: reqId,
+        revision: 1,
+        statement: 'Test requirement',
+        category: 'business-rule',
+        origin: 'ASSUMED',
+        reviewState: 'ACCEPTED',
+        resolutionState: 'CLEAR'
+      });
+      await repo.saveRequirementRevision(reqRev);
+
+      const pcId = createPolicyConstraintId('PC-STALE-TEST');
+      const pcRev1 = createPolicyConstraintRevision({
+        id: createPolicyConstraintRevisionId('PC-STALE-TEST@r1'),
+        policyConstraintId: pcId,
+        revision: 1,
+        statement: 'Old policy',
+        authorityReference: 'TEST-REF',
+        state: 'ACCEPTED',
+        createdBy: 'lead'
+      });
+      await repo.savePolicyConstraintRevision(pcRev1);
+
+      // Create newer revision pcRev2
+      const pcRev2 = createPolicyConstraintRevision({
+        id: createPolicyConstraintRevisionId('PC-STALE-TEST@r2'),
+        policyConstraintId: pcId,
+        revision: 2,
+        statement: 'New policy',
+        authorityReference: 'TEST-REF-2',
+        state: 'ACCEPTED',
+        createdBy: 'lead',
+        supersedes: pcRev1.id
+      });
+      await repo.savePolicyConstraintRevision(pcRev2);
+
+      // Try saving baseline expecting pcRev1 (which is now stale!)
+      const baseId = createRequirementsBaselineId('BASE-STALE-PC');
+      const baseline = createRequirementsBaseline({
+        id: baseId,
+        requirements: [reqRev],
+        policyConstraints: [pcRev1],
+        createdBy: createReviewerId('REV-01')
+      });
+
+      await expect(
+        repo.saveRequirementsBaselineConditional(baseline, [reqRev.id], [pcRev1.id])
+      ).rejects.toThrow(StaleRevisionTargetError);
+    });
+
+    it('serializes policy constraint revision writer and conditional baseline freeze', async () => {
+      const reqId = createRequirementId('REQ-RACE-POL');
+      const reqRev = createRequirementRevision({
+        id: createRequirementRevisionId('REQ-RACE-POL-R1'),
+        requirementId: reqId,
+        revision: 1,
+        statement: 'Test requirement',
+        category: 'business-rule',
+        origin: 'ASSUMED',
+        reviewState: 'ACCEPTED',
+        resolutionState: 'CLEAR'
+      });
+      await repo.saveRequirementRevision(reqRev);
+
+      const pcId = createPolicyConstraintId('PC-RACE-TEST');
+      const pcRev1 = createPolicyConstraintRevision({
+        id: createPolicyConstraintRevisionId('PC-RACE-TEST@r1'),
+        policyConstraintId: pcId,
+        revision: 1,
+        statement: 'Initial policy',
+        authorityReference: 'TEST-REF',
+        state: 'ACCEPTED',
+        createdBy: 'sec'
+      });
+      await repo.savePolicyConstraintRevision(pcRev1);
+
+      const pcRev2 = createPolicyConstraintRevision({
+        id: createPolicyConstraintRevisionId('PC-RACE-TEST@r2'),
+        policyConstraintId: pcId,
+        revision: 2,
+        statement: 'Updated policy',
+        authorityReference: 'TEST-REF',
+        state: 'ACCEPTED',
+        createdBy: 'sec',
+        supersedes: pcRev1.id
+      });
+
+      const baseline = createRequirementsBaseline({
+        id: createRequirementsBaselineId('BASE-RACE-POL'),
+        requirements: [reqRev],
+        policyConstraints: [pcRev1],
+        createdBy: createReviewerId('REV-01')
+      });
+
+      // Interleaved execution: concurrent write of pcRev2 while saving baseline with pcRev1
+      const [saveRevResult, baselineResult] = await Promise.allSettled([
+        repo.savePolicyConstraintRevision(pcRev2),
+        repo.saveRequirementsBaselineConditional(baseline, [reqRev.id], [pcRev1.id])
+      ]);
+
+      expect(saveRevResult.status).toBe('fulfilled');
+      if (baselineResult.status === 'rejected') {
+        expect((baselineResult as PromiseRejectedResult).reason).toBeInstanceOf(
+          StaleRevisionTargetError
+        );
+      }
+    });
+
+    it('serializes requirement revision writer and conditional baseline freeze', async () => {
+      const reqId = createRequirementId('REQ-RACE-REQ');
+      const reqRev1 = createRequirementRevision({
+        id: createRequirementRevisionId('REQ-RACE-REQ-R1'),
+        requirementId: reqId,
+        revision: 1,
+        statement: 'Initial requirement',
+        category: 'business-rule',
+        origin: 'ASSUMED',
+        reviewState: 'ACCEPTED',
+        resolutionState: 'CLEAR'
+      });
+      await repo.saveRequirementRevision(reqRev1);
+
+      const reqRev2 = createRequirementRevision({
+        id: createRequirementRevisionId('REQ-RACE-REQ-R2'),
+        requirementId: reqId,
+        revision: 2,
+        statement: 'Updated requirement',
+        category: 'business-rule',
+        origin: 'ASSUMED',
+        reviewState: 'ACCEPTED',
+        resolutionState: 'CLEAR',
+        supersedes: reqRev1.id
+      });
+
+      const baseline = createRequirementsBaseline({
+        id: createRequirementsBaselineId('BASE-RACE-REQ'),
+        requirements: [reqRev1],
+        createdBy: createReviewerId('REV-01')
+      });
+
+      // Concurrent revision write and baseline freeze
+      const [saveRevResult, baselineResult] = await Promise.allSettled([
+        repo.saveRequirementRevision(reqRev2),
+        repo.saveRequirementsBaselineConditional(baseline, [reqRev1.id])
+      ]);
+
+      expect(saveRevResult.status).toBe('fulfilled');
+      if (baselineResult.status === 'rejected') {
+        expect((baselineResult as PromiseRejectedResult).reason).toBeInstanceOf(
+          StaleRevisionTargetError
+        );
+      }
+    });
+  });
+
+  describe('Story persistence', () => {
+    it('saves, retrieves, lists, and enforces immutability on StoryRecord', async () => {
+      const storyId = createStoryId('STORY-REPO-001');
+      const baselineId = createRequirementsBaselineId('BASE-REPO-001');
+      const reqId = createRequirementRevisionId('REQ-001-R1');
+
+      const storyRecord: StoryRecord = {
+        id: storyId,
+        baselineId,
+        projectionId: 'PROJ-001',
+        title: 'Story Repo Test',
+        narrative: {
+          role: 'Admin',
+          feature: 'Manage Settings',
+          benefit: 'Maintain system integrity'
+        },
+        requirementRevisionIds: [reqId],
+        scenarios: [
+          {
+            title: 'Update setting',
+            requirementRevisionIds: [reqId],
+            steps: [
+              { keyword: 'Given', text: 'an admin user' },
+              { keyword: 'When', text: 'they update the setting' },
+              { keyword: 'Then', text: 'the setting is updated' }
+            ]
+          }
+        ],
+        acceptanceCriteria: ['Update setting'],
+        gherkinText: 'Feature: Story Repo Test\n  Scenario: Update setting',
+        metadata: {
+          baselineId: 'BASE-REPO-001',
+          requirementRevisionIds: ['REQ-001-R1'],
+          artifactType: 'stories',
+          declaredProvenance: {
+            baselineId: 'BASE-REPO-001',
+            requirementRevisionIds: ['REQ-001-R1']
+          },
+          configuredExecution: {
+            provider: 'fake',
+            artifactType: 'stories'
+          },
+          measuredVerification: {
+            repairsNeeded: 0,
+            attemptCount: 1,
+            contentHash: 'abc123hash',
+            verifiedAt: createInstant('2026-09-18T12:00:00.000Z')
+          }
+        },
+        createdAt: createInstant('2026-09-18T12:00:00.000Z')
+      };
+
+      await repo.saveStory(storyRecord);
+
+      // Attempting to overwrite must throw ImmutableRecordConflictError
+      await expect(repo.saveStory(storyRecord)).rejects.toThrow(ImmutableRecordConflictError);
+
+      // Retrieve by ID
+      const retrieved = await repo.getStory(storyId);
+      expect(retrieved).toBeDefined();
+      expect(retrieved?.id).toBe(storyId);
+      expect(retrieved?.title).toBe('Story Repo Test');
+      expect(retrieved?.scenarios).toHaveLength(1);
+      expect(retrieved?.scenarios[0].steps).toHaveLength(3);
+
+      // List stories
+      const allStories = await repo.listStories();
+      expect(allStories).toHaveLength(1);
+      expect(allStories[0].id).toBe(storyId);
+
+      // Filter by matching baseline
+      const matchingStories = await repo.listStories(baselineId);
+      expect(matchingStories).toHaveLength(1);
+
+      // Filter by non-matching baseline
+      const otherStories = await repo.listStories(createRequirementsBaselineId('BASE-OTHER'));
+      expect(otherStories).toHaveLength(0);
     });
   });
 });

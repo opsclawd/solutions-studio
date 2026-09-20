@@ -18,6 +18,12 @@ import { FakeMermaidLinterGateway } from '../fakes/FakeMermaidLinterGateway.js';
 import { FakePrototypeValidatorGateway } from '../fakes/FakePrototypeValidatorGateway.js';
 import { GenerateArtifactUseCase } from '../../src/application/use-cases/GenerateArtifactUseCase.js';
 import { GeneratePrototypeProjectionUseCase } from '../../src/application/use-cases/GeneratePrototypeProjectionUseCase.js';
+import { GenerateSqlSchemaProjectionUseCase } from '../../src/application/use-cases/GenerateSqlSchemaProjectionUseCase.js';
+import { GenerateOpenApiProjectionUseCase } from '../../src/application/use-cases/GenerateOpenApiProjectionUseCase.js';
+import { GenerateStoriesProjectionUseCase } from '../../src/application/use-cases/GenerateStoriesProjectionUseCase.js';
+import { FakeSqlValidatorGateway } from '../fakes/FakeSqlValidatorGateway.js';
+import { FakeOpenApiValidatorGateway } from '../fakes/FakeOpenApiValidatorGateway.js';
+import { FakeGherkinValidatorGateway } from '../fakes/FakeGherkinValidatorGateway.js';
 import { ProjectBaselineUseCase } from '../../src/application/use-cases/ProjectBaselineUseCase.js';
 import { UnknownRequirementsBaselineError } from '../../src/application/use-cases/ReconciliationErrors.js';
 
@@ -27,8 +33,14 @@ describe('ProjectBaselineUseCase', () => {
   let fakeGateway: FakeGenerationGateway;
   let fakeLinter: FakeMermaidLinterGateway;
   let fakeValidator: FakePrototypeValidatorGateway;
+  let fakeSqlValidator: FakeSqlValidatorGateway;
+  let fakeOpenApiValidator: FakeOpenApiValidatorGateway;
+  let fakeGherkinValidator: FakeGherkinValidatorGateway;
   let generateArtifactUseCase: GenerateArtifactUseCase;
   let generatePrototypeProjectionUseCase: GeneratePrototypeProjectionUseCase;
+  let generateSqlSchemaProjectionUseCase: GenerateSqlSchemaProjectionUseCase;
+  let generateOpenApiProjectionUseCase: GenerateOpenApiProjectionUseCase;
+  let generateStoriesProjectionUseCase: GenerateStoriesProjectionUseCase;
   let projectBaselineUseCase: ProjectBaselineUseCase;
 
   beforeEach(async () => {
@@ -37,6 +49,9 @@ describe('ProjectBaselineUseCase', () => {
     fakeGateway = new FakeGenerationGateway();
     fakeLinter = new FakeMermaidLinterGateway();
     fakeValidator = new FakePrototypeValidatorGateway();
+    fakeSqlValidator = new FakeSqlValidatorGateway();
+    fakeOpenApiValidator = new FakeOpenApiValidatorGateway();
+    fakeGherkinValidator = new FakeGherkinValidatorGateway();
     generateArtifactUseCase = new GenerateArtifactUseCase(fakeGateway, fakeLinter);
     generatePrototypeProjectionUseCase = new GeneratePrototypeProjectionUseCase(
       fakeGateway,
@@ -44,11 +59,32 @@ describe('ProjectBaselineUseCase', () => {
       repo,
       'fake'
     );
+    generateSqlSchemaProjectionUseCase = new GenerateSqlSchemaProjectionUseCase(
+      fakeGateway,
+      fakeSqlValidator,
+      repo,
+      'fake'
+    );
+    generateOpenApiProjectionUseCase = new GenerateOpenApiProjectionUseCase(
+      fakeGateway,
+      fakeOpenApiValidator,
+      repo,
+      'fake'
+    );
+    generateStoriesProjectionUseCase = new GenerateStoriesProjectionUseCase(
+      fakeGateway,
+      fakeGherkinValidator,
+      repo,
+      'fake'
+    );
     projectBaselineUseCase = new ProjectBaselineUseCase(
       generateArtifactUseCase,
       repo,
       'fake',
-      generatePrototypeProjectionUseCase
+      generatePrototypeProjectionUseCase,
+      generateSqlSchemaProjectionUseCase,
+      generateOpenApiProjectionUseCase,
+      generateStoriesProjectionUseCase
     );
   });
 
@@ -118,6 +154,7 @@ describe('ProjectBaselineUseCase', () => {
     const emptyBaseline = {
       id: createRequirementsBaselineId('BASE-EMPTY'),
       requirementRevisions: [] as any[],
+      policyConstraintRevisions: [],
       createdAt: createInstant('2026-09-16T12:00:00.000Z'),
       createdBy: createReviewerId('REV-LEAD')
     };
@@ -304,5 +341,160 @@ describe('ProjectBaselineUseCase', () => {
     const reloaded = await repo.getProjectionRecord(result.projectionId);
     expect(reloaded).toBeDefined();
     expect(reloaded?.artifactType).toBe('prototype');
+  });
+
+  it('delegates sql-schema artifactType to GenerateSqlSchemaProjectionUseCase and returns projection result', async () => {
+    const rev1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-006-R1'),
+      requirementId: createRequirementId('REQ-006'),
+      revision: 1,
+      statement: 'Relational data schema stores user profiles',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR'
+    });
+    await repo.saveRequirementRevision(rev1);
+
+    const baseline = createRequirementsBaseline({
+      id: createRequirementsBaselineId('BASE-SQL-01'),
+      requirements: [rev1],
+      createdBy: createReviewerId('REV-LEAD')
+    });
+    await repo.saveRequirementsBaseline(baseline);
+
+    const sqlCode = [
+      '-- @baseline BASE-SQL-01',
+      '-- @requirements REQ-006-R1',
+      'CREATE TABLE user_profiles (id SERIAL PRIMARY KEY, bio TEXT);'
+    ].join('\n');
+
+    fakeGateway.queueResponse(sqlCode);
+
+    const result = await projectBaselineUseCase.project({
+      baselineId: baseline.id,
+      artifactType: 'sql-schema'
+    });
+
+    expect(result.content).toBe(sqlCode);
+    expect(result.metadata.artifactType).toBe('sql-schema');
+    expect(result.metadata.baselineId).toBe('BASE-SQL-01');
+    expect(result.metadata.declaredProvenance.baselineId).toBe('BASE-SQL-01');
+    expect(result.metadata.declaredProvenance.requirementRevisionIds).toEqual(['REQ-006-R1']);
+
+    const reloaded = await repo.getProjectionRecord(result.projectionId);
+    expect(reloaded).toBeDefined();
+    expect(reloaded?.artifactType).toBe('sql-schema');
+  });
+
+  it('delegates openapi artifactType to GenerateOpenApiProjectionUseCase and returns projection result', async () => {
+    const rev1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-007-R1'),
+      requirementId: createRequirementId('REQ-007'),
+      revision: 1,
+      statement: 'Expose REST API for user retrieval',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR'
+    });
+    await repo.saveRequirementRevision(rev1);
+
+    const baseline = createRequirementsBaseline({
+      id: createRequirementsBaselineId('BASE-OAS-01'),
+      requirements: [rev1],
+      createdBy: createReviewerId('REV-LEAD')
+    });
+    await repo.saveRequirementsBaseline(baseline);
+
+    const openApiCode = [
+      '# @baseline BASE-OAS-01',
+      '# @requirements REQ-007-R1',
+      'openapi: 3.1.0',
+      'info:',
+      '  title: Test API',
+      '  version: 1.0.0',
+      'paths:',
+      '  /users:',
+      '    get:',
+      '      responses:',
+      "        '200':",
+      '          description: OK'
+    ].join('\n');
+
+    fakeGateway.queueResponse(openApiCode);
+
+    const result = await projectBaselineUseCase.project({
+      baselineId: baseline.id,
+      artifactType: 'openapi'
+    });
+
+    expect(result.content).toBe(openApiCode);
+    expect(result.metadata.artifactType).toBe('openapi');
+    expect(result.metadata.baselineId).toBe('BASE-OAS-01');
+    expect(result.metadata.declaredProvenance.baselineId).toBe('BASE-OAS-01');
+    expect(result.metadata.declaredProvenance.requirementRevisionIds).toEqual(['REQ-007-R1']);
+
+    const reloaded = await repo.getProjectionRecord(result.projectionId);
+    expect(reloaded).toBeDefined();
+    expect(reloaded?.artifactType).toBe('openapi');
+  });
+
+  it('projects a verified RequirementsBaseline by ID into Gherkin user stories with exact traceability', async () => {
+    const rev1 = createRequirementRevision({
+      id: createRequirementRevisionId('REQ-008-R1'),
+      requirementId: createRequirementId('REQ-008'),
+      revision: 1,
+      statement: 'Users must be able to reset passwords',
+      category: 'business-rule',
+      origin: 'ASSUMED',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR'
+    });
+    await repo.saveRequirementRevision(rev1);
+
+    const baseline = createRequirementsBaseline({
+      id: createRequirementsBaselineId('BASE-STORY-01'),
+      requirements: [rev1],
+      createdBy: createReviewerId('REV-LEAD')
+    });
+    await repo.saveRequirementsBaseline(baseline);
+
+    const gherkinCode = [
+      '# @baseline BASE-STORY-01',
+      '# @requirements REQ-008-R1',
+      '',
+      'Feature: Password Reset',
+      '  As a user',
+      '  I want to reset my password',
+      '  So that I can regain access',
+      '',
+      '  @requirements:REQ-008-R1',
+      '  Scenario: Successful reset',
+      '    Given a user with a registered email',
+      '    When they request a password reset',
+      '    Then a reset email is sent'
+    ].join('\n');
+
+    fakeGateway.queueResponse(gherkinCode);
+
+    const result = await projectBaselineUseCase.project({
+      baselineId: baseline.id,
+      artifactType: 'stories'
+    });
+
+    expect(result.content).toBe(gherkinCode);
+    expect(result.metadata.artifactType).toBe('stories');
+    expect(result.metadata.baselineId).toBe('BASE-STORY-01');
+    expect(result.metadata.declaredProvenance.baselineId).toBe('BASE-STORY-01');
+    expect(result.metadata.declaredProvenance.requirementRevisionIds).toEqual(['REQ-008-R1']);
+
+    const reloaded = await repo.getProjectionRecord(result.projectionId);
+    expect(reloaded).toBeDefined();
+    expect(reloaded?.artifactType).toBe('stories');
+
+    const stories = await repo.listStories(baseline.id);
+    expect(stories).toHaveLength(1);
+    expect(stories[0].title).toBe('Password Reset');
   });
 });

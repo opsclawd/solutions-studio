@@ -14,6 +14,12 @@ import {
   createSourceRevision,
   createRequirementRevision,
   createCandidateFinding,
+  createPolicyConstraintId,
+  createPolicyConstraintRevisionId,
+  createEngineeringDecisionId,
+  createPolicyConstraintRevision,
+  createEngineeringDecision,
+  createStoryId,
   now,
   FINDING_DISPOSITIONS,
   REQUIREMENT_REVIEW_STATES,
@@ -25,10 +31,17 @@ import {
   type RequirementRevisionId,
   type FindingId,
   type RequirementsBaselineId,
+  type StoryId,
   type SourceRevision,
   type RequirementRevision,
   type CandidateFinding,
   type RequirementsBaseline,
+  type PolicyConstraintId,
+  type PolicyConstraintRevisionId,
+  type EngineeringDecisionId,
+  type PolicyConstraintRevision,
+  type EngineeringDecision,
+  type EngineeringDecisionState,
   type EvidenceLocator,
   type SourceType
 } from '@solutions-studio/domain';
@@ -41,11 +54,15 @@ import type {
   EvaluationRunRecord,
   FindingReconciliationRecord,
   RequirementReconciliationRecord,
-  ProjectionRecord
+  ProjectionRecord,
+  StoryRecord
 } from '../../../application/ports/persistence/IRequirementsRepository.js';
 import {
   StaleRevisionTargetError,
-  UnknownRequirementRevisionError
+  UnknownRequirementRevisionError,
+  UnknownPolicyConstraintRevisionError,
+  UnknownEngineeringDecisionError,
+  InvalidEngineeringDecisionStateError
 } from '../../../application/use-cases/ReconciliationErrors.js';
 import { EvaluationRunRecordSchema } from '@solutions-studio/contracts';
 import type { FindingDisposition } from '@solutions-studio/domain';
@@ -68,6 +85,11 @@ interface SourceIndexData {
 }
 
 interface RequirementIndexData {
+  latestRevisionId?: string;
+  revisionIds: string[];
+}
+
+interface PolicyConstraintIndexData {
   latestRevisionId?: string;
   revisionIds: string[];
 }
@@ -99,6 +121,22 @@ function resolveStorePath(baseDir: string, subDir: string, filename: string): st
     throw new Error(`Path traversal detected: '${filename}' escapes directory '${subDir}'`);
   }
   return resolved;
+}
+
+export function getRequirementLockKey(id: string): string {
+  return `req:${id}`;
+}
+
+export function getPolicyConstraintLockKey(id: string): string {
+  return `pol:${id}`;
+}
+
+export function getEngineeringDecisionLockKey(id: string): string {
+  return `decision:${id}`;
+}
+
+export function getBaselineLockKey(id: string): string {
+  return `baseline:${id}`;
 }
 
 export class FilesystemRequirementsRepository implements IRequirementsRepository {
@@ -298,24 +336,49 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
   async saveRequirementRevision(revision: RequirementRevision): Promise<void> {
     assertSafeIdentifier(revision.id, 'requirementRevisionId');
     assertSafeIdentifier(revision.requirementId, 'requirementId');
-    const filePath = resolveStorePath(this.baseDir, 'requirement-revisions', `${revision.id}.json`);
-    await writeJsonExclusive(filePath, revision);
 
-    const indexPath = resolveStorePath(
-      this.baseDir,
-      'requirement-index',
-      `${revision.requirementId}.json`
-    );
-    const existingIndex = (await readJson<RequirementIndexData>(indexPath)) ?? {
-      revisionIds: []
-    };
-    const revisionIds = existingIndex.revisionIds.includes(revision.id)
-      ? existingIndex.revisionIds
-      : [...existingIndex.revisionIds, revision.id];
+    return this.acquireEntityLock(getRequirementLockKey(revision.requirementId), async () => {
+      const filePath = resolveStorePath(
+        this.baseDir,
+        'requirement-revisions',
+        `${revision.id}.json`
+      );
+      const indexPath = resolveStorePath(
+        this.baseDir,
+        'requirement-index',
+        `${revision.requirementId}.json`
+      );
+      const previousIndexData = await readJson<RequirementIndexData>(indexPath);
 
-    await writeJsonAtomic(indexPath, {
-      latestRevisionId: revision.id,
-      revisionIds
+      let revWritten = false;
+      let indexWritten = false;
+      try {
+        await writeJsonExclusive(filePath, revision);
+        revWritten = true;
+
+        const existingRevisionIds = previousIndexData?.revisionIds ?? [];
+        const newRevisionIds = existingRevisionIds.includes(revision.id)
+          ? existingRevisionIds
+          : [...existingRevisionIds, revision.id];
+
+        await writeJsonAtomic(indexPath, {
+          latestRevisionId: revision.id,
+          revisionIds: newRevisionIds
+        });
+        indexWritten = true;
+      } catch (err) {
+        if (revWritten) {
+          await fs.rm(filePath, { force: true }).catch(() => {});
+        }
+        if (indexWritten) {
+          if (previousIndexData) {
+            await writeJsonAtomic(indexPath, previousIndexData).catch(() => {});
+          } else {
+            await fs.rm(indexPath, { force: true }).catch(() => {});
+          }
+        }
+        throw err;
+      }
     });
   }
 
@@ -785,7 +848,7 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
       throw new Error('Reconciliation record rationale must be a non-empty string');
     }
 
-    return this.acquireEntityLock(successor.requirementId, async () => {
+    return this.acquireEntityLock(getRequirementLockKey(successor.requirementId), async () => {
       const revisions = await this.listRequirementRevisions(successor.requirementId);
       const latest = revisions.length > 0 ? revisions[revisions.length - 1] : undefined;
       const expectedId = expectedCurrentRevisionId ?? successor.supersedes;
@@ -914,7 +977,8 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
 
   async saveRequirementsBaselineConditional(
     baseline: RequirementsBaseline,
-    expectedLatestRevisionIds: readonly RequirementRevisionId[]
+    expectedLatestRevisionIds: readonly RequirementRevisionId[],
+    expectedLatestPolicyConstraintRevisionIds?: readonly PolicyConstraintRevisionId[]
   ): Promise<void> {
     assertSafeIdentifier(baseline.id, 'baselineId');
 
@@ -933,12 +997,42 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
       reqMap.set(rev.requirementId, expectedRevId);
     }
 
-    const sortedRequirementIds = Array.from(reqMap.keys()).sort();
+    const polMap = new Map<PolicyConstraintId, PolicyConstraintRevisionId>();
+    for (const rawPolId of expectedLatestPolicyConstraintRevisionIds ?? []) {
+      const expectedPolRevId = createPolicyConstraintRevisionId(rawPolId);
+      assertSafeIdentifier(expectedPolRevId, 'policyConstraintRevisionId');
+      const polRev = await this.getPolicyConstraintRevision(expectedPolRevId);
+      if (!polRev) {
+        throw new UnknownPolicyConstraintRevisionError(expectedPolRevId);
+      }
+      const existing = polMap.get(polRev.policyConstraintId);
+      if (existing && existing !== expectedPolRevId) {
+        throw new StaleRevisionTargetError(expectedPolRevId, existing);
+      }
+      polMap.set(polRev.policyConstraintId, expectedPolRevId);
+    }
 
-    return this.acquireLocks(sortedRequirementIds, async () => {
+    const sortedRequirementIds = Array.from(reqMap.keys()).sort();
+    const sortedPolicyIds = Array.from(polMap.keys()).sort();
+
+    const lockKeys = [
+      ...sortedRequirementIds.map((id) => getRequirementLockKey(id)),
+      ...sortedPolicyIds.map((id) => getPolicyConstraintLockKey(id))
+    ].sort();
+
+    return this.acquireLocks(lockKeys, async () => {
       for (const reqId of sortedRequirementIds) {
         const expectedRevId = reqMap.get(reqId)!;
         const allRevisions = await this.listRequirementRevisions(reqId);
+        const latest = allRevisions.length > 0 ? allRevisions[allRevisions.length - 1] : undefined;
+        if (!latest || latest.id !== expectedRevId) {
+          throw new StaleRevisionTargetError(expectedRevId, latest?.id ?? 'none');
+        }
+      }
+
+      for (const polId of sortedPolicyIds) {
+        const expectedRevId = polMap.get(polId)!;
+        const allRevisions = await this.listPolicyConstraintRevisions(polId);
         const latest = allRevisions.length > 0 ? allRevisions[allRevisions.length - 1] : undefined;
         if (!latest || latest.id !== expectedRevId) {
           throw new StaleRevisionTargetError(expectedRevId, latest?.id ?? 'none');
@@ -952,10 +1046,18 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
 
   async saveRequirementsBaseline(
     baseline: RequirementsBaseline,
-    expectedLatestRevisionIds?: readonly RequirementRevisionId[]
+    expectedLatestRevisionIds?: readonly RequirementRevisionId[],
+    expectedLatestPolicyConstraintRevisionIds?: readonly PolicyConstraintRevisionId[]
   ): Promise<void> {
-    if (expectedLatestRevisionIds !== undefined) {
-      return this.saveRequirementsBaselineConditional(baseline, expectedLatestRevisionIds);
+    if (
+      expectedLatestRevisionIds !== undefined ||
+      expectedLatestPolicyConstraintRevisionIds !== undefined
+    ) {
+      return this.saveRequirementsBaselineConditional(
+        baseline,
+        expectedLatestRevisionIds ?? [],
+        expectedLatestPolicyConstraintRevisionIds
+      );
     }
     assertSafeIdentifier(baseline.id, 'baselineId');
     const filePath = resolveStorePath(this.baseDir, 'baselines', `${baseline.id}.json`);
@@ -967,7 +1069,14 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
   ): Promise<RequirementsBaseline | undefined> {
     assertSafeIdentifier(id, 'baselineId');
     const filePath = resolveStorePath(this.baseDir, 'baselines', `${id}.json`);
-    const raw = await readJson<RequirementsBaseline>(filePath);
+    interface RawBaseline {
+      readonly id: string;
+      readonly requirementRevisions: readonly string[];
+      readonly policyConstraintRevisions?: readonly string[];
+      readonly createdAt: string;
+      readonly createdBy: string;
+    }
+    const raw = await readJson<RawBaseline>(filePath);
     if (!raw) {
       return undefined;
     }
@@ -975,11 +1084,244 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
     return Object.freeze({
       id: createRequirementsBaselineId(raw.id),
       requirementRevisions: Object.freeze(
-        raw.requirementRevisions.map((r) => createRequirementRevisionId(r))
+        raw.requirementRevisions.map((r: string) => createRequirementRevisionId(r))
+      ),
+      policyConstraintRevisions: Object.freeze(
+        (raw.policyConstraintRevisions ?? []).map((p: string) =>
+          createPolicyConstraintRevisionId(p)
+        )
       ),
       createdAt: createInstant(raw.createdAt),
       createdBy: createReviewerId(raw.createdBy)
     });
+  }
+
+  async savePolicyConstraintRevision(revision: PolicyConstraintRevision): Promise<void> {
+    assertSafeIdentifier(revision.id, 'policyConstraintRevisionId');
+    assertSafeIdentifier(revision.policyConstraintId, 'policyConstraintId');
+
+    return this.acquireEntityLock(
+      getPolicyConstraintLockKey(revision.policyConstraintId),
+      async () => {
+        const filePath = resolveStorePath(
+          this.baseDir,
+          'policy-constraint-revisions',
+          `${revision.id}.json`
+        );
+        const indexPath = resolveStorePath(
+          this.baseDir,
+          'policy-constraint-index',
+          `${revision.policyConstraintId}.json`
+        );
+        const previousIndexData = await readJson<PolicyConstraintIndexData>(indexPath);
+
+        if (revision.supersedes !== undefined) {
+          if (!previousIndexData || previousIndexData.latestRevisionId !== revision.supersedes) {
+            throw new StaleRevisionTargetError(
+              revision.supersedes,
+              previousIndexData?.latestRevisionId ?? 'none'
+            );
+          }
+        } else if (
+          previousIndexData &&
+          previousIndexData.latestRevisionId !== undefined &&
+          previousIndexData.latestRevisionId !== revision.id
+        ) {
+          throw new StaleRevisionTargetError(revision.id, previousIndexData.latestRevisionId);
+        }
+
+        let revWritten = false;
+        let indexWritten = false;
+        try {
+          await writeJsonExclusive(filePath, revision);
+          revWritten = true;
+
+          const existingRevisionIds = previousIndexData?.revisionIds ?? [];
+          const newRevisionIds = existingRevisionIds.includes(revision.id)
+            ? existingRevisionIds
+            : [...existingRevisionIds, revision.id];
+
+          await writeJsonAtomic(indexPath, {
+            latestRevisionId: revision.id,
+            revisionIds: newRevisionIds
+          });
+          indexWritten = true;
+        } catch (err) {
+          if (revWritten) {
+            await fs.rm(filePath, { force: true }).catch(() => {});
+          }
+          if (indexWritten) {
+            if (previousIndexData) {
+              await writeJsonAtomic(indexPath, previousIndexData).catch(() => {});
+            } else {
+              await fs.rm(indexPath, { force: true }).catch(() => {});
+            }
+          }
+          throw err;
+        }
+      }
+    );
+  }
+
+  async getPolicyConstraintRevision(
+    id: PolicyConstraintRevisionId
+  ): Promise<PolicyConstraintRevision | undefined> {
+    assertSafeIdentifier(id, 'policyConstraintRevisionId');
+    const filePath = resolveStorePath(this.baseDir, 'policy-constraint-revisions', `${id}.json`);
+    const raw = await readJson<PolicyConstraintRevision>(filePath);
+    if (!raw) {
+      return undefined;
+    }
+
+    return createPolicyConstraintRevision({
+      id: createPolicyConstraintRevisionId(raw.id),
+      policyConstraintId: createPolicyConstraintId(raw.policyConstraintId),
+      revision: raw.revision,
+      statement: raw.statement,
+      authorityReference: raw.authorityReference,
+      state: raw.state,
+      createdAt: createInstant(raw.createdAt),
+      createdBy: raw.createdBy,
+      supersedes: raw.supersedes ? createPolicyConstraintRevisionId(raw.supersedes) : undefined
+    });
+  }
+
+  async listPolicyConstraintRevisions(
+    policyConstraintId: PolicyConstraintId
+  ): Promise<readonly PolicyConstraintRevision[]> {
+    assertSafeIdentifier(policyConstraintId, 'policyConstraintId');
+    const indexPath = resolveStorePath(
+      this.baseDir,
+      'policy-constraint-index',
+      `${policyConstraintId}.json`
+    );
+    const index = await readJson<PolicyConstraintIndexData>(indexPath);
+    if (!index?.revisionIds) {
+      return Object.freeze([]);
+    }
+
+    const results: PolicyConstraintRevision[] = [];
+    for (const revId of index.revisionIds) {
+      const rev = await this.getPolicyConstraintRevision(createPolicyConstraintRevisionId(revId));
+      if (rev) {
+        results.push(rev);
+      }
+    }
+    return Object.freeze(results);
+  }
+
+  async listPolicyConstraintIds(): Promise<readonly PolicyConstraintId[]> {
+    const dirPath = path.resolve(this.baseDir, 'policy-constraint-index');
+    try {
+      const files = await fs.readdir(dirPath);
+      const ids = files
+        .filter((f) => f.endsWith('.json'))
+        .map((f) => createPolicyConstraintId(f.replace(/\.json$/, '')))
+        .sort();
+      return Object.freeze(ids);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return Object.freeze([]);
+      }
+      throw err;
+    }
+  }
+
+  async saveEngineeringDecision(decision: EngineeringDecision): Promise<void> {
+    assertSafeIdentifier(decision.id, 'engineeringDecisionId');
+    assertSafeIdentifier(decision.baselineId, 'baselineId');
+    const filePath = resolveStorePath(this.baseDir, 'engineering-decisions', `${decision.id}.json`);
+    await writeJsonExclusive(filePath, decision);
+  }
+
+  async updateEngineeringDecision(
+    decision: EngineeringDecision,
+    expectedCurrentState?: EngineeringDecisionState
+  ): Promise<void> {
+    assertSafeIdentifier(decision.id, 'engineeringDecisionId');
+    return this.acquireEntityLock(getEngineeringDecisionLockKey(decision.id), async () => {
+      const filePath = resolveStorePath(
+        this.baseDir,
+        'engineering-decisions',
+        `${decision.id}.json`
+      );
+      const existing = await readJson<EngineeringDecision>(filePath);
+      if (!existing) {
+        throw new UnknownEngineeringDecisionError(decision.id);
+      }
+      if (expectedCurrentState !== undefined && existing.state !== expectedCurrentState) {
+        throw new InvalidEngineeringDecisionStateError(
+          `Conflict updating engineering decision '${decision.id}': expected state '${expectedCurrentState}', current state is '${existing.state}'`
+        );
+      }
+      await writeJsonAtomic(filePath, decision);
+    });
+  }
+
+  async getEngineeringDecision(
+    id: EngineeringDecisionId
+  ): Promise<EngineeringDecision | undefined> {
+    assertSafeIdentifier(id, 'engineeringDecisionId');
+    const filePath = resolveStorePath(this.baseDir, 'engineering-decisions', `${id}.json`);
+    const raw = await readJson<EngineeringDecision>(filePath);
+    if (!raw) {
+      return undefined;
+    }
+
+    return createEngineeringDecision({
+      id: createEngineeringDecisionId(raw.id),
+      baselineId: createRequirementsBaselineId(raw.baselineId),
+      statement: raw.statement,
+      rationale: raw.rationale,
+      requirementRevisionIds: (raw.requirementRevisionIds ?? []).map((r) =>
+        createRequirementRevisionId(r)
+      ),
+      policyConstraintRevisionIds: (raw.policyConstraintRevisionIds ?? []).map((p) =>
+        createPolicyConstraintRevisionId(p)
+      ),
+      state: raw.state,
+      createdAt: createInstant(raw.createdAt),
+      createdBy: raw.createdBy,
+      acceptedBy: raw.acceptedBy ? createReviewerId(raw.acceptedBy) : undefined,
+      acceptedAt: raw.acceptedAt ? createInstant(raw.acceptedAt) : undefined,
+      supersedes: raw.supersedes ? createEngineeringDecisionId(raw.supersedes) : undefined,
+      transitionRationale: raw.transitionRationale
+    });
+  }
+
+  async listEngineeringDecisions(filter?: {
+    baselineId?: RequirementsBaselineId;
+    state?: EngineeringDecisionState;
+  }): Promise<readonly EngineeringDecision[]> {
+    const dirPath = path.resolve(this.baseDir, 'engineering-decisions');
+    try {
+      const files = await fs.readdir(dirPath);
+      const jsonFiles = files.filter((f) => f.endsWith('.json')).sort();
+      const results: EngineeringDecision[] = [];
+
+      for (const file of jsonFiles) {
+        const rawId = file.replace(/\.json$/, '');
+        assertSafeIdentifier(rawId, 'engineeringDecisionId');
+        const decision = await this.getEngineeringDecision(createEngineeringDecisionId(rawId));
+        if (!decision) continue;
+
+        if (filter?.baselineId && decision.baselineId !== filter.baselineId) {
+          continue;
+        }
+        if (filter?.state && decision.state !== filter.state) {
+          continue;
+        }
+        results.push(decision);
+      }
+
+      results.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      return Object.freeze(results);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return Object.freeze([]);
+      }
+      throw err;
+    }
   }
 
   async listRequirementsBaselines(): Promise<readonly RequirementsBaseline[]> {
@@ -1062,6 +1404,13 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
     await writeJsonExclusive(filePath, projection);
   }
 
+  async updateProjectionRecord(projection: ProjectionRecord): Promise<void> {
+    assertSafeIdentifier(projection.id, 'projectionId');
+    assertSafeIdentifier(projection.baselineId, 'baselineId');
+    const filePath = resolveStorePath(this.baseDir, 'projections', `${projection.id}.json`);
+    await writeJsonAtomic(filePath, projection);
+  }
+
   async getProjectionRecord(id: string): Promise<ProjectionRecord | undefined> {
     assertSafeIdentifier(id, 'projectionId');
     const filePath = resolveStorePath(this.baseDir, 'projections', `${id}.json`);
@@ -1093,5 +1442,117 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
       }
       throw err;
     }
+  }
+
+  async saveStory(story: StoryRecord): Promise<void> {
+    assertSafeIdentifier(story.id, 'storyId');
+    assertSafeIdentifier(story.baselineId, 'baselineId');
+    const filePath = resolveStorePath(this.baseDir, 'stories', `${story.id}.json`);
+    await writeJsonExclusive(filePath, story);
+  }
+
+  async updateStory(story: StoryRecord): Promise<void> {
+    assertSafeIdentifier(story.id, 'storyId');
+    assertSafeIdentifier(story.baselineId, 'baselineId');
+    const filePath = resolveStorePath(this.baseDir, 'stories', `${story.id}.json`);
+    await writeJsonAtomic(filePath, story);
+  }
+
+  async updateStoryAndProjection(story: StoryRecord, projection: ProjectionRecord): Promise<void> {
+    assertSafeIdentifier(story.id, 'storyId');
+    assertSafeIdentifier(story.baselineId, 'baselineId');
+    assertSafeIdentifier(projection.id, 'projectionId');
+    assertSafeIdentifier(projection.baselineId, 'baselineId');
+
+    const storyPath = resolveStorePath(this.baseDir, 'stories', `${story.id}.json`);
+    const projectionPath = resolveStorePath(this.baseDir, 'projections', `${projection.id}.json`);
+
+    // Backup original contents if they exist for rollback
+    const originalStoryRaw = await fs.readFile(storyPath, 'utf8').catch(() => null);
+    const originalProjectionRaw = await fs.readFile(projectionPath, 'utf8').catch(() => null);
+
+    let storyWritten = false;
+    try {
+      await writeJsonAtomic(storyPath, story);
+      storyWritten = true;
+      await writeJsonAtomic(projectionPath, projection);
+    } catch (err) {
+      if (storyWritten) {
+        if (originalStoryRaw !== null) {
+          await fs.writeFile(storyPath, originalStoryRaw, 'utf8').catch(() => {});
+        } else {
+          await fs.unlink(storyPath).catch(() => {});
+        }
+      }
+      if (originalProjectionRaw !== null) {
+        await fs.writeFile(projectionPath, originalProjectionRaw, 'utf8').catch(() => {});
+      }
+      throw err;
+    }
+  }
+
+  async getStory(id: StoryId): Promise<StoryRecord | undefined> {
+    assertSafeIdentifier(id, 'storyId');
+    const filePath = resolveStorePath(this.baseDir, 'stories', `${id}.json`);
+    const record = await readJson<StoryRecord>(filePath);
+    if (!record) {
+      return undefined;
+    }
+    return Object.freeze({
+      ...record,
+      requirementRevisionIds: Object.freeze(record.requirementRevisionIds),
+      policyConstraintRevisionIds: record.policyConstraintRevisionIds
+        ? Object.freeze(record.policyConstraintRevisionIds)
+        : undefined,
+      scenarios: Object.freeze(
+        record.scenarios.map((s) =>
+          Object.freeze({
+            ...s,
+            requirementRevisionIds: Object.freeze(s.requirementRevisionIds),
+            policyConstraintRevisionIds: s.policyConstraintRevisionIds
+              ? Object.freeze(s.policyConstraintRevisionIds)
+              : undefined,
+            steps: Object.freeze(s.steps.map((st) => Object.freeze(st)))
+          })
+        )
+      ),
+      acceptanceCriteria: Object.freeze(record.acceptanceCriteria),
+      dependencies: record.dependencies ? Object.freeze(record.dependencies) : undefined
+    });
+  }
+
+  async listStories(baselineId?: RequirementsBaselineId): Promise<readonly StoryRecord[]> {
+    const dirPath = path.resolve(this.baseDir, 'stories');
+    try {
+      const files = await fs.readdir(dirPath);
+      const jsonFiles = files.filter((f) => f.endsWith('.json')).sort();
+      const result: StoryRecord[] = [];
+      for (const file of jsonFiles) {
+        const rawId = file.replace(/\.json$/, '');
+        assertSafeIdentifier(rawId, 'storyId');
+        const storyId = createStoryId(rawId);
+        const story = await this.getStory(storyId);
+        if (story) {
+          if (!baselineId || story.baselineId === baselineId) {
+            result.push(story);
+          }
+        }
+      }
+      result.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      return Object.freeze(result);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return Object.freeze([]);
+      }
+      throw err;
+    }
+  }
+
+  async withBaselineLock<T>(
+    baselineId: RequirementsBaselineId,
+    action: () => Promise<T>
+  ): Promise<T> {
+    assertSafeIdentifier(baselineId, 'baselineId');
+    return this.acquireEntityLock(getBaselineLockKey(baselineId), action);
   }
 }

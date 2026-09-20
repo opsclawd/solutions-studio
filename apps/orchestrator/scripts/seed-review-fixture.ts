@@ -1,6 +1,7 @@
 #!/usr/bin/env tsx
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import {
   createSourceId,
   createRequirementId,
@@ -8,13 +9,17 @@ import {
   createFindingId,
   createRequirementsBaselineId,
   createReviewerId,
+  createStoryId,
   createRequirementRevision,
   createCandidateFinding,
   type RequirementsBaseline,
   now
 } from '@solutions-studio/domain';
 import { FilesystemRequirementsRepository } from '../src/infrastructure/persistence/filesystem/FilesystemRequirementsRepository.js';
-import type { ProjectionRecord } from '../src/application/ports/persistence/IRequirementsRepository.js';
+import type {
+  ProjectionRecord,
+  StoryRecord
+} from '../src/application/ports/persistence/IRequirementsRepository.js';
 
 export function parseArgs(args: string[]): { outDir: string } {
   let outDir = '.review-fixture-store';
@@ -163,6 +168,7 @@ export async function seedReviewFixture(targetDir: string) {
   const baseline1: RequirementsBaseline = {
     id: createRequirementsBaselineId('BASE-001'),
     requirementRevisions: [req2Rev1.id],
+    policyConstraintRevisions: [],
     createdBy: createReviewerId('lead-reviewer'),
     createdAt: now()
   };
@@ -175,6 +181,7 @@ export async function seedReviewFixture(targetDir: string) {
     '  Auth -->|Authorized| Grant[Assign RBAC Role]\n' +
     '  Auth -->|Denied| Reject[Deny Access]';
 
+  const proj1Hash = createHash('sha256').update(proj1Content).digest('hex');
   const proj1: ProjectionRecord = {
     id: 'PROJ-001',
     baselineId: baseline1.id,
@@ -196,7 +203,7 @@ export async function seedReviewFixture(targetDir: string) {
       measuredVerification: {
         repairsNeeded: 0,
         attemptCount: 1,
-        contentHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+        contentHash: proj1Hash,
         verifiedAt: now()
       }
     },
@@ -233,6 +240,7 @@ export async function seedReviewFixture(targetDir: string) {
     '}'
   ].join('\n');
 
+  const proj2Hash = createHash('sha256').update(proj2Content).digest('hex');
   const proj2: ProjectionRecord = {
     id: 'PROJ-002',
     baselineId: baseline1.id,
@@ -254,13 +262,205 @@ export async function seedReviewFixture(targetDir: string) {
       measuredVerification: {
         repairsNeeded: 0,
         attemptCount: 1,
-        contentHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+        contentHash: proj2Hash,
         verifiedAt: now()
       }
     },
     createdAt: now()
   };
   await repo.saveProjectionRecord(proj2);
+
+  // 9. Stories projection & story records bound to BASE-001
+  const story1Gherkin = [
+    '# @baseline BASE-001',
+    '# @requirements REQ-002-R1',
+    '',
+    'Feature: Multi-Factor Authentication Verification',
+    '  As a security administrator',
+    '  I want to enforce multi-factor authentication',
+    '  So that unauthorized administrative access is prevented',
+    '',
+    '  @requirements:REQ-002-R1',
+    '  Scenario: Successful MFA challenge verification',
+    '    Given an administrative user initiating a session',
+    '    When the correct MFA code is submitted',
+    '    Then the session is granted administrative privileges'
+  ].join('\n');
+
+  const story1Hash = createHash('sha256').update(story1Gherkin).digest('hex');
+  const proj3: ProjectionRecord = {
+    id: 'PROJ-003',
+    baselineId: baseline1.id,
+    requirementRevisionIds: [req2Rev1.id],
+    artifactType: 'stories',
+    content: story1Gherkin,
+    metadata: {
+      baselineId: 'BASE-001',
+      requirementRevisionIds: ['REQ-002-R1'],
+      artifactType: 'stories',
+      declaredProvenance: {
+        baselineId: 'BASE-001',
+        requirementRevisionIds: ['REQ-002-R1']
+      },
+      configuredExecution: {
+        provider: 'fake',
+        artifactType: 'stories'
+      },
+      measuredVerification: {
+        repairsNeeded: 0,
+        attemptCount: 1,
+        contentHash: story1Hash,
+        verifiedAt: now()
+      }
+    },
+    createdAt: now()
+  };
+  await repo.saveProjectionRecord(proj3);
+
+  const story1: StoryRecord = {
+    id: createStoryId('STORY-001'),
+    baselineId: baseline1.id,
+    projectionId: 'PROJ-003',
+    title: 'Multi-Factor Authentication Verification',
+    narrative: {
+      role: 'security administrator',
+      feature: 'enforce multi-factor authentication',
+      benefit: 'prevent unauthorized administrative access'
+    },
+    requirementRevisionIds: [req2Rev1.id],
+    policyConstraintRevisionIds: [],
+    scenarios: [
+      {
+        title: 'Successful MFA challenge verification',
+        requirementRevisionIds: [req2Rev1.id],
+        steps: [
+          { keyword: 'Given', text: 'an administrative user initiating a session' },
+          { keyword: 'When', text: 'the correct MFA code is submitted' },
+          { keyword: 'Then', text: 'the session is granted administrative privileges' }
+        ]
+      }
+    ],
+    acceptanceCriteria: ['MFA challenge must be completed within 60 seconds'],
+    gherkinText: story1Gherkin,
+    dependencies: [],
+    metadata: {
+      baselineId: 'BASE-001',
+      requirementRevisionIds: ['REQ-002-R1'],
+      artifactType: 'stories',
+      declaredProvenance: {
+        baselineId: 'BASE-001',
+        requirementRevisionIds: ['REQ-002-R1']
+      },
+      configuredExecution: {
+        provider: 'fake',
+        artifactType: 'stories'
+      },
+      measuredVerification: {
+        repairsNeeded: 0,
+        attemptCount: 1,
+        contentHash: story1Hash,
+        verifiedAt: now()
+      }
+    },
+    createdAt: now()
+  };
+  await repo.saveStory(story1);
+
+  const story2Gherkin = [
+    '# @baseline BASE-001',
+    '# @requirements REQ-002-R1',
+    '# @depends-on: STORY-001',
+    '',
+    'Feature: Role-Based Privilege Assignment',
+    '  As a verified administrator',
+    '  I want to receive role-based privileges',
+    '  So that authorized management operations can be performed',
+    '',
+    '  @requirements:REQ-002-R1',
+    '  Scenario: Assign administrator role',
+    '    Given a user with verified MFA from STORY-001',
+    '    When the administrative privileges are loaded',
+    '    Then the administrative role is applied'
+  ].join('\n');
+
+  const story2Hash = createHash('sha256').update(story2Gherkin).digest('hex');
+  const proj4: ProjectionRecord = {
+    id: 'PROJ-004',
+    baselineId: baseline1.id,
+    requirementRevisionIds: [req2Rev1.id],
+    artifactType: 'stories',
+    content: story2Gherkin,
+    metadata: {
+      baselineId: 'BASE-001',
+      requirementRevisionIds: ['REQ-002-R1'],
+      artifactType: 'stories',
+      declaredProvenance: {
+        baselineId: 'BASE-001',
+        requirementRevisionIds: ['REQ-002-R1']
+      },
+      configuredExecution: {
+        provider: 'fake',
+        artifactType: 'stories'
+      },
+      measuredVerification: {
+        repairsNeeded: 0,
+        attemptCount: 1,
+        contentHash: story2Hash,
+        verifiedAt: now()
+      }
+    },
+    createdAt: now()
+  };
+  await repo.saveProjectionRecord(proj4);
+
+  const story2: StoryRecord = {
+    id: createStoryId('STORY-002'),
+    baselineId: baseline1.id,
+    projectionId: 'PROJ-004',
+    title: 'Role-Based Privilege Assignment',
+    narrative: {
+      role: 'verified administrator',
+      feature: 'receive role-based privileges',
+      benefit: 'perform authorized management operations'
+    },
+    requirementRevisionIds: [req2Rev1.id],
+    policyConstraintRevisionIds: [],
+    scenarios: [
+      {
+        title: 'Assign administrator role',
+        requirementRevisionIds: [req2Rev1.id],
+        steps: [
+          { keyword: 'Given', text: 'a user with verified MFA from STORY-001' },
+          { keyword: 'When', text: 'the administrative privileges are loaded' },
+          { keyword: 'Then', text: 'the administrative role is applied' }
+        ]
+      }
+    ],
+    acceptanceCriteria: ['Privileges must correspond strictly to assigned RBAC role'],
+    gherkinText: story2Gherkin,
+    dependencies: [createStoryId('STORY-001')],
+    metadata: {
+      baselineId: 'BASE-001',
+      requirementRevisionIds: ['REQ-002-R1'],
+      artifactType: 'stories',
+      declaredProvenance: {
+        baselineId: 'BASE-001',
+        requirementRevisionIds: ['REQ-002-R1']
+      },
+      configuredExecution: {
+        provider: 'fake',
+        artifactType: 'stories'
+      },
+      measuredVerification: {
+        repairsNeeded: 0,
+        attemptCount: 1,
+        contentHash: story2Hash,
+        verifiedAt: now()
+      }
+    },
+    createdAt: now()
+  };
+  await repo.saveStory(story2);
 
   console.log(`Seeded review fixture store at: ${targetDir}`);
 }

@@ -277,6 +277,7 @@ describe('GeneratePrototypeProjectionUseCase', () => {
     const emptyBaseline = {
       id: createRequirementsBaselineId('BASE-EMPTY'),
       requirementRevisions: [] as any[],
+      policyConstraintRevisions: [],
       createdAt: createInstant('2026-09-18T12:00:00.000Z'),
       createdBy: createReviewerId('REV-LEAD')
     };
@@ -293,6 +294,7 @@ describe('GeneratePrototypeProjectionUseCase', () => {
     const baseline = {
       id: createRequirementsBaselineId('BASE-MISSING-REV'),
       requirementRevisions: [createRequirementRevisionId('REQ-MISSING-R1')],
+      policyConstraintRevisions: [],
       createdAt: createInstant('2026-09-18T12:00:00.000Z'),
       createdBy: createReviewerId('REV-LEAD')
     };

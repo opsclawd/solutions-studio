@@ -6,6 +6,9 @@ import {
   createRequirementRevisionId,
   createFindingId,
   createRequirementsBaselineId,
+  createPolicyConstraintId,
+  createPolicyConstraintRevisionId,
+  createEngineeringDecisionId,
   createActorId,
   createReviewerId,
   createInstant,
@@ -16,7 +19,10 @@ import {
   type SourceId,
   type SourceRevisionId,
   type RequirementId,
-  type RequirementRevisionId
+  type RequirementRevisionId,
+  type PolicyConstraintId,
+  type PolicyConstraintRevisionId,
+  type EngineeringDecisionId
 } from '../../src/index.js';
 
 describe('Domain Identifiers', () => {
@@ -27,6 +33,9 @@ describe('Domain Identifiers', () => {
     expect(createRequirementRevisionId('R-142@r4')).toBe('R-142@r4');
     expect(createFindingId('FINDING-01')).toBe('FINDING-01');
     expect(createRequirementsBaselineId('BASELINE-17')).toBe('BASELINE-17');
+    expect(createPolicyConstraintId('PC-SEC-001')).toBe('PC-SEC-001');
+    expect(createPolicyConstraintRevisionId('PC-SEC-001@r1')).toBe('PC-SEC-001@r1');
+    expect(createEngineeringDecisionId('ED-001')).toBe('ED-001');
     expect(createActorId('FieldLead')).toBe('FieldLead');
     expect(createReviewerId('REV-01')).toBe('REV-01');
   });
@@ -44,6 +53,9 @@ describe('Domain Identifiers', () => {
     expect(() => createRequirementRevisionId('')).toThrow(EmptyIdentifierError);
     expect(() => createFindingId('')).toThrow(EmptyIdentifierError);
     expect(() => createRequirementsBaselineId('')).toThrow(EmptyIdentifierError);
+    expect(() => createPolicyConstraintId('')).toThrow(EmptyIdentifierError);
+    expect(() => createPolicyConstraintRevisionId('')).toThrow(EmptyIdentifierError);
+    expect(() => createEngineeringDecisionId('')).toThrow(EmptyIdentifierError);
     expect(() => createActorId('')).toThrow(EmptyIdentifierError);
     expect(() => createReviewerId('')).toThrow(EmptyIdentifierError);
   });
@@ -136,11 +148,29 @@ describe('Domain Identifiers', () => {
       // @ts-expect-error - raw unbranded string is not assignable to RequirementId
       const rawReqId: RequirementId = 'R-1';
 
+      const polId = createPolicyConstraintId('PC-1');
+      const polRevId = createPolicyConstraintRevisionId('PC-1@r1');
+      const engDecId = createEngineeringDecisionId('DEC-1');
+
+      const typedPolId: PolicyConstraintId = polId;
+      const typedPolRevId: PolicyConstraintRevisionId = polRevId;
+      const typedEngDecId: EngineeringDecisionId = engDecId;
+
+      // @ts-expect-error - PolicyConstraintId is not assignable to RequirementId
+      const invalidReq: RequirementId = polId;
+      // @ts-expect-error - EngineeringDecisionId is not assignable to PolicyConstraintId
+      const invalidPol: PolicyConstraintId = engDecId;
+
       expect(typedSourceId).toBeDefined();
       expect(typedReqRevId).toBeDefined();
       expect(reqId).toBeDefined();
       expect(srcRevId).toBeDefined();
       expect(rawReqId).toBeDefined();
+      expect(typedPolId).toBeDefined();
+      expect(typedPolRevId).toBeDefined();
+      expect(typedEngDecId).toBeDefined();
+      expect(invalidReq).toBeDefined();
+      expect(invalidPol).toBeDefined();
     });
   });
 });

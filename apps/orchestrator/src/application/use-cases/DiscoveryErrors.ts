@@ -24,6 +24,28 @@ export class ProjectionBaselineMismatchError extends DiscoveryError {
   }
 }
 
+export class ProjectionArtifactTypeMismatchError extends DiscoveryError {
+  constructor(
+    public readonly projectionId: string,
+    public readonly projectionArtifactType: string,
+    public readonly expectedArtifactType: string
+  ) {
+    super(
+      `Projection '${projectionId}' is of artifact type '${projectionArtifactType}', but '${expectedArtifactType}' was expected`
+    );
+  }
+}
+
+export class ConflictingSqlProjectionAuthorityError extends DiscoveryError {
+  constructor(
+    public readonly projectionId: string,
+    public readonly decisionId: string,
+    message: string
+  ) {
+    super(message);
+  }
+}
+
 export class RequirementAlreadyExistsError extends DiscoveryError {
   constructor(public readonly requirementId: string) {
     super(

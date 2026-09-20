@@ -43,7 +43,7 @@ export class InvalidBaselineMembershipError extends DomainError {
   constructor(public readonly violations: readonly BaselineMembershipViolation[]) {
     const summary = violations.map((v) => `${v.revisionId}: ${v.reasons.join(', ')}`).join('; ');
     super(
-      `Cannot create requirements baseline: ${violations.length} requirement revision(s) are invalid: ${summary}`
+      `Cannot create requirements baseline: ${violations.length} revision(s) are invalid: ${summary}`
     );
   }
 }
@@ -53,5 +53,32 @@ export class EmptyBaselineError extends DomainError {
     message = 'Cannot create requirements baseline: requirements list must not be empty'
   ) {
     super(message);
+  }
+}
+
+export class StoryDependencyGraphError extends DomainError {
+  constructor(message: string) {
+    super(message);
+  }
+}
+
+export class MissingStoryDependencyNodeError extends StoryDependencyGraphError {
+  constructor(
+    public readonly storyId: string,
+    public readonly dependencyId: string
+  ) {
+    super(`Story '${storyId}' references unknown dependency story '${dependencyId}'`);
+  }
+}
+
+export class StorySelfDependencyError extends StoryDependencyGraphError {
+  constructor(public readonly storyId: string) {
+    super(`Story '${storyId}' cannot declare a dependency on itself`);
+  }
+}
+
+export class StoryDependencyCycleError extends StoryDependencyGraphError {
+  constructor(public readonly cycle: readonly string[]) {
+    super(`Dependency cycle detected: [${cycle.join(' -> ')}]`);
   }
 }

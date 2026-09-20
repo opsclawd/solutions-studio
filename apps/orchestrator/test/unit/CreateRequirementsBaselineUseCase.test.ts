@@ -13,6 +13,9 @@ import {
   createRequirementsBaselineId,
   createRequirementRevision,
   createCandidateFinding,
+  createPolicyConstraintId,
+  createPolicyConstraintRevisionId,
+  createPolicyConstraintRevision,
   now,
   InvalidBaselineMembershipError,
   EmptyBaselineError,
@@ -27,6 +30,7 @@ import {
   BlockedByOpenFindingsError,
   StaleRevisionTargetError,
   UnknownRequirementRevisionError,
+  UnknownPolicyConstraintRevisionError,
   UnauditedRequirementRevisionError,
   UnauditedFindingDispositionError
 } from '../../src/application/use-cases/ReconciliationErrors.js';
@@ -905,5 +909,200 @@ describe('CreateRequirementsBaselineUseCase', () => {
 
     // Ensure stale baseline was NEVER persisted
     expect(await repo.getRequirementsBaseline(baselineId)).toBeUndefined();
+  });
+
+  describe('Policy Constraint Baseline Integration', () => {
+    async function seedRequirement(reqId: string, revId: string) {
+      const rev = createRequirementRevision({
+        id: createRequirementRevisionId(revId),
+        requirementId: createRequirementId(reqId),
+        revision: 1,
+        statement: 'Audited requirement statement',
+        category: 'business-rule',
+        origin: 'ASSUMED',
+        reviewState: 'ACCEPTED',
+        resolutionState: 'CLEAR'
+      });
+      await repo.saveRequirementRevision(rev);
+      await recordAcceptance(rev);
+      return rev;
+    }
+
+    it('successfully creates baseline with requirement revisions and accepted policy constraint revisions', async () => {
+      const r1 = await seedRequirement('REQ-BASE-PC', 'REQ-BASE-PC-R1');
+
+      const pcId = createPolicyConstraintId('PC-BASE-01');
+      const pc1 = createPolicyConstraintRevision({
+        id: createPolicyConstraintRevisionId('PC-BASE-01@r1'),
+        policyConstraintId: pcId,
+        revision: 1,
+        statement: 'Authentication via OpenID Connect required',
+        authorityReference: 'SEC-POL-001',
+        state: 'ACCEPTED',
+        createdBy: 'sec-officer'
+      });
+      await repo.savePolicyConstraintRevision(pc1);
+
+      const baseline = await useCase.create({
+        id: 'BASE-WITH-PC',
+        requirementRevisionIds: [r1.id],
+        policyConstraintRevisionIds: [pc1.id],
+        createdBy: 'REV-01'
+      });
+
+      expect(baseline.id).toBe('BASE-WITH-PC');
+      expect(baseline.requirementRevisions).toEqual([r1.id]);
+      expect(baseline.policyConstraintRevisions).toEqual([pc1.id]);
+
+      const reloaded = await repo.getRequirementsBaseline(baseline.id);
+      expect(reloaded?.policyConstraintRevisions).toEqual([pc1.id]);
+    });
+
+    it('throws UnknownPolicyConstraintRevisionError when referenced policy revision does not exist', async () => {
+      const r1 = await seedRequirement('REQ-BASE-PC2', 'REQ-BASE-PC2-R1');
+
+      await expect(
+        useCase.create({
+          requirementRevisionIds: [r1.id],
+          policyConstraintRevisionIds: ['PC-NONEXISTENT@r1'],
+          createdBy: 'REV-01'
+        })
+      ).rejects.toThrow(UnknownPolicyConstraintRevisionError);
+    });
+
+    it('throws InvalidBaselineMembershipError when policy constraint revision is not ACCEPTED', async () => {
+      const r1 = await seedRequirement('REQ-BASE-PC3', 'REQ-BASE-PC3-R1');
+
+      const pcId = createPolicyConstraintId('PC-PENDING-01');
+      const pendingPc = createPolicyConstraintRevision({
+        id: createPolicyConstraintRevisionId('PC-PENDING-01@r1'),
+        policyConstraintId: pcId,
+        revision: 1,
+        statement: 'Pending policy',
+        authorityReference: 'DRAFT-POL',
+        state: 'PENDING',
+        createdBy: 'intern'
+      });
+      await repo.savePolicyConstraintRevision(pendingPc);
+
+      await expect(
+        useCase.create({
+          requirementRevisionIds: [r1.id],
+          policyConstraintRevisionIds: [pendingPc.id],
+          createdBy: 'REV-01'
+        })
+      ).rejects.toThrow(InvalidBaselineMembershipError);
+    });
+
+    it('throws StaleRevisionTargetError when proposed policy revision is not latest in repository', async () => {
+      const r1 = await seedRequirement('REQ-BASE-PC4', 'REQ-BASE-PC4-R1');
+
+      const pcId = createPolicyConstraintId('PC-STALE-01');
+      const pc1 = createPolicyConstraintRevision({
+        id: createPolicyConstraintRevisionId('PC-STALE-01@r1'),
+        policyConstraintId: pcId,
+        revision: 1,
+        statement: 'Version 1',
+        authorityReference: 'REF-1',
+        state: 'ACCEPTED',
+        createdBy: 'lead'
+      });
+      await repo.savePolicyConstraintRevision(pc1);
+
+      const pc2 = createPolicyConstraintRevision({
+        id: createPolicyConstraintRevisionId('PC-STALE-01@r2'),
+        policyConstraintId: pcId,
+        revision: 2,
+        statement: 'Version 2',
+        authorityReference: 'REF-2',
+        state: 'ACCEPTED',
+        createdBy: 'lead',
+        supersedes: pc1.id
+      });
+      await repo.savePolicyConstraintRevision(pc2);
+
+      await expect(
+        useCase.create({
+          requirementRevisionIds: [r1.id],
+          policyConstraintRevisionIds: [pc1.id],
+          createdBy: 'REV-01'
+        })
+      ).rejects.toThrow(StaleRevisionTargetError);
+    });
+
+    it('controlled concurrency test: pauses baseline creation after initial reads, commits a policy successor, and proves conditional save rejects stale baseline', async () => {
+      const r1 = await seedRequirement('REQ-CONC-POL', 'REQ-CONC-POL-R1');
+
+      const pcId = createPolicyConstraintId('PC-CONC-01');
+      const pc1 = createPolicyConstraintRevision({
+        id: createPolicyConstraintRevisionId('PC-CONC-01@r1'),
+        policyConstraintId: pcId,
+        revision: 1,
+        statement: 'Original policy',
+        authorityReference: 'SEC-01',
+        state: 'ACCEPTED',
+        createdBy: 'sec-lead'
+      });
+      await repo.savePolicyConstraintRevision(pc1);
+
+      const baselineId = createRequirementsBaselineId('BASE-CONC-POL-01');
+
+      let pauseResolve: () => void;
+      const pausePromise = new Promise<void>((resolve) => {
+        pauseResolve = resolve;
+      });
+      let resumeResolve: () => void;
+      const resumePromise = new Promise<void>((resolve) => {
+        resumeResolve = resolve;
+      });
+
+      const originalListFindings = repo.listCandidateFindings.bind(repo);
+      repo.listCandidateFindings = async () => {
+        const findings = await originalListFindings();
+        pauseResolve();
+        await resumePromise;
+        return findings;
+      };
+
+      const baselineCreationPromise = useCase.create({
+        id: baselineId,
+        requirementRevisionIds: [r1.id],
+        policyConstraintRevisionIds: [pc1.id],
+        createdBy: 'REV-CONCURRENT-POL'
+      });
+
+      await pausePromise;
+
+      const pc2 = createPolicyConstraintRevision({
+        id: createPolicyConstraintRevisionId('PC-CONC-01@r2'),
+        policyConstraintId: pcId,
+        revision: 2,
+        statement: 'Updated policy while baseline in-flight',
+        authorityReference: 'SEC-02',
+        state: 'ACCEPTED',
+        createdBy: 'sec-lead',
+        supersedes: pc1.id
+      });
+      await repo.savePolicyConstraintRevision(pc2);
+
+      const allRevisions = await repo.listPolicyConstraintRevisions(pcId);
+      expect(allRevisions[allRevisions.length - 1].id).toBe(pc2.id);
+
+      resumeResolve!();
+
+      let thrownError: unknown;
+      try {
+        await baselineCreationPromise;
+      } catch (err) {
+        thrownError = err;
+      }
+
+      expect(thrownError).toBeInstanceOf(StaleRevisionTargetError);
+      const staleErr = thrownError as StaleRevisionTargetError;
+      expect(staleErr.revisionId).toBe(pc1.id);
+      expect(staleErr.latestRevisionId).toBe(pc2.id);
+
+      expect(await repo.getRequirementsBaseline(baselineId)).toBeUndefined();
+    });
   });
 });

@@ -19,6 +19,9 @@ import type {
   BaselineProjectionResult,
   GeneratePrototypeProjectionUseCase
 } from './GeneratePrototypeProjectionUseCase.js';
+import type { GenerateSqlSchemaProjectionUseCase } from './GenerateSqlSchemaProjectionUseCase.js';
+import type { GenerateOpenApiProjectionUseCase } from './GenerateOpenApiProjectionUseCase.js';
+import type { GenerateStoriesProjectionUseCase } from './GenerateStoriesProjectionUseCase.js';
 import {
   UnknownRequirementRevisionError,
   UnknownRequirementsBaselineError
@@ -26,10 +29,12 @@ import {
 
 export interface ProjectBaselineInput {
   readonly baselineId: RequirementsBaselineId | string;
-  readonly artifactType: 'process-diagram' | 'state-diagram' | 'prototype';
+  readonly artifactType:
+    'process-diagram' | 'state-diagram' | 'prototype' | 'sql-schema' | 'openapi' | 'stories';
   readonly prompt?: string;
   readonly options?: GenerateArtifactOptions;
   readonly id?: string;
+  readonly sqlSchemaProjectionId?: string;
 }
 
 export type { BaselineProjectionResult };
@@ -39,7 +44,10 @@ export class ProjectBaselineUseCase {
     private readonly generateArtifactUseCase: GenerateArtifactUseCase,
     private readonly repository: IRequirementsRepository,
     private readonly providerName: string = 'fake',
-    private readonly generatePrototypeProjectionUseCase?: GeneratePrototypeProjectionUseCase
+    private readonly generatePrototypeProjectionUseCase?: GeneratePrototypeProjectionUseCase,
+    private readonly generateSqlSchemaProjectionUseCase?: GenerateSqlSchemaProjectionUseCase,
+    private readonly generateOpenApiProjectionUseCase?: GenerateOpenApiProjectionUseCase,
+    private readonly generateStoriesProjectionUseCase?: GenerateStoriesProjectionUseCase
   ) {}
 
   async project(input: ProjectBaselineInput): Promise<BaselineProjectionResult> {
@@ -50,6 +58,49 @@ export class ProjectBaselineUseCase {
         );
       }
       return this.generatePrototypeProjectionUseCase.execute({
+        baselineId: input.baselineId,
+        prompt: input.prompt,
+        options: input.options,
+        id: input.id
+      });
+    }
+
+    if (input.artifactType === 'sql-schema') {
+      if (!this.generateSqlSchemaProjectionUseCase) {
+        throw new Error(
+          'GenerateSqlSchemaProjectionUseCase not configured on ProjectBaselineUseCase'
+        );
+      }
+      return this.generateSqlSchemaProjectionUseCase.execute({
+        baselineId: input.baselineId,
+        prompt: input.prompt,
+        options: input.options,
+        id: input.id
+      });
+    }
+
+    if (input.artifactType === 'openapi') {
+      if (!this.generateOpenApiProjectionUseCase) {
+        throw new Error(
+          'GenerateOpenApiProjectionUseCase not configured on ProjectBaselineUseCase'
+        );
+      }
+      return this.generateOpenApiProjectionUseCase.execute({
+        baselineId: input.baselineId,
+        prompt: input.prompt,
+        options: input.options,
+        id: input.id,
+        sqlSchemaProjectionId: input.sqlSchemaProjectionId
+      });
+    }
+
+    if (input.artifactType === 'stories') {
+      if (!this.generateStoriesProjectionUseCase) {
+        throw new Error(
+          'GenerateStoriesProjectionUseCase not configured on ProjectBaselineUseCase'
+        );
+      }
+      return this.generateStoriesProjectionUseCase.execute({
         baselineId: input.baselineId,
         prompt: input.prompt,
         options: input.options,
