@@ -19,6 +19,7 @@ import type { ComputeRequirementCoverageUseCase } from '../application/use-cases
 import type { BuildStoryDependencyGraphUseCase } from '../application/use-cases/BuildStoryDependencyGraphUseCase.js';
 import type { UpdateStoryDependenciesUseCase } from '../application/use-cases/UpdateStoryDependenciesUseCase.js';
 import type { GetEngineeringHandoffBundleUseCase } from '../application/use-cases/GetEngineeringHandoffBundleUseCase.js';
+import type { IRequirementsRepository } from '../application/ports/persistence/IRequirementsRepository.js';
 import { mapErrorToResponse } from './errorMapper.js';
 import { reviewRoutes } from './routes/review.js';
 import { requirementsRoutes } from './routes/requirements.js';
@@ -32,6 +33,7 @@ import { dependencyGraphRoutes } from './routes/dependency-graph.js';
 import { handoffRoutes } from './routes/handoff.js';
 
 export interface OrchestratorServerDependencies {
+  readonly repository?: IRequirementsRepository;
   readonly reviewStateUseCase: GetRequirementsReviewStateUseCase;
   readonly reconcileUseCase: ReconcileRequirementsUseCase;
   readonly baselineUseCase: CreateRequirementsBaselineUseCase;
@@ -79,8 +81,49 @@ export function buildServer(
     return reply.status(mapped.statusCode).send(mapped.body);
   });
 
-  app.get('/api/health', async () => {
+  app.get('/api/health', async (_request, reply) => {
+    if (deps.repository?.checkStorageHealth || deps.repository?.checkHealth) {
+      try {
+        const checkFn = deps.repository.checkStorageHealth
+          ? deps.repository.checkStorageHealth.bind(deps.repository)
+          : deps.repository.checkHealth!.bind(deps.repository);
+        const report = await checkFn();
+        if (report.status === 'unhealthy') {
+          return reply.status(503).send(report);
+        }
+      } catch (err) {
+        return reply.status(503).send({
+          status: 'unhealthy',
+          timestamp: new Date().toISOString(),
+          error: err instanceof Error ? err.message : String(err)
+        });
+      }
+    }
     return { status: 'ok' };
+  });
+
+  app.get('/api/health/live', async () => {
+    return { status: 'ok' };
+  });
+
+  app.get('/api/health/ready', async (_request, reply) => {
+    if (deps.repository?.checkStorageHealth || deps.repository?.checkHealth) {
+      try {
+        const checkFn = deps.repository.checkStorageHealth
+          ? deps.repository.checkStorageHealth.bind(deps.repository)
+          : deps.repository.checkHealth!.bind(deps.repository);
+        const report = await checkFn();
+        const statusCode = report.status === 'healthy' ? 200 : 503;
+        return reply.status(statusCode).send(report);
+      } catch (err) {
+        return reply.status(503).send({
+          status: 'unhealthy',
+          timestamp: new Date().toISOString(),
+          error: err instanceof Error ? err.message : String(err)
+        });
+      }
+    }
+    return reply.status(200).send({ status: 'healthy', timestamp: new Date().toISOString() });
   });
 
   app.register(reviewRoutes, {

@@ -189,7 +189,10 @@ export class UpdateStoryDependenciesUseCase {
       };
 
       // Atomic paired persistence under baseline lock with rollback safety
-      await this.repository.updateStoryAndProjection(updatedStory, updatedProjection);
+      await this.repository.updateStoryAndProjection(updatedStory, updatedProjection, {
+        expectedStoryVersion: story.version,
+        expectedProjectionVersion: linkedProjection.version
+      });
 
       return updatedStory;
     });

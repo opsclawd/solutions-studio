@@ -172,3 +172,37 @@ export class InvalidEngineeringDecisionStateError extends ReconciliationError {
     super(message);
   }
 }
+
+export class OptimisticConcurrencyConflictError extends ReconciliationError {
+  constructor(message: string) {
+    super(message);
+  }
+}
+
+export class FindingDispositionConflictError extends OptimisticConcurrencyConflictError {
+  constructor(
+    public readonly findingId: string,
+    public readonly expectedDisposition: string,
+    public readonly currentDisposition: string,
+    message?: string
+  ) {
+    super(
+      message ??
+        `Concurrency conflict for finding '${findingId}': expected disposition '${expectedDisposition}', found '${currentDisposition}'`
+    );
+  }
+}
+
+export class RequirementRevisionConflictError extends OptimisticConcurrencyConflictError {
+  constructor(
+    public readonly requirementId: string,
+    public readonly expectedRevisionId: string | undefined,
+    public readonly currentRevisionId: string | undefined,
+    message?: string
+  ) {
+    super(
+      message ??
+        `Concurrency conflict for requirement '${requirementId}': expected revision '${expectedRevisionId}', found '${currentRevisionId}'`
+    );
+  }
+}

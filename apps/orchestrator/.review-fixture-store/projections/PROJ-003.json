@@ -1,0 +1,34 @@
+{
+  "id": "PROJ-003",
+  "baselineId": "BASE-001",
+  "requirementRevisionIds": [
+    "REQ-002-R1"
+  ],
+  "artifactType": "stories",
+  "content": "# @baseline BASE-001\n# @requirements REQ-002-R1\n\nFeature: Multi-Factor Authentication Verification\n  As a security administrator\n  I want to enforce multi-factor authentication\n  So that unauthorized administrative access is prevented\n\n  @requirements:REQ-002-R1\n  Scenario: Successful MFA challenge verification\n    Given an administrative user initiating a session\n    When the correct MFA code is submitted\n    Then the session is granted administrative privileges",
+  "metadata": {
+    "baselineId": "BASE-001",
+    "requirementRevisionIds": [
+      "REQ-002-R1"
+    ],
+    "artifactType": "stories",
+    "declaredProvenance": {
+      "baselineId": "BASE-001",
+      "requirementRevisionIds": [
+        "REQ-002-R1"
+      ]
+    },
+    "configuredExecution": {
+      "provider": "fake",
+      "artifactType": "stories"
+    },
+    "measuredVerification": {
+      "repairsNeeded": 0,
+      "attemptCount": 1,
+      "contentHash": "8b977cf826b6b9b2347075579bd905e296b8255dc192e3cd1c371658d3e5c9d1",
+      "verifiedAt": "2026-09-20T11:24:08.200Z"
+    }
+  },
+  "createdAt": "2026-09-20T11:24:08.200Z",
+  "version": 1
+}

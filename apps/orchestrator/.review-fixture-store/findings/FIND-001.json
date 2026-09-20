@@ -1,7 +1,9 @@
 {
   "id": "FIND-001",
   "type": "contradiction",
-  "affectedRequirementRevisions": ["REQ-003-R1"],
+  "affectedRequirementRevisions": [
+    "REQ-003-R1"
+  ],
   "evidence": [
     {
       "sourceRevisionId": "SRC-001-R1",

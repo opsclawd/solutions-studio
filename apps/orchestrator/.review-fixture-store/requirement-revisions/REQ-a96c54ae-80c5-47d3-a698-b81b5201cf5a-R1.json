@@ -1,0 +1,14 @@
+{
+  "id": "REQ-a96c54ae-80c5-47d3-a698-b81b5201cf5a-R1",
+  "requirementId": "REQ-a96c54ae-80c5-47d3-a698-b81b5201cf5a",
+  "revision": 1,
+  "statement": "System must log all administrative RBAC assignments to audit vault",
+  "category": "business-rule",
+  "origin": "REVIEWER_PROPOSAL",
+  "reviewState": "PENDING",
+  "resolutionState": "UNRESOLVED",
+  "evidence": [],
+  "rationale": "Discovered missing audit trail during diagram review",
+  "baselineId": "BASE-001",
+  "originatingProjectionId": "PROJ-001"
+}

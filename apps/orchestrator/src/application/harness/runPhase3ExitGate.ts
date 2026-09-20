@@ -23,6 +23,7 @@ import {
 import { FilesystemRequirementsRepository } from '../../infrastructure/persistence/filesystem/FilesystemRequirementsRepository.js';
 import {
   ImmutableRecordConflictError,
+  type IRequirementsRepository,
   type ProjectionRecord,
   type StoryRecord
 } from '../ports/persistence/IRequirementsRepository.js';
@@ -70,6 +71,7 @@ export interface Phase3ExitGateAdapter {
   createSqlValidatorGateway?(): ISqlValidatorGateway;
   createOpenApiValidatorGateway?(): IOpenApiValidatorGateway;
   createGherkinValidatorGateway?(): IGherkinValidatorGateway;
+  createRepository?(storeDir: string): IRequirementsRepository | Promise<IRequirementsRepository>;
 }
 
 export interface Phase3ExitGateOptions {
@@ -361,7 +363,9 @@ export async function runPhase3ExitGate(
     log(`Mode: ${executionMode} | Provider: ${provider} | Model: ${options.model ?? 'default'}`);
     log('========================================================================\n');
 
-    const repo = new FilesystemRequirementsRepository({ baseDir: storeDir });
+    const repo = options.adapter?.createRepository
+      ? await options.adapter.createRepository(storeDir)
+      : new FilesystemRequirementsRepository({ baseDir: storeDir });
     const baselineUseCase = new CreateRequirementsBaselineUseCase(repo);
     const reconcileUseCase = new ReconcileRequirementsUseCase(repo);
     const recordEdUseCase = new RecordEngineeringDecisionUseCase(repo);
@@ -937,11 +941,13 @@ export async function runPhase3ExitGate(
 
     const predecessorSnapshots: Record<string, { path: string; content: string; sha256: string }> =
       {};
-    for (const relPath of predecessorFilesToSnapshot) {
-      const fullPath = path.resolve(storeDir, relPath);
-      const rawContent = await fs.readFile(fullPath, 'utf8');
-      const sha256 = createHash('sha256').update(rawContent).digest('hex');
-      predecessorSnapshots[relPath] = { path: relPath, content: rawContent, sha256 };
+    if (!options.adapter?.createRepository) {
+      for (const relPath of predecessorFilesToSnapshot) {
+        const fullPath = path.resolve(storeDir, relPath);
+        const rawContent = await fs.readFile(fullPath, 'utf8');
+        const sha256 = createHash('sha256').update(rawContent).digest('hex');
+        predecessorSnapshots[relPath] = { path: relPath, content: rawContent, sha256 };
+      }
     }
 
     // ------------------------------------------------------------------------
@@ -1470,14 +1476,23 @@ export async function runPhase3ExitGate(
     log('[15/15] Verifying predecessor immutability & process-restart durability...');
 
     // Adversarial mutation hook for testing failure when predecessor content changes
-    if (options.adversarialMutatePredecessor) {
+    if (options.adversarialMutatePredecessor && !options.adapter?.createRepository) {
       const targetPath = path.resolve(storeDir, 'engineering-decisions/ED-001.json');
       const current = JSON.parse(await fs.readFile(targetPath, 'utf8'));
       current.statement = 'MUTATED STATEMENT (ADVERSARIAL)';
       await fs.writeFile(targetPath, JSON.stringify(current, null, 2), 'utf8');
     }
 
-    const childWorkerCode = `
+    let parsedChildOutput:
+      | {
+          pid: number;
+          fileResults: Record<string, { exists: boolean; content?: string; sha256?: string }>;
+          duplicateRejected: boolean;
+        }
+      | undefined = undefined;
+
+    if (!options.adapter?.createRepository) {
+      const childWorkerCode = `
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
@@ -1514,58 +1529,59 @@ process.stdout.write(JSON.stringify({
 }));
 `;
 
-    const childResult = cp.spawnSync(
-      process.execPath,
-      ['-e', childWorkerCode, storeDir, JSON.stringify(Object.keys(predecessorSnapshots))],
-      { encoding: 'utf8' }
-    );
+      const childResult = cp.spawnSync(
+        process.execPath,
+        ['-e', childWorkerCode, storeDir, JSON.stringify(Object.keys(predecessorSnapshots))],
+        { encoding: 'utf8' }
+      );
 
-    if (childResult.status !== 0) {
-      throw new Error(`Child process failed during reload verification: ${childResult.stderr}`);
-    }
-
-    let parsedChildOutput: {
-      pid: number;
-      fileResults: Record<string, { exists: boolean; content?: string; sha256?: string }>;
-      duplicateRejected: boolean;
-    };
-
-    try {
-      parsedChildOutput = JSON.parse(childResult.stdout.trim());
-    } catch {
-      throw new Error(`Failed to parse child process output: ${childResult.stdout}`);
-    }
-
-    if (parsedChildOutput.pid === process.pid) {
-      throw new Error('Process separation failed: child process had same PID as parent!');
-    }
-
-    for (const [relPath, snapshot] of Object.entries(predecessorSnapshots)) {
-      const reloaded = parsedChildOutput.fileResults[relPath];
-      if (!reloaded || !reloaded.exists) {
-        throw new Error(
-          `Historical immutability violation: Predecessor file '${relPath}' was deleted or missing after reload!`
-        );
+      if (childResult.status !== 0) {
+        throw new Error(`Child process failed during reload verification: ${childResult.stderr}`);
       }
-      if (reloaded.sha256 !== snapshot.sha256) {
-        throw new Error(
-          `Historical immutability violation: Predecessor file '${relPath}' SHA-256 hash mismatch! Expected '${snapshot.sha256}', reloaded '${reloaded.sha256}'`
-        );
+
+      try {
+        parsedChildOutput = JSON.parse(childResult.stdout.trim());
+      } catch {
+        throw new Error(`Failed to parse child process output: ${childResult.stdout}`);
       }
-      if (reloaded.content !== snapshot.content) {
-        throw new Error(
-          `Historical immutability violation: Predecessor file '${relPath}' content was modified byte-for-byte!`
-        );
+
+      if (!parsedChildOutput) {
+        throw new Error('Child process output was empty or invalid');
+      }
+
+      if (parsedChildOutput.pid === process.pid) {
+        throw new Error('Process separation failed: child process had same PID as parent!');
+      }
+
+      for (const [relPath, snapshot] of Object.entries(predecessorSnapshots)) {
+        const reloaded = parsedChildOutput.fileResults[relPath];
+        if (!reloaded || !reloaded.exists) {
+          throw new Error(
+            `Historical immutability violation: Predecessor file '${relPath}' was deleted or missing after reload!`
+          );
+        }
+        if (reloaded.sha256 !== snapshot.sha256) {
+          throw new Error(
+            `Historical immutability violation: Predecessor file '${relPath}' SHA-256 hash mismatch! Expected '${snapshot.sha256}', reloaded '${reloaded.sha256}'`
+          );
+        }
+        if (reloaded.content !== snapshot.content) {
+          throw new Error(
+            `Historical immutability violation: Predecessor file '${relPath}' content was modified byte-for-byte!`
+          );
+        }
       }
     }
 
-    const reloadedRepo = new FilesystemRequirementsRepository({ baseDir: storeDir });
+    const reloadedRepo = options.adapter?.createRepository
+      ? await options.adapter.createRepository(storeDir)
+      : new FilesystemRequirementsRepository({ baseDir: storeDir });
     const reloadedBaselineA = await reloadedRepo.getRequirementsBaseline(
       createRequirementsBaselineId('BASE-001')
     );
 
     if (!reloadedBaselineA) {
-      throw new Error("Failed to reload predecessor baseline 'BASE-001' from disk.");
+      throw new Error("Failed to reload predecessor baseline 'BASE-001' from repository.");
     }
 
     const baselineAUntouched =
@@ -1616,7 +1632,7 @@ process.stdout.write(JSON.stringify({
       throw new Error('Immutability and durability verification failed across process restart.');
     }
     log(
-      `       Predecessor baseline BASE-001, ED-001, candidate story, and ${Object.keys(predecessorSnapshots).length} predecessor artifacts verified bit-identical across separate process reload (PID: ${parsedChildOutput.pid}).`
+      `       Predecessor baseline BASE-001, ED-001, candidate story, and ${Object.keys(predecessorSnapshots).length} predecessor artifacts verified bit-identical across separate process reload${parsedChildOutput ? ` (PID: ${parsedChildOutput.pid})` : ''}.`
     );
 
     log('\n========================================================================');
@@ -1747,7 +1763,7 @@ process.stdout.write(JSON.stringify({
         predecessorProjectionsIsolated,
         restartReloadDurabilityVerified,
         predecessorSnapshotsVerified: true,
-        reloadedProcessPid: parsedChildOutput.pid,
+        reloadedProcessPid: parsedChildOutput?.pid ?? process.pid,
         snapshotCount: Object.keys(predecessorSnapshots).length
       },
       storeDir

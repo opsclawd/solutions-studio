@@ -1,0 +1,13 @@
+{
+  "id": "FINDING-2c76323b-973a-47bb-afca-43f231fc36d4",
+  "type": "incomplete-state-machine",
+  "affectedRequirementRevisions": [
+    "REQ-002-R1"
+  ],
+  "evidence": [],
+  "discoveredBy": "artifact-validation",
+  "disposition": "OPEN",
+  "rationale": "State transition for session timeout is missing rollback",
+  "baselineId": "BASE-001",
+  "originatingProjectionId": "PROJ-001"
+}

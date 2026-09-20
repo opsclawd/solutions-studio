@@ -1,4 +1,9 @@
 {
   "latestRevisionId": "REQ-003-R4",
-  "revisionIds": ["REQ-003-R1", "REQ-003-R2", "REQ-003-R3", "REQ-003-R4"]
+  "revisionIds": [
+    "REQ-003-R1",
+    "REQ-003-R2",
+    "REQ-003-R3",
+    "REQ-003-R4"
+  ]
 }
