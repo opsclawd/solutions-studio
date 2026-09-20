@@ -7,6 +7,12 @@ import {
   type Phase3ExitGateResult
 } from '../src/application/harness/runPhase3ExitGate.js';
 import { createPhase3TestAdapter } from '../test/harness/createPhase3ExitGateAdapter.js';
+import type { ValidationRunRecord, CandidatePromotionStatus } from '@solutions-studio/domain';
+import { FilesystemRequirementsRepository } from '../src/infrastructure/persistence/filesystem/FilesystemRequirementsRepository.js';
+import {
+  RecordValidationRunUseCase,
+  EvaluateCandidatePromotionStatusUseCase
+} from '../src/application/use-cases/governance/index.js';
 
 export interface CliArgs {
   provider: 'fake' | 'agy' | 'opencode';
@@ -17,6 +23,7 @@ export interface CliArgs {
   outputJson?: string;
   outputMarkdown?: string;
   silent: boolean;
+  candidateSha?: string;
 }
 
 export function parseArgs(args: string[]): CliArgs {
@@ -29,6 +36,7 @@ export function parseArgs(args: string[]): CliArgs {
   let outputJson: string | undefined;
   let outputMarkdown: string | undefined;
   let silent = false;
+  let candidateSha: string | undefined = process.env.CANDIDATE_SHA;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -41,6 +49,8 @@ export function parseArgs(args: string[]): CliArgs {
       }
     } else if (arg === '--model' && i + 1 < args.length) {
       model = args[++i];
+    } else if (arg === '--candidate-sha' && i + 1 < args.length) {
+      candidateSha = args[++i];
     } else if (arg === '--store' && i + 1 < args.length) {
       storeDir = path.resolve(process.cwd(), args[++i]);
       cleanup = false;
@@ -65,6 +75,7 @@ Usage: tsx scripts/run-phase-3-exit-gate.ts [options]
 Options:
   --provider <fake|agy|opencode>   Generation provider (default: fake)
   --model <modelName>              Model name (e.g. gemini-3.8-flash-high)
+  --candidate-sha <commitSha>      Candidate commit SHA to bind validation run to
   --store <dir>                    Store directory for requirements persistence
   --keep-store                     Do not clean up temporary store directory
   --runs <count>                   Number of independent validation runs (default: 1)
@@ -80,7 +91,17 @@ Options:
     throw new Error(`--model <modelName> is required when provider is '${provider}'`);
   }
 
-  return { provider, model, storeDir, cleanup, runs, outputJson, outputMarkdown, silent };
+  return {
+    provider,
+    model,
+    storeDir,
+    cleanup,
+    runs,
+    outputJson,
+    outputMarkdown,
+    silent,
+    candidateSha
+  };
 }
 
 export interface RunSummary {
@@ -92,10 +113,18 @@ export interface RunSummary {
   error?: string;
 }
 
+export interface GovernanceReportContext {
+  readonly candidateSha?: string;
+  readonly runRecord?: ValidationRunRecord;
+  readonly promotionStatus?: CandidatePromotionStatus;
+  readonly error?: string;
+}
+
 export function generateMarkdownReport(
   args: CliArgs,
   summaries: RunSummary[],
-  totalDurationMs: number
+  totalDurationMs: number,
+  governanceContext?: GovernanceReportContext
 ): string {
   const allPassed = summaries.length > 0 && summaries.every((s) => s.success);
   const rows = summaries.map((s) => {
@@ -140,6 +169,111 @@ export function generateMarkdownReport(
 > Invariants NOT certified: One or more validation runs failed.
 `;
 
+  let section12 = '';
+  if (governanceContext) {
+    const { candidateSha, runRecord, promotionStatus, error } = governanceContext;
+    if (error) {
+      section12 = `
+
+---
+
+## 12. Phase 3 Exit Decision Gate
+
+### Human Disposition Gate
+
+- [ ] **GO**
+- [x] **DESIGN CHANGE** — Governance integrity failure: ${error}
+
+### Audit Evidence & Attestation Status
+
+- **Status:** \`GOVERNANCE_ERROR\` (FAILED_CLOSED)
+- **Candidate Git Commit SHA:** \`${candidateSha ?? 'unresolved'}\`
+- **Error:** ${error}
+
+### Gate Result
+Promotion gate failed closed because authoritative governance records could not be recorded or evaluated.
+`;
+    } else if (promotionStatus?.isApproved && promotionStatus.activeApproval) {
+      const a = promotionStatus.activeApproval;
+      section12 = `
+
+---
+
+## 12. Phase 3 Exit Decision Gate
+
+### Human Disposition Gate
+
+- [x] **GO** — Approved by ${a.actor.name} (${a.actor.id})
+- [ ] **DESIGN CHANGE**
+
+### Audit Evidence & Cryptographic Attestation
+
+- **Candidate Git Commit SHA:** \`${candidateSha ?? a.candidateSha}\`
+- **Validation Run ID:** \`${a.validationRunId}\`
+- **Evidence Digest:** \`${a.evidenceDigest}\`
+- **Signed By:** ${a.actor.name} (${a.actor.email ?? 'no email'}) [ID: ${a.actor.id}]
+- **Reviewing Authority Role:** Human Reviewer (\`candidate:approve\`)
+- **Signed At:** ${a.decidedAt}
+- **Approval Record ID:** \`${a.id}\`
+- **Reviewer Justification:**
+  > ${a.rationale}
+`;
+    } else {
+      const disp = promotionStatus?.disposition ?? 'UNAPPROVED';
+      const diag = promotionStatus?.diagnosticCode ?? 'AWAITING_APPROVAL';
+      const sha = candidateSha ?? 'uncommitted';
+      const runId = runRecord?.id ?? summaries[0]?.runId ?? 'unknown';
+      const digest = runRecord?.evidenceDigest ?? 'unknown';
+
+      section12 = `
+
+---
+
+## 12. Phase 3 Exit Decision Gate
+
+### Human Disposition Gate (Select Exactly One)
+
+- [ ] **GO** — Approve the exact candidate SHA and proceed to release.
+- [ ] **DESIGN CHANGE** — Reject the candidate SHA and append evidence-backed remediation issue(s).
+
+### Audit Evidence & Attestation Status
+
+- **Status:** \`${disp}\` (${diag})
+- **Candidate Git Commit SHA:** \`${sha}\`
+- **Validation Run ID:** \`${runId}\`
+- **Evidence Digest:** \`${digest}\`
+
+### Reviewer Instructions
+To approve candidate promotion, an authorized human reviewer must execute:
+\`\`\`bash
+pnpm governance approve --sha ${sha} --run-id ${runId} --digest ${digest} --token <BEARER_TOKEN> --url <API_URL> --rationale "<Reviewer audit rationale>"
+\`\`\`
+Or approve via the Engineering Handoff UI: **Governance Audit** tab.
+`;
+    }
+  } else {
+    section12 = `
+
+---
+
+## 12. Phase 3 Exit Decision Gate
+
+### Human Disposition Gate
+
+- [ ] **GO**
+- [x] **DESIGN CHANGE** — Governance evaluation missing or uninitialized
+
+### Audit Evidence & Attestation Status
+
+- **Status:** \`GOVERNANCE_ERROR\` (FAILED_CLOSED)
+- **Candidate Git Commit SHA:** \`${args.candidateSha ?? 'unresolved'}\`
+- **Error:** Authoritative governance records were not recorded or evaluated.
+
+### Gate Result
+Promotion gate failed closed because authoritative governance records could not be recorded or evaluated.
+`;
+  }
+
   return `# Phase 3 Exit Gate Validation Summary
 
 - **Provider:** \`${args.provider}\`
@@ -151,10 +285,10 @@ export function generateMarkdownReport(
 ## Run-to-Run Results
 
 | Run | Run ID | Status | Duration | SQL A Repairs | OAS A Repairs | SQL B Repairs | OAS B Repairs | Story 1 Repairs | Story 2 Repairs | Stories Count | Coverage | Readiness | Graph Acyclic | Handoff Ready | Hashes | Notes |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
 ${rows.join('\n')}
 
-${invariantsSection}`;
+${invariantsSection}${section12}`;
 }
 
 async function main() {
@@ -162,16 +296,25 @@ async function main() {
   const startTime = Date.now();
   const summaries: RunSummary[] = [];
 
-  let gitHeadSha: string | undefined;
-  if (args.provider !== 'fake') {
+  let gitHeadSha: string | undefined = args.candidateSha;
+  if (!gitHeadSha) {
     try {
       gitHeadSha = cp.execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
-      cp.execSync(`git cat-file -e ${gitHeadSha}^{commit}`);
+    } catch {
+      // Ignored here; handled fail-closed below if still unassigned
+    }
+  }
+
+  if (args.provider !== 'fake') {
+    try {
+      const resolvedSha = cp.execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
+      cp.execSync(`git cat-file -e ${resolvedSha}^{commit}`);
       const gitStatus = cp.execSync('git status --porcelain', { encoding: 'utf8' }).trim();
       if (gitStatus.length > 0) {
         console.error(`Cannot run real-provider validation: worktree is dirty:\n${gitStatus}`);
         process.exit(1);
       }
+      gitHeadSha = gitHeadSha ?? resolvedSha;
     } catch (err) {
       console.error(`Git clean checkout verification failed: ${(err as Error).message}`);
       process.exit(1);
@@ -242,6 +385,97 @@ async function main() {
 
   const totalDurationMs = Date.now() - startTime;
 
+  let governanceContext: GovernanceReportContext | undefined;
+  try {
+    const storeBase = args.storeDir ?? path.resolve(process.cwd(), '.data/requirements');
+    const repo = new FilesystemRequirementsRepository({ baseDir: storeBase });
+    const effectiveSha = args.candidateSha ?? gitHeadSha;
+    if (!effectiveSha) {
+      throw new Error(
+        'Candidate commit SHA could not be resolved from --candidate-sha or git HEAD. Fail closed.'
+      );
+    }
+
+    const lastSuccessfulRun = summaries
+      .slice()
+      .reverse()
+      .find((s) => s.success && s.result);
+
+    if (lastSuccessfulRun?.result) {
+      const r = lastSuccessfulRun.result;
+      const recordUseCase = new RecordValidationRunUseCase(repo);
+      const statusUseCase = new EvaluateCandidatePromotionStatusUseCase(repo);
+
+      const runRecord = await recordUseCase.execute({
+        candidateSha: effectiveSha,
+        executedBy: 'cli:run-phase-3-exit-gate',
+        phase: 'phase-3',
+        executionMode: r.executionMode,
+        provider: r.provider,
+        model: r.model,
+        artifacts: [
+          {
+            name: 'schema-ddl.sql',
+            artifactType: 'sql-ddl',
+            content: r.handoffBundle.contents?.sql,
+            contentHash: r.handoffBundle.hashes.sql,
+            payloadRef: 'projections/schema-ddl.sql'
+          },
+          {
+            name: 'openapi-spec.json',
+            artifactType: 'openapi-spec',
+            content: r.handoffBundle.contents?.openApi,
+            contentHash: r.handoffBundle.hashes.openApi,
+            payloadRef: 'projections/openapi-spec.json'
+          },
+          {
+            name: 'story-order-create.md',
+            artifactType: 'story-projection',
+            content: r.handoffBundle.contents?.story1,
+            contentHash: r.handoffBundle.hashes.story1,
+            payloadRef: 'stories/story-order-create.md'
+          },
+          {
+            name: 'story-order-cancel.md',
+            artifactType: 'story-projection',
+            content: r.handoffBundle.contents?.story2,
+            contentHash: r.handoffBundle.hashes.story2,
+            payloadRef: 'stories/story-order-cancel.md'
+          }
+        ],
+        proposedDisposition: allSuccess ? 'GO' : 'DESIGN_CHANGE',
+        summary: {
+          success: allSuccess,
+          runsCount: summaries.length,
+          totalDurationMs
+        }
+      });
+
+      const promotionStatus = await statusUseCase.execute({ candidateSha: effectiveSha });
+      governanceContext = {
+        candidateSha: effectiveSha,
+        runRecord,
+        promotionStatus
+      };
+    } else {
+      allSuccess = false;
+      governanceContext = {
+        candidateSha: effectiveSha,
+        error: 'No successful validation run completed'
+      };
+    }
+  } catch (err) {
+    allSuccess = false;
+    const msg = (err as Error).message;
+    governanceContext = {
+      candidateSha: args.candidateSha ?? gitHeadSha,
+      error: msg
+    };
+    if (!args.silent) {
+      console.error('Governance run recording failed:', msg);
+    }
+  }
+
   // Output JSON report if requested
   if (args.outputJson) {
     await fs.mkdir(path.dirname(args.outputJson), { recursive: true });
@@ -255,7 +489,8 @@ async function main() {
           runsCount: args.runs,
           totalDurationMs,
           allSuccess,
-          runs: summaries
+          runs: summaries,
+          governance: governanceContext
         },
         null,
         2
@@ -270,7 +505,7 @@ async function main() {
   // Output Markdown report if requested
   if (args.outputMarkdown) {
     await fs.mkdir(path.dirname(args.outputMarkdown), { recursive: true });
-    const md = generateMarkdownReport(args, summaries, totalDurationMs);
+    const md = generateMarkdownReport(args, summaries, totalDurationMs, governanceContext);
     await fs.writeFile(args.outputMarkdown, md, 'utf8');
     if (!args.silent) {
       console.log(`Wrote Markdown report to: ${args.outputMarkdown}`);

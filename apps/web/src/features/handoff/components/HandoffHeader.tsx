@@ -2,12 +2,18 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import type { EngineeringHandoffBundleDto } from '@solutions-studio/contracts';
+import type {
+  EngineeringHandoffBundleDto,
+  CandidatePromotionStatusDto
+} from '@solutions-studio/contracts';
 
 export interface HandoffHeaderProps {
   readonly bundle: EngineeringHandoffBundleDto | null;
   readonly activeBaselineId: string | null;
   readonly availableBaselines: readonly string[];
+  readonly candidateSha?: string;
+  readonly onCandidateShaChange?: (sha: string) => void;
+  readonly promotionStatus?: CandidatePromotionStatusDto | null;
   readonly onSelectBaseline: (baselineId: string) => void;
   readonly onRefresh: () => void;
 }
@@ -16,6 +22,9 @@ export function HandoffHeader({
   bundle,
   activeBaselineId,
   availableBaselines,
+  candidateSha,
+  onCandidateShaChange,
+  promotionStatus,
   onSelectBaseline,
   onRefresh
 }: HandoffHeaderProps) {
@@ -71,6 +80,32 @@ export function HandoffHeader({
               ))}
             </select>
           </div>
+
+          {candidateSha !== undefined && (
+            <div className="flex items-center gap-2 border-l border-gray-200 pl-4">
+              <label htmlFor="handoff-candidate-sha" className="text-xs text-gray-500 font-medium">
+                Candidate:
+              </label>
+              {onCandidateShaChange ? (
+                <input
+                  id="handoff-candidate-sha"
+                  data-testid="handoff-candidate-sha-input"
+                  type="text"
+                  value={candidateSha}
+                  onChange={(e) => onCandidateShaChange(e.target.value)}
+                  placeholder="commit SHA..."
+                  className="text-xs font-mono font-medium border border-gray-300 rounded-lg px-2.5 py-1.5 bg-white text-gray-900 shadow-xs focus:ring-2 focus:ring-indigo-500 focus:outline-hidden w-36"
+                />
+              ) : (
+                <span
+                  data-testid="handoff-candidate-sha"
+                  className="text-xs font-mono font-medium text-gray-700 bg-gray-100 px-2 py-1 rounded"
+                >
+                  {candidateSha || 'none'}
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Readiness Status Badge & Actions */}
@@ -92,6 +127,26 @@ export function HandoffHeader({
               <span>{isReady ? 'HANDOFF READY' : 'NOT READY FOR HANDOFF'}</span>
             </div>
           )}
+
+          <div
+            data-testid="handoff-promotion-badge"
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider border flex items-center gap-2 shadow-xs ${
+              promotionStatus?.isApproved
+                ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                : 'bg-amber-50 text-amber-900 border-amber-300'
+            }`}
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                promotionStatus?.isApproved ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+              }`}
+            />
+            <span>
+              {promotionStatus?.isApproved
+                ? 'PROMOTION: APPROVED'
+                : `PROMOTION: UNAPPROVED${promotionStatus?.diagnosticCode ? ` (${promotionStatus.diagnosticCode})` : ''}`}
+            </span>
+          </div>
 
           <button
             type="button"

@@ -225,6 +225,12 @@ export interface Phase3ExitGateResult {
       readonly story1: string;
       readonly story2: string;
     };
+    readonly contents?: {
+      readonly sql: string;
+      readonly openApi: string;
+      readonly story1: string;
+      readonly story2: string;
+    };
   };
 
   // Step 15: Immutability
@@ -1755,6 +1761,12 @@ process.stdout.write(JSON.stringify({
           openApi: handoffBundleB.openApiProjection!.metadata.measuredVerification.contentHash!,
           story1: story1Hash,
           story2: story2Hash
+        },
+        contents: {
+          sql: handoffBundleB.sqlProjection!.content,
+          openApi: handoffBundleB.openApiProjection!.content,
+          story1: story1ProjRecord.content,
+          story2: story2ProjRecord.content
         }
       },
       immutabilityVerification: {

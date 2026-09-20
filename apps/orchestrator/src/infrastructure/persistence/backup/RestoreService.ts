@@ -28,6 +28,8 @@ export interface RestoreVerificationResult {
   readonly verifiedSourceRevisions: readonly string[];
   readonly verifiedProjections: readonly string[];
   readonly verifiedStories: readonly string[];
+  readonly verifiedValidationRuns?: readonly string[];
+  readonly verifiedGovernanceApprovals?: readonly string[];
   readonly errors: readonly string[];
 }
 
@@ -145,6 +147,8 @@ export class RestoreService {
     // Truncate / delete all tables in reverse order
     await this.db.transaction(async (tx) => {
       await tx.exec(`
+        DELETE FROM governance_approvals;
+        DELETE FROM validation_runs;
         DELETE FROM evaluation_runs;
         DELETE FROM stories;
         DELETE FROM projections;
@@ -443,6 +447,70 @@ export class RestoreService {
           ]
         );
       }
+
+      // 15. validation_runs
+      for (const row of await loadRows('validation_runs')) {
+        await tx.query(
+          `INSERT INTO validation_runs (
+             id, candidate_sha, executed_at, executed_by, phase, execution_mode,
+             provider, model, artifacts, evidence_digest, proposed_disposition,
+             summary, payload_ref, created_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14);`,
+          [
+            row.id,
+            row.candidate_sha,
+            row.executed_at,
+            row.executed_by,
+            row.phase,
+            row.execution_mode,
+            row.provider,
+            row.model ?? null,
+            jsonCol(row.artifacts),
+            row.evidence_digest,
+            row.proposed_disposition ?? null,
+            jsonCol(row.summary),
+            row.payload_ref ?? null,
+            row.created_at ?? new Date().toISOString()
+          ]
+        );
+      }
+
+      // 16. governance_approvals
+      const approvalRows = await loadRows('governance_approvals');
+      for (const row of approvalRows) {
+        await tx.query(
+          `INSERT INTO governance_approvals (
+             id, candidate_sha, validation_run_id, evidence_digest, decision,
+             actor_id, actor_name, actor_email, actor_type, decided_at,
+             rationale, supersedes, status, revocation, created_at, updated_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NULL, $12, $13, $14, $15);`,
+          [
+            row.id,
+            row.candidate_sha,
+            row.validation_run_id,
+            row.evidence_digest,
+            row.decision,
+            row.actor_id,
+            row.actor_name,
+            row.actor_email ?? null,
+            row.actor_type,
+            row.decided_at,
+            row.rationale,
+            row.status,
+            jsonCol(row.revocation),
+            row.created_at ?? new Date().toISOString(),
+            row.updated_at ?? new Date().toISOString()
+          ]
+        );
+      }
+      for (const row of approvalRows) {
+        if (row.supersedes) {
+          await tx.query(`UPDATE governance_approvals SET supersedes = $1 WHERE id = $2;`, [
+            row.supersedes,
+            row.id
+          ]);
+        }
+      }
     });
 
     // Step 4: Post-Restore Verification
@@ -451,6 +519,8 @@ export class RestoreService {
     const verifiedSourceRevisions: string[] = [];
     const verifiedProjections: string[] = [];
     const verifiedStories: string[] = [];
+    const verifiedValidationRuns: string[] = [];
+    const verifiedGovernanceApprovals: string[] = [];
 
     try {
       // Verify table row counts match manifest counts
@@ -590,6 +660,50 @@ export class RestoreService {
           verifiedStories.push(st.id);
         }
       }
+
+      // Verify validation runs
+      const valRunRes = await this.db.query<{ id: string; evidence_digest: string }>(
+        `SELECT id, evidence_digest FROM validation_runs ORDER BY id ASC;`
+      );
+      for (const vr of valRunRes.rows) {
+        const run = await this.repo.getValidationRun(vr.id);
+        if (!run) {
+          errors.push(`Validation run '${vr.id}' not found after restore`);
+        } else {
+          if (run.evidenceDigest !== vr.evidence_digest) {
+            errors.push(
+              `Validation run '${vr.id}' evidence digest mismatch: expected '${vr.evidence_digest}', got '${run.evidenceDigest}'`
+            );
+          } else {
+            verifiedValidationRuns.push(vr.id);
+          }
+        }
+      }
+
+      // Verify governance approvals (and status/linkage)
+      const appRes = await this.db.query<{
+        id: string;
+        status: string;
+        supersedes?: string | null;
+      }>(`SELECT id, status, supersedes FROM governance_approvals ORDER BY id ASC;`);
+      for (const ar of appRes.rows) {
+        const approval = await this.repo.getGovernanceApproval(ar.id);
+        if (!approval) {
+          errors.push(`Governance approval '${ar.id}' not found after restore`);
+        } else {
+          if (approval.status !== ar.status) {
+            errors.push(
+              `Governance approval '${ar.id}' status mismatch: expected '${ar.status}', got '${approval.status}'`
+            );
+          } else if ((ar.supersedes ?? undefined) !== approval.supersedes) {
+            errors.push(
+              `Governance approval '${ar.id}' supersedes mismatch: expected '${ar.supersedes}', got '${approval.supersedes}'`
+            );
+          } else {
+            verifiedGovernanceApprovals.push(ar.id);
+          }
+        }
+      }
     } catch (err) {
       errors.push(`Post-restore verification error: ${(err as Error).message}`);
     }
@@ -604,6 +718,8 @@ export class RestoreService {
       verifiedSourceRevisions,
       verifiedProjections,
       verifiedStories,
+      verifiedValidationRuns,
+      verifiedGovernanceApprovals,
       errors
     };
   }

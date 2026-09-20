@@ -168,7 +168,7 @@ describe('Storage Health Checks and Health API Surface', () => {
       expect(readyBody.status).toBe('healthy');
       expect(readyBody.database?.status).toBe('healthy');
       expect(readyBody.database?.details?.dialect).toBe('postgresql');
-      expect(readyBody.database?.details?.currentMigration).toBe(2);
+      expect(readyBody.database?.details?.currentMigration).toBe(3);
       expect(readyBody.objectStore?.status).toBe('healthy');
     });
 

@@ -3,13 +3,22 @@ import {
   getEngineeringHandoffBundle,
   getStoryDependencyGraph,
   updateStoryDependencies,
-  listAvailableBaselines
+  listAvailableBaselines,
+  getCandidatePromotionStatus,
+  listValidationRuns,
+  createGovernanceApproval,
+  revokeGovernanceApproval,
+  exportGovernanceAudit
 } from '../../src/features/handoff/api/handoffApi';
 import { createInstant } from '@solutions-studio/domain';
 import type {
   EngineeringHandoffBundleDto,
   StoryDependencyGraphDto,
-  StoryDto
+  StoryDto,
+  CandidatePromotionStatusDto,
+  ValidationRunRecordDto,
+  CandidateApprovalRecordDto,
+  GovernanceAuditExportDto
 } from '@solutions-studio/contracts';
 
 describe('handoffApi', () => {
@@ -250,5 +259,168 @@ describe('handoffApi', () => {
 
     const ids = await listAvailableBaselines();
     expect(ids).toEqual(['BASE-001', 'BASE-002']);
+  });
+
+  it('getCandidatePromotionStatus fetches and parses promotion status', async () => {
+    const candidateSha = 'd5adf81ac2ba5acd7b7cd22c830f03e2258a63b4';
+    const sampleStatus: CandidatePromotionStatusDto = {
+      candidateSha,
+      isApproved: true,
+      disposition: 'APPROVED',
+      diagnosticCode: 'PROMOTION_READY',
+      message: 'Ready for release',
+      evaluatedAt: createInstant('2026-09-20T00:00:00.000Z')
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => sampleStatus
+    } as Response);
+
+    const res = await getCandidatePromotionStatus(candidateSha);
+    expect(res.isApproved).toBe(true);
+    expect(res.disposition).toBe('APPROVED');
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining(`/api/governance/candidates/${candidateSha}/status`),
+      expect.any(Object)
+    );
+  });
+
+  it('listValidationRuns fetches and parses array of validation runs', async () => {
+    const candidateSha = 'd5adf81ac2ba5acd7b7cd22c830f03e2258a63b4';
+    const sampleRuns: ValidationRunRecordDto[] = [
+      {
+        id: 'RUN-001',
+        candidateSha,
+        phase: 'phase-3',
+        executionMode: 'deterministic-ci',
+        provider: 'fake',
+        artifacts: [
+          {
+            name: 'schema.sql',
+            artifactType: 'sql-ddl',
+            contentHash: 'a'.repeat(64)
+          }
+        ],
+        evidenceDigest: 'b'.repeat(64),
+        proposedDisposition: 'GO',
+        executedBy: 'runner-ci',
+        executedAt: createInstant('2026-09-20T00:00:00.000Z'),
+        summary: { checks: 15 }
+      }
+    ];
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => sampleRuns
+    } as Response);
+
+    const res = await listValidationRuns(candidateSha);
+    expect(res).toHaveLength(1);
+    expect(res[0].id).toBe('RUN-001');
+  });
+
+  it('createGovernanceApproval sends POST and parses approval record', async () => {
+    const candidateSha = 'd5adf81ac2ba5acd7b7cd22c830f03e2258a63b4';
+    const sampleApproval: CandidateApprovalRecordDto = {
+      id: 'APPR-001',
+      candidateSha,
+      validationRunId: 'RUN-001',
+      evidenceDigest: 'b'.repeat(64),
+      decision: 'GO',
+      status: 'ACTIVE',
+      rationale: 'Human sign-off',
+      actor: {
+        id: 'rev-1',
+        name: 'Alice Reviewer',
+        actorType: 'human'
+      },
+      decidedAt: createInstant('2026-09-20T00:00:00.000Z')
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => sampleApproval
+    } as Response);
+
+    const res = await createGovernanceApproval({
+      candidateSha,
+      validationRunId: 'RUN-001',
+      evidenceDigest: 'b'.repeat(64),
+      decision: 'GO',
+      rationale: 'Human sign-off'
+    });
+    expect(res.id).toBe('APPR-001');
+    expect(res.status).toBe('ACTIVE');
+    expect(res.actor.name).toBe('Alice Reviewer');
+  });
+
+  it('revokeGovernanceApproval sends POST to revoke endpoint and parses updated approval', async () => {
+    const sampleRevoked: CandidateApprovalRecordDto = {
+      id: 'APPR-001',
+      candidateSha: 'd5adf81ac2ba5acd7b7cd22c830f03e2258a63b4',
+      validationRunId: 'RUN-001',
+      evidenceDigest: 'b'.repeat(64),
+      decision: 'GO',
+      status: 'REVOKED',
+      rationale: 'Human sign-off',
+      actor: {
+        id: 'rev-1',
+        name: 'Alice Reviewer',
+        actorType: 'human'
+      },
+      decidedAt: createInstant('2026-09-20T00:00:00.000Z'),
+      revocation: {
+        revokedAt: createInstant('2026-09-20T01:00:00.000Z'),
+        revokedBy: {
+          id: 'rev-1',
+          name: 'Alice Reviewer',
+          actorType: 'human'
+        },
+        rationale: 'Defect discovered'
+      }
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => sampleRevoked
+    } as Response);
+
+    const res = await revokeGovernanceApproval('APPR-001', 'Defect discovered');
+    expect(res.status).toBe('REVOKED');
+    expect(res.revocation?.rationale).toBe('Defect discovered');
+  });
+
+  it('exportGovernanceAudit fetches and parses governance export package', async () => {
+    const candidateSha = 'd5adf81ac2ba5acd7b7cd22c830f03e2258a63b4';
+    const sampleExport: GovernanceAuditExportDto = {
+      candidateSha,
+      exportedAt: createInstant('2026-09-20T00:00:00.000Z'),
+      promotionStatus: {
+        candidateSha,
+        isApproved: true,
+        disposition: 'APPROVED',
+        diagnosticCode: 'PROMOTION_READY',
+        message: 'Ready',
+        evaluatedAt: createInstant('2026-09-20T00:00:00.000Z')
+      },
+      validationRuns: [],
+      approvalHistory: [],
+      manifestChecksum: 'c'.repeat(64)
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => sampleExport
+    } as Response);
+
+    const res = await exportGovernanceAudit(candidateSha);
+    expect(res.candidateSha).toBe(candidateSha);
+    expect(res.manifestChecksum).toBe('c'.repeat(64));
   });
 });

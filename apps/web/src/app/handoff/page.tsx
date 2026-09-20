@@ -4,6 +4,7 @@ import { EngineeringHandoffWorkspace } from '@/features/handoff/components/Engin
 interface HandoffPageProps {
   searchParams?: {
     baselineId?: string;
+    candidateSha?: string;
   };
 }
 
@@ -12,7 +13,10 @@ export default function HandoffPage({ searchParams }: HandoffPageProps) {
     <Suspense
       fallback={<div className="p-8 text-center text-gray-500">Loading handoff workspace...</div>}
     >
-      <EngineeringHandoffWorkspace baselineId={searchParams?.baselineId} />
+      <EngineeringHandoffWorkspace
+        baselineId={searchParams?.baselineId}
+        candidateSha={searchParams?.candidateSha}
+      />
     </Suspense>
   );
 }

@@ -34,6 +34,12 @@ import { decisionsRoutes } from './routes/decisions.js';
 import { storiesRoutes } from './routes/stories.js';
 import { dependencyGraphRoutes } from './routes/dependency-graph.js';
 import { handoffRoutes } from './routes/handoff.js';
+import { governanceRoutes } from './routes/governance.js';
+import type { RecordValidationRunUseCase } from '../application/use-cases/governance/RecordValidationRunUseCase.js';
+import type { ApproveCandidateUseCase } from '../application/use-cases/governance/ApproveCandidateUseCase.js';
+import type { EvaluateCandidatePromotionStatusUseCase } from '../application/use-cases/governance/EvaluateCandidatePromotionStatusUseCase.js';
+import type { RevokeGovernanceApprovalUseCase } from '../application/use-cases/governance/RevokeGovernanceApprovalUseCase.js';
+import type { ExportGovernanceAuditUseCase } from '../application/use-cases/governance/ExportGovernanceAuditUseCase.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -63,6 +69,11 @@ export interface OrchestratorServerDependencies {
   readonly buildStoryDependencyGraphUseCase?: BuildStoryDependencyGraphUseCase;
   readonly updateStoryDependenciesUseCase?: UpdateStoryDependenciesUseCase;
   readonly getEngineeringHandoffBundleUseCase?: GetEngineeringHandoffBundleUseCase;
+  readonly recordValidationRunUseCase?: RecordValidationRunUseCase;
+  readonly approveCandidateUseCase?: ApproveCandidateUseCase;
+  readonly evaluateCandidatePromotionStatusUseCase?: EvaluateCandidatePromotionStatusUseCase;
+  readonly revokeGovernanceApprovalUseCase?: RevokeGovernanceApprovalUseCase;
+  readonly exportGovernanceAuditUseCase?: ExportGovernanceAuditUseCase;
 }
 
 export function buildServer(
@@ -265,6 +276,24 @@ export function buildServer(
     app.register(handoffRoutes, {
       getEngineeringHandoffBundleUseCase: deps.getEngineeringHandoffBundleUseCase,
       authorizer: deps.authorizer
+    });
+  }
+
+  if (
+    deps.repository &&
+    deps.recordValidationRunUseCase &&
+    deps.approveCandidateUseCase &&
+    deps.evaluateCandidatePromotionStatusUseCase &&
+    deps.revokeGovernanceApprovalUseCase &&
+    deps.exportGovernanceAuditUseCase
+  ) {
+    app.register(governanceRoutes, {
+      repository: deps.repository,
+      recordRunUseCase: deps.recordValidationRunUseCase,
+      approveUseCase: deps.approveCandidateUseCase,
+      evaluateStatusUseCase: deps.evaluateCandidatePromotionStatusUseCase,
+      revokeUseCase: deps.revokeGovernanceApprovalUseCase,
+      exportUseCase: deps.exportGovernanceAuditUseCase
     });
   }
 

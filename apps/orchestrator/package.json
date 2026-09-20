@@ -17,7 +17,8 @@
     "exit-gate:phase3": "tsx scripts/run-phase-3-exit-gate.ts",
     "eval": "tsx scripts/run-evaluation.ts",
     "project": "tsx scripts/run-project-baseline.ts",
-    "serve": "tsx scripts/run-http-server.ts"
+    "serve": "tsx scripts/run-http-server.ts",
+    "governance": "tsx scripts/run-governance.ts"
   },
   "dependencies": {
     "@babel/standalone": "^7.26.4",

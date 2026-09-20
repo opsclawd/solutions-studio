@@ -33,6 +33,11 @@ import { GetEngineeringDecisionsUseCase } from '../application/use-cases/GetEngi
 import { BuildStoryDependencyGraphUseCase } from '../application/use-cases/BuildStoryDependencyGraphUseCase.js';
 import { UpdateStoryDependenciesUseCase } from '../application/use-cases/UpdateStoryDependenciesUseCase.js';
 import { GetEngineeringHandoffBundleUseCase } from '../application/use-cases/GetEngineeringHandoffBundleUseCase.js';
+import { RecordValidationRunUseCase } from '../application/use-cases/governance/RecordValidationRunUseCase.js';
+import { ApproveCandidateUseCase } from '../application/use-cases/governance/ApproveCandidateUseCase.js';
+import { EvaluateCandidatePromotionStatusUseCase } from '../application/use-cases/governance/EvaluateCandidatePromotionStatusUseCase.js';
+import { RevokeGovernanceApprovalUseCase } from '../application/use-cases/governance/RevokeGovernanceApprovalUseCase.js';
+import { ExportGovernanceAuditUseCase } from '../application/use-cases/governance/ExportGovernanceAuditUseCase.js';
 import {
   RepositoryFactory,
   createRequirementsRepository
@@ -106,6 +111,11 @@ export interface ComposeHttpServerOptions {
   readonly buildStoryDependencyGraphUseCase?: BuildStoryDependencyGraphUseCase;
   readonly updateStoryDependenciesUseCase?: UpdateStoryDependenciesUseCase;
   readonly getEngineeringHandoffBundleUseCase?: GetEngineeringHandoffBundleUseCase;
+  readonly recordValidationRunUseCase?: RecordValidationRunUseCase;
+  readonly approveCandidateUseCase?: ApproveCandidateUseCase;
+  readonly evaluateCandidatePromotionStatusUseCase?: EvaluateCandidatePromotionStatusUseCase;
+  readonly revokeGovernanceApprovalUseCase?: RevokeGovernanceApprovalUseCase;
+  readonly exportGovernanceAuditUseCase?: ExportGovernanceAuditUseCase;
 }
 
 export interface ComposedHttpServer {
@@ -133,6 +143,11 @@ export interface ComposedHttpServer {
   readonly buildStoryDependencyGraphUseCase: BuildStoryDependencyGraphUseCase;
   readonly updateStoryDependenciesUseCase: UpdateStoryDependenciesUseCase;
   readonly getEngineeringHandoffBundleUseCase: GetEngineeringHandoffBundleUseCase;
+  readonly recordValidationRunUseCase: RecordValidationRunUseCase;
+  readonly approveCandidateUseCase: ApproveCandidateUseCase;
+  readonly evaluateCandidatePromotionStatusUseCase: EvaluateCandidatePromotionStatusUseCase;
+  readonly revokeGovernanceApprovalUseCase: RevokeGovernanceApprovalUseCase;
+  readonly exportGovernanceAuditUseCase: ExportGovernanceAuditUseCase;
   readonly projectBaselineUseCase: ProjectBaselineUseCase;
   readonly reviewStateUseCase: GetRequirementsReviewStateUseCase;
   readonly recordDiscoveryUseCase: RecordRequirementsDiscoveryUseCase;
@@ -383,6 +398,20 @@ export function composeOrchestratorHttpServer(
 
   const authorizer = options.authorizer ?? new DefaultAuthorizationPolicy();
 
+  const recordValidationRunUseCase =
+    options.recordValidationRunUseCase ?? new RecordValidationRunUseCase(repository);
+  const approveCandidateUseCase =
+    options.approveCandidateUseCase ?? new ApproveCandidateUseCase(repository, authorizer);
+  const evaluateCandidatePromotionStatusUseCase =
+    options.evaluateCandidatePromotionStatusUseCase ??
+    new EvaluateCandidatePromotionStatusUseCase(repository);
+  const revokeGovernanceApprovalUseCase =
+    options.revokeGovernanceApprovalUseCase ??
+    new RevokeGovernanceApprovalUseCase(repository, authorizer);
+  const exportGovernanceAuditUseCase =
+    options.exportGovernanceAuditUseCase ??
+    new ExportGovernanceAuditUseCase(repository, evaluateCandidatePromotionStatusUseCase);
+
   const app = buildServer(
     {
       repository,
@@ -405,7 +434,12 @@ export function composeOrchestratorHttpServer(
       computeRequirementCoverageUseCase,
       buildStoryDependencyGraphUseCase,
       updateStoryDependenciesUseCase,
-      getEngineeringHandoffBundleUseCase
+      getEngineeringHandoffBundleUseCase,
+      recordValidationRunUseCase,
+      approveCandidateUseCase,
+      evaluateCandidatePromotionStatusUseCase,
+      revokeGovernanceApprovalUseCase,
+      exportGovernanceAuditUseCase
     },
     options.fastifyOptions
   );
@@ -448,6 +482,11 @@ export function composeOrchestratorHttpServer(
     buildStoryDependencyGraphUseCase,
     updateStoryDependenciesUseCase,
     getEngineeringHandoffBundleUseCase,
+    recordValidationRunUseCase,
+    approveCandidateUseCase,
+    evaluateCandidatePromotionStatusUseCase,
+    revokeGovernanceApprovalUseCase,
+    exportGovernanceAuditUseCase,
     projectBaselineUseCase,
     reviewStateUseCase,
     recordDiscoveryUseCase,
