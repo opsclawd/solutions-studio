@@ -39,7 +39,7 @@ export const CreatePolicyConstraintRevisionRequestDtoSchema = z.object({
   statement: z.string().min(1),
   authorityReference: z.string().min(1),
   state: PolicyConstraintStateSchema.optional().default('ACCEPTED'),
-  createdBy: z.string().min(1),
+  createdBy: z.string().min(1).optional(),
   supersedes: z.string().min(1).optional()
 });
 
@@ -256,7 +256,7 @@ export const CreateRequirementsBaselineRequestDtoSchema = z.object({
   id: z.string().min(1).optional(),
   requirementRevisions: z.array(z.string().min(1)).min(1),
   policyConstraintRevisions: z.array(z.string().min(1)).optional(),
-  createdBy: z.string().min(1),
+  createdBy: z.string().min(1).optional(),
   createdAt: InstantDtoSchema.optional()
 });
 
@@ -454,14 +454,14 @@ export const CreateEngineeringDecisionRequestDtoSchema = z.object({
   rationale: z.string().min(1),
   requirementRevisionIds: z.array(z.string().min(1)).default([]),
   policyConstraintRevisionIds: z.array(z.string().min(1)).default([]),
-  createdBy: z.string().min(1),
+  createdBy: z.string().min(1).optional(),
   supersedes: z.string().min(1).optional()
 });
 
 export const TransitionEngineeringDecisionRequestDtoSchema = z.object({
   newState: EngineeringDecisionStateSchema,
   rationale: z.string().min(1),
-  actorId: z.string().min(1)
+  actorId: z.string().min(1).optional()
 });
 
 export const AuthorityBundleDtoSchema = z.object({

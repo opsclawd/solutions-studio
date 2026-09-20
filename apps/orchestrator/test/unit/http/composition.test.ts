@@ -269,4 +269,74 @@ describe('HTTP Boundary: Composition Root & Server CLI', () => {
       }
     });
   });
+
+  describe('Authentication Configuration & Provider Resolution (F-43bc07fe & F-1e8e2316)', () => {
+    const originalEnv = { ...process.env };
+
+    beforeEach(() => {
+      process.env = { ...originalEnv };
+    });
+
+    afterEach(() => {
+      process.env = { ...originalEnv };
+    });
+
+    it('rejects unknown or misspelled AUTH_PROVIDER values by failing closed', () => {
+      process.env.AUTH_PROVIDER = 'unknown-provider';
+      expect(() =>
+        composeOrchestratorHttpServer({
+          storeDir: tempDir,
+          generationGateway: new FakeGenerationGateway(),
+          linterGateway: new FakeMermaidLinterGateway()
+        })
+      ).toThrow(/Invalid or unsupported AUTH_PROVIDER/);
+    });
+
+    it('prohibits TestAuthenticator in production (NODE_ENV=production)', () => {
+      process.env.NODE_ENV = 'production';
+      process.env.AUTH_PROVIDER = 'test';
+      expect(() =>
+        composeOrchestratorHttpServer({
+          storeDir: tempDir,
+          generationGateway: new FakeGenerationGateway(),
+          linterGateway: new FakeMermaidLinterGateway()
+        })
+      ).toThrow(/Test authentication .* is not permitted in production/);
+    });
+
+    it('fails startup in production if OIDC_ISSUER or OIDC_AUDIENCE is missing', () => {
+      process.env.NODE_ENV = 'production';
+      process.env.AUTH_PROVIDER = 'oidc';
+      delete process.env.OIDC_ISSUER;
+      delete process.env.OIDC_ISSUER_URL;
+      delete process.env.OIDC_AUDIENCE;
+
+      expect(() =>
+        composeOrchestratorHttpServer({
+          storeDir: tempDir,
+          generationGateway: new FakeGenerationGateway(),
+          linterGateway: new FakeMermaidLinterGateway()
+        })
+      ).toThrow(/Missing required OIDC configuration in production: OIDC_ISSUER/);
+    });
+
+    it('supports OIDC_ISSUER_URL as canonical alias for OIDC_ISSUER', () => {
+      process.env.AUTH_PROVIDER = 'oidc';
+      process.env.OIDC_ISSUER_URL = 'https://login.microsoftonline.com/tenant-123/v2.0';
+      process.env.OIDC_AUDIENCE = 'api://solutions-studio';
+      delete process.env.OIDC_ISSUER;
+
+      const composed = composeOrchestratorHttpServer({
+        storeDir: tempDir,
+        generationGateway: new FakeGenerationGateway(),
+        linterGateway: new FakeMermaidLinterGateway()
+      });
+
+      expect(composed.authenticator).toBeDefined();
+      expect((composed.authenticator as any).issuer).toBe(
+        'https://login.microsoftonline.com/tenant-123/v2.0'
+      );
+      expect((composed.authenticator as any).audience).toBe('api://solutions-studio');
+    });
+  });
 });

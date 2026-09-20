@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import Link from 'next/link';
 import type { RequirementCategoryDto, RequirementOriginDto } from '@solutions-studio/contracts';
 import type { FindingDisposition } from '@solutions-studio/domain';
@@ -14,7 +14,8 @@ import {
   dispositionFinding,
   reopenFinding
 } from '../api/mutations';
-import { ActorIdentity, ACTOR_STORAGE_KEY } from './ActorIdentity';
+import { ActorIdentity } from './ActorIdentity';
+import { useAuth } from '../../auth/AuthContext';
 import { ErrorBanner } from './ErrorBanner';
 import { RequirementList } from './RequirementList';
 import { RequirementDetail } from './RequirementDetail';
@@ -27,14 +28,8 @@ export interface ReviewWorkspaceProps {
 }
 
 export function ReviewWorkspace({ baselineId }: ReviewWorkspaceProps) {
-  const [actorId, setActorId] = useState('');
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem(ACTOR_STORAGE_KEY);
-      if (stored) setActorId(stored);
-    }
-  }, []);
+  const auth = useAuth();
+  const actorId = auth.actor?.id ?? '';
 
   const {
     status,
@@ -275,7 +270,7 @@ export function ReviewWorkspace({ baselineId }: ReviewWorkspaceProps) {
               ↻
             </button>
 
-            <ActorIdentity actorId={actorId} onActorChange={setActorId} />
+            <ActorIdentity actorId={actorId} />
           </div>
         </div>
       </header>

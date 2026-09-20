@@ -6,10 +6,13 @@ import {
   type RecordFindingDiscoveryRequestDto
 } from '@solutions-studio/contracts';
 import type { RecordRequirementsDiscoveryUseCase } from '../../application/use-cases/RecordRequirementsDiscoveryUseCase.js';
+import type { IAuthorizationPolicy } from '../../application/ports/identity/IAuthorizationPolicy.js';
+import { AuthenticationError } from '../../application/ports/identity/IdentityErrors.js';
 import { mapRequirementRevisionToDto, mapCandidateFindingToDto } from '../dto-mappers.js';
 
 export interface DiscoveriesRoutesOptions {
   readonly recordDiscoveryUseCase: RecordRequirementsDiscoveryUseCase;
+  readonly authorizer?: IAuthorizationPolicy;
 }
 
 export const discoveriesRoutes: FastifyPluginAsync<DiscoveriesRoutesOptions> = async (
@@ -20,7 +23,18 @@ export const discoveriesRoutes: FastifyPluginAsync<DiscoveriesRoutesOptions> = a
     request: FastifyRequest<{ Body: RecordRequirementDiscoveryRequestDto }>,
     reply: FastifyReply
   ) => {
-    const result = await options.recordDiscoveryUseCase.recordRequirementDiscovery(request.body);
+    if (options.authorizer) {
+      if (!request.actor) {
+        throw new AuthenticationError('Unauthenticated request', { reason: 'NO_ACTOR' });
+      }
+      options.authorizer.authorize(request.actor, 'requirements:reconcile');
+    }
+
+    const actorId = request.actor?.id ?? request.body.actorId;
+    const result = await options.recordDiscoveryUseCase.recordRequirementDiscovery({
+      ...request.body,
+      actorId
+    });
     return reply.status(200).send(mapRequirementRevisionToDto(result));
   };
 
@@ -28,7 +42,18 @@ export const discoveriesRoutes: FastifyPluginAsync<DiscoveriesRoutesOptions> = a
     request: FastifyRequest<{ Body: RecordFindingDiscoveryRequestDto }>,
     reply: FastifyReply
   ) => {
-    const result = await options.recordDiscoveryUseCase.recordFindingDiscovery(request.body);
+    if (options.authorizer) {
+      if (!request.actor) {
+        throw new AuthenticationError('Unauthenticated request', { reason: 'NO_ACTOR' });
+      }
+      options.authorizer.authorize(request.actor, 'candidate:approve');
+    }
+
+    const actorId = request.actor?.id ?? request.body.actorId;
+    const result = await options.recordDiscoveryUseCase.recordFindingDiscovery({
+      ...request.body,
+      actorId
+    });
     return reply.status(200).send(mapCandidateFindingToDto(result));
   };
 

@@ -1,6 +1,7 @@
 import fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import cors from '@fastify/cors';
 import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod';
+import type { AuthenticatedActor } from '@solutions-studio/domain';
 import type { GetRequirementsReviewStateUseCase } from '../application/use-cases/GetRequirementsReviewStateUseCase.js';
 import type { ReconcileRequirementsUseCase } from '../application/use-cases/ReconcileRequirementsUseCase.js';
 import type { CreateRequirementsBaselineUseCase } from '../application/use-cases/CreateRequirementsBaselineUseCase.js';
@@ -20,6 +21,8 @@ import type { BuildStoryDependencyGraphUseCase } from '../application/use-cases/
 import type { UpdateStoryDependenciesUseCase } from '../application/use-cases/UpdateStoryDependenciesUseCase.js';
 import type { GetEngineeringHandoffBundleUseCase } from '../application/use-cases/GetEngineeringHandoffBundleUseCase.js';
 import type { IRequirementsRepository } from '../application/ports/persistence/IRequirementsRepository.js';
+import type { IAuthenticator } from '../application/ports/identity/IAuthenticator.js';
+import type { IAuthorizationPolicy } from '../application/ports/identity/IAuthorizationPolicy.js';
 import { mapErrorToResponse } from './errorMapper.js';
 import { reviewRoutes } from './routes/review.js';
 import { requirementsRoutes } from './routes/requirements.js';
@@ -32,8 +35,16 @@ import { storiesRoutes } from './routes/stories.js';
 import { dependencyGraphRoutes } from './routes/dependency-graph.js';
 import { handoffRoutes } from './routes/handoff.js';
 
+declare module 'fastify' {
+  interface FastifyRequest {
+    actor?: AuthenticatedActor;
+  }
+}
+
 export interface OrchestratorServerDependencies {
   readonly repository?: IRequirementsRepository;
+  readonly authenticator?: IAuthenticator;
+  readonly authorizer?: IAuthorizationPolicy;
   readonly reviewStateUseCase: GetRequirementsReviewStateUseCase;
   readonly reconcileUseCase: ReconcileRequirementsUseCase;
   readonly baselineUseCase: CreateRequirementsBaselineUseCase;
@@ -58,7 +69,34 @@ export function buildServer(
   deps: OrchestratorServerDependencies,
   options?: FastifyServerOptions
 ): FastifyInstance {
-  const app = fastify(options);
+  // Ensure logger redacts authorization headers unconditionally (including when options.logger is true or undefined)
+  let effectiveLogger: FastifyServerOptions['logger'];
+  if (options?.logger === false) {
+    effectiveLogger = false;
+  } else if (options?.logger === true || options?.logger === undefined) {
+    effectiveLogger = {
+      redact: ['req.headers.authorization', 'req.headers.Authorization']
+    };
+  } else if (typeof options?.logger === 'object' && options.logger !== null) {
+    effectiveLogger = {
+      ...options.logger,
+      redact: Array.from(
+        new Set([
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ...((options.logger as any).redact ?? []),
+          'req.headers.authorization',
+          'req.headers.Authorization'
+        ])
+      )
+    };
+  } else {
+    effectiveLogger = options?.logger;
+  }
+
+  const app = fastify({
+    ...options,
+    logger: effectiveLogger
+  });
 
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
@@ -81,6 +119,22 @@ export function buildServer(
     return reply.status(mapped.statusCode).send(mapped.body);
   });
 
+  // Authentication hook
+  app.addHook('onRequest', async (request) => {
+    if (request.url.startsWith('/api/health')) {
+      return;
+    }
+
+    const authHeader = request.headers.authorization;
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : authHeader;
+
+    if (deps.authenticator) {
+      const actor = await deps.authenticator.authenticate(token);
+      request.actor = actor;
+    }
+  });
+
+  // Public health endpoints
   app.get('/api/health', async (_request, reply) => {
     if (deps.repository?.checkStorageHealth || deps.repository?.checkHealth) {
       try {
@@ -126,16 +180,35 @@ export function buildServer(
     return reply.status(200).send({ status: 'healthy', timestamp: new Date().toISOString() });
   });
 
+  // Current authenticated actor endpoint
+  app.get('/api/auth/me', async (request, reply) => {
+    if (!request.actor) {
+      return reply.status(401).send({
+        code: 'UNAUTHENTICATED',
+        message: 'No authenticated actor'
+      });
+    }
+    return reply.status(200).send({
+      id: request.actor.id,
+      name: request.actor.name,
+      email: request.actor.email,
+      actorType: request.actor.actorType,
+      capabilities: Array.from(request.actor.capabilities)
+    });
+  });
+
   app.register(reviewRoutes, {
     reviewStateUseCase: deps.reviewStateUseCase
   });
 
   app.register(requirementsRoutes, {
-    reconcileUseCase: deps.reconcileUseCase
+    reconcileUseCase: deps.reconcileUseCase,
+    authorizer: deps.authorizer
   });
 
   app.register(findingsRoutes, {
-    reconcileUseCase: deps.reconcileUseCase
+    reconcileUseCase: deps.reconcileUseCase,
+    authorizer: deps.authorizer
   });
 
   app.register(baselinesRoutes, {
@@ -145,26 +218,30 @@ export function buildServer(
     getAuthorityBundleUseCase: deps.getAuthorityBundleUseCase,
     recordEngineeringDecisionUseCase: deps.recordEngineeringDecisionUseCase,
     getEngineeringDecisionsUseCase: deps.getEngineeringDecisionsUseCase,
-    computeRequirementCoverageUseCase: deps.computeRequirementCoverageUseCase
+    computeRequirementCoverageUseCase: deps.computeRequirementCoverageUseCase,
+    authorizer: deps.authorizer
   });
 
   if (deps.recordDiscoveryUseCase) {
     app.register(discoveriesRoutes, {
-      recordDiscoveryUseCase: deps.recordDiscoveryUseCase
+      recordDiscoveryUseCase: deps.recordDiscoveryUseCase,
+      authorizer: deps.authorizer
     });
   }
 
   if (deps.recordPolicyConstraintRevisionUseCase && deps.getPolicyConstraintRevisionUseCase) {
     app.register(policyConstraintsRoutes, {
       recordPolicyConstraintRevisionUseCase: deps.recordPolicyConstraintRevisionUseCase,
-      getPolicyConstraintRevisionUseCase: deps.getPolicyConstraintRevisionUseCase
+      getPolicyConstraintRevisionUseCase: deps.getPolicyConstraintRevisionUseCase,
+      authorizer: deps.authorizer
     });
   }
 
   if (deps.transitionEngineeringDecisionUseCase && deps.getEngineeringDecisionsUseCase) {
     app.register(decisionsRoutes, {
       transitionEngineeringDecisionUseCase: deps.transitionEngineeringDecisionUseCase,
-      getEngineeringDecisionsUseCase: deps.getEngineeringDecisionsUseCase
+      getEngineeringDecisionsUseCase: deps.getEngineeringDecisionsUseCase,
+      authorizer: deps.authorizer
     });
   }
 
@@ -173,7 +250,8 @@ export function buildServer(
       generateStoriesProjectionUseCase: deps.generateStoriesProjectionUseCase,
       getStoriesUseCase: deps.getStoriesUseCase,
       evaluateStoryReadinessUseCase: deps.evaluateStoryReadinessUseCase,
-      updateStoryDependenciesUseCase: deps.updateStoryDependenciesUseCase
+      updateStoryDependenciesUseCase: deps.updateStoryDependenciesUseCase,
+      authorizer: deps.authorizer
     });
   }
 
@@ -185,7 +263,8 @@ export function buildServer(
 
   if (deps.getEngineeringHandoffBundleUseCase) {
     app.register(handoffRoutes, {
-      getEngineeringHandoffBundleUseCase: deps.getEngineeringHandoffBundleUseCase
+      getEngineeringHandoffBundleUseCase: deps.getEngineeringHandoffBundleUseCase,
+      authorizer: deps.authorizer
     });
   }
 

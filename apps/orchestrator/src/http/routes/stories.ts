@@ -13,6 +13,8 @@ import type { GenerateStoriesProjectionUseCase } from '../../application/use-cas
 import type { GetStoriesUseCase } from '../../application/use-cases/GetStoriesUseCase.js';
 import type { EvaluateStoryReadinessUseCase } from '../../application/use-cases/EvaluateStoryReadinessUseCase.js';
 import type { UpdateStoryDependenciesUseCase } from '../../application/use-cases/UpdateStoryDependenciesUseCase.js';
+import type { IAuthorizationPolicy } from '../../application/ports/identity/IAuthorizationPolicy.js';
+import { AuthenticationError } from '../../application/ports/identity/IdentityErrors.js';
 import { UnknownStoryError } from '../../application/use-cases/StoryProjectionErrors.js';
 import { mapStoryRecordToDto, mapStoryReadinessReportToDto } from '../dto-mappers.js';
 
@@ -21,6 +23,7 @@ export interface StoriesRoutesOptions {
   readonly getStoriesUseCase: GetStoriesUseCase;
   readonly evaluateStoryReadinessUseCase?: EvaluateStoryReadinessUseCase;
   readonly updateStoryDependenciesUseCase?: UpdateStoryDependenciesUseCase;
+  readonly authorizer?: IAuthorizationPolicy;
 }
 
 const baselineParamsSchema = z.object({
@@ -47,6 +50,13 @@ export const storiesRoutes: FastifyPluginAsync<StoriesRoutesOptions> = async (ap
       }
     },
     async (request, reply) => {
+      if (options.authorizer) {
+        if (!request.actor) {
+          throw new AuthenticationError('Unauthenticated request', { reason: 'NO_ACTOR' });
+        }
+        options.authorizer.authorize(request.actor, 'projection:generate');
+      }
+
       const result = await options.generateStoriesProjectionUseCase.execute({
         baselineId: request.params.baselineId,
         prompt: request.body?.prompt,
@@ -201,6 +211,13 @@ export const storiesRoutes: FastifyPluginAsync<StoriesRoutesOptions> = async (ap
         }
       },
       async (request, reply) => {
+        if (options.authorizer) {
+          if (!request.actor) {
+            throw new AuthenticationError('Unauthenticated request', { reason: 'NO_ACTOR' });
+          }
+          options.authorizer.authorize(request.actor, 'backlog:export');
+        }
+
         const updated = await updateStoryDependenciesUseCase.execute({
           storyId: request.params.storyId,
           dependencies: request.body.dependencies
