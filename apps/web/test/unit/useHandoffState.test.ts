@@ -489,4 +489,81 @@ describe('useHandoffState', () => {
 
     harness.unmount();
   });
+
+  it('loads export staleness report for baseline and updates on exportStories', async () => {
+    const validHash = 'a'.repeat(64);
+    const mockReport = {
+      baselineId: 'BASE-001',
+      totalStories: 1,
+      currentCount: 1,
+      staleCount: 0,
+      impactedCount: 0,
+      unexportedCount: 0,
+      stories: [
+        {
+          storyId: 'STORY-BASE-001-1',
+          classification: 'CURRENT' as const,
+          causes: [],
+          impactedByPrerequisiteStoryIds: [],
+          currentContentHash: validHash,
+          history: []
+        }
+      ]
+    };
+    const getStalenessSpy = vi
+      .spyOn(handoffApi, 'getExportStaleness')
+      .mockResolvedValue(mockReport);
+    const exportBacklogSpy = vi.spyOn(handoffApi, 'exportBacklog').mockResolvedValue({
+      baselineId: 'BASE-001',
+      provider: 'github-issues',
+      externalContainer: 'acme/repo',
+      items: [
+        {
+          storyId: 'STORY-BASE-001-1',
+          status: 'updated',
+          externalWorkItemId: '101',
+          exportContentHash: validHash,
+          exportedAt: createInstant('2026-09-20T12:00:00.000Z')
+        }
+      ],
+      summary: {
+        total: 1,
+        created: 0,
+        updated: 1,
+        unchanged: 0,
+        skippedStale: 0,
+        rejected: 0,
+        failed: 0
+      },
+      exportedAt: createInstant('2026-09-20T12:00:00.000Z')
+    });
+
+    let harness!: HookHarness;
+    await act(async () => {
+      harness = renderHandoffHook('BASE-001');
+    });
+
+    expect(getStalenessSpy).toHaveBeenCalledWith('BASE-001');
+    expect(harness.result.current.stalenessReport?.baselineId).toBe('BASE-001');
+    expect(harness.result.current.stalenessReport?.currentCount).toBe(1);
+
+    await act(async () => {
+      await harness.result.current.exportStories({
+        targetContainer: 'acme/repo',
+        storyIds: ['STORY-BASE-001-1'],
+        allowUpdateExisting: true,
+        updateRationale: 'Updating export'
+      });
+    });
+
+    expect(exportBacklogSpy).toHaveBeenCalledWith('BASE-001', {
+      targetContainer: 'acme/repo',
+      storyIds: ['STORY-BASE-001-1'],
+      allowUpdateExisting: true,
+      updateRationale: 'Updating export'
+    });
+    expect(getStalenessSpy).toHaveBeenCalledTimes(2);
+
+    harness.unmount();
+  });
 });

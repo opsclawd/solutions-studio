@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 import path from 'node:path';
-import type { AuthenticatedActor } from '@solutions-studio/domain';
+import { now, type AuthenticatedActor } from '@solutions-studio/domain';
 import { RepositoryFactory } from '../src/infrastructure/persistence/RepositoryFactory.js';
 import type { IRequirementsRepository } from '../src/application/ports/persistence/IRequirementsRepository.js';
 import { DefaultAuthorizationPolicy } from '../src/infrastructure/identity/DefaultAuthorizationPolicy.js';
@@ -9,10 +9,14 @@ import { GetAuthorityBundleUseCase } from '../src/application/use-cases/GetAutho
 import { EvaluateStoryReadinessUseCase } from '../src/application/use-cases/EvaluateStoryReadinessUseCase.js';
 import { BuildStoryDependencyGraphUseCase } from '../src/application/use-cases/BuildStoryDependencyGraphUseCase.js';
 import { ExportBacklogUseCase } from '../src/application/use-cases/ExportBacklogUseCase.js';
+import { EvaluateExportStalenessUseCase } from '../src/application/use-cases/EvaluateExportStalenessUseCase.js';
 import { GitHubIssuesBacklogExportAdapter } from '../src/infrastructure/backlog/GitHubIssuesBacklogExportAdapter.js';
 import { assertSafeBacklogEndpoint } from '../src/infrastructure/backlog/safeEndpoint.js';
 import type { IBacklogExportGateway } from '../src/application/ports/backlog/IBacklogExportGateway.js';
-import type { ExportBacklogResponseDto } from '@solutions-studio/contracts';
+import type {
+  ExportBacklogResponseDto,
+  BaselineExportStalenessReportDto
+} from '@solutions-studio/contracts';
 
 export interface BacklogExportCliArgs {
   baselineId: string;
@@ -20,6 +24,10 @@ export interface BacklogExportCliArgs {
   provider: string;
   storyIds?: string[];
   forceUpdate: boolean;
+  allowUpdate: boolean;
+  rationale?: string;
+  propagateStaleOnly: boolean;
+  checkStalenessOnly: boolean;
   token?: string;
   baseUrl?: string;
   allowRealMutation: boolean;
@@ -35,6 +43,10 @@ export function parseArgs(args: string[]): BacklogExportCliArgs {
   let provider = 'github-issues';
   const storyIds: string[] = [];
   let forceUpdate = false;
+  let allowUpdate = false;
+  let rationale: string | undefined = undefined;
+  let propagateStaleOnly = false;
+  let checkStalenessOnly = false;
   let token = process.env.GITHUB_TOKEN;
   let baseUrl = process.env.GITHUB_API_URL;
   let allowRealMutation = process.env.ALLOW_REAL_BACKLOG_MUTATION === 'true';
@@ -81,6 +93,16 @@ export function parseArgs(args: string[]): BacklogExportCliArgs {
       );
     } else if (arg === '--force-update') {
       forceUpdate = true;
+    } else if (arg === '--allow-update') {
+      allowUpdate = true;
+    } else if (arg === '--rationale') {
+      rationale = args[++i];
+    } else if (arg.startsWith('--rationale=')) {
+      rationale = arg.substring('--rationale='.length);
+    } else if (arg === '--propagate-stale-only') {
+      propagateStaleOnly = true;
+    } else if (arg === '--check-staleness-only') {
+      checkStalenessOnly = true;
     } else if (arg === '--token') {
       token = args[++i];
     } else if (arg.startsWith('--token=')) {
@@ -129,6 +151,10 @@ export function parseArgs(args: string[]): BacklogExportCliArgs {
     provider,
     storyIds: storyIds.length > 0 ? storyIds : undefined,
     forceUpdate,
+    allowUpdate,
+    rationale,
+    propagateStaleOnly,
+    checkStalenessOnly,
     token,
     baseUrl,
     allowRealMutation,
@@ -149,6 +175,10 @@ Options:
   --provider <provider>      Backlog provider (default: github-issues)
   --story <storyId>          Specific story ID to export (can be specified multiple times)
   --force-update             Force update of stories even if content hash is unchanged
+  --allow-update             Explicitly allow updating existing external work items if stale
+  --rationale <text>         Rationale message for updates to record in history
+  --propagate-stale-only     Only export stories that are STALE or IMPACTED
+  --check-staleness-only     Check staleness status without performing export mutations
   --token <token>            GitHub API token (default: GITHUB_TOKEN env var)
   --operator-token <token>   Operator auth token (required if actor not injected)
   --allow-test-authenticator Allow TestAuthenticator to verify operator tokens
@@ -160,7 +190,9 @@ Options:
 `);
 }
 
-export interface RunBacklogExportOptions extends BacklogExportCliArgs {
+export interface RunBacklogExportOptions extends Partial<BacklogExportCliArgs> {
+  baselineId: string;
+  targetContainer: string;
   repository?: IRequirementsRepository;
   gateway?: IBacklogExportGateway;
   actor?: AuthenticatedActor;
@@ -170,10 +202,18 @@ export interface RunBacklogExportOptions extends BacklogExportCliArgs {
 export async function runBacklogExport(
   options: RunBacklogExportOptions
 ): Promise<ExportBacklogResponseDto> {
-  if (options.provider === 'github-issues' || options.baseUrl) {
+  const provider = options.provider ?? 'github-issues';
+  const forceUpdate = options.forceUpdate ?? false;
+  const allowUpdate = options.allowUpdate ?? false;
+  const propagateStaleOnly = options.propagateStaleOnly ?? false;
+  const checkStalenessOnly = options.checkStalenessOnly ?? false;
+  const allowRealMutation = options.allowRealMutation ?? false;
+  const format = options.format ?? 'text';
+
+  if (provider === 'github-issues' || options.baseUrl) {
     const effectiveBaseUrl =
       options.baseUrl ?? process.env.GITHUB_API_URL ?? 'https://api.github.com';
-    assertSafeBacklogEndpoint(effectiveBaseUrl, options.allowRealMutation);
+    assertSafeBacklogEndpoint(effectiveBaseUrl, allowRealMutation);
   }
 
   const storeDir = options.storeDir ?? path.resolve(process.cwd(), '.requirements-store');
@@ -185,22 +225,22 @@ export async function runBacklogExport(
 
   let gateway: IBacklogExportGateway;
   if (options.gateway) {
-    if (options.provider && options.provider !== options.gateway.providerId) {
+    if (provider && provider !== options.gateway.providerId) {
       throw new Error(
-        `Provider mismatch: CLI specified '${options.provider}' but injected gateway is '${options.gateway.providerId}'`
+        `Provider mismatch: CLI specified '${provider}' but injected gateway is '${options.gateway.providerId}'`
       );
     }
     gateway = options.gateway;
   } else {
-    if (options.provider !== 'github-issues') {
+    if (provider !== 'github-issues') {
       throw new Error(
-        `Unsupported backlog export provider '${options.provider}'. Supported providers: github-issues.`
+        `Unsupported backlog export provider '${provider}'. Supported providers: github-issues.`
       );
     }
     gateway = new GitHubIssuesBacklogExportAdapter({
       baseUrl: options.baseUrl,
       defaultToken: options.token,
-      allowRealExternalMutation: options.allowRealMutation
+      allowRealExternalMutation: allowRealMutation
     });
   }
 
@@ -210,6 +250,12 @@ export async function runBacklogExport(
   const buildStoryDependencyGraphUseCase = new BuildStoryDependencyGraphUseCase(
     repository,
     evaluateStoryReadinessUseCase
+  );
+  const evaluateExportStalenessUseCase = new EvaluateExportStalenessUseCase(
+    repository,
+    getAuthorityBundleUseCase,
+    buildStoryDependencyGraphUseCase,
+    authorizer
   );
 
   let actor = options.actor;
@@ -237,28 +283,63 @@ export async function runBacklogExport(
     );
   }
 
+  const log = options.log ?? console.log;
+
+  if (checkStalenessOnly) {
+    const stalenessReport = await evaluateExportStalenessUseCase.execute({
+      baselineId: options.baselineId,
+      provider,
+      targetContainer: options.targetContainer,
+      storyIds: options.storyIds,
+      actor
+    });
+    if (format === 'json') {
+      log(JSON.stringify(stalenessReport, null, 2));
+    } else {
+      log(formatStalenessReport(stalenessReport));
+    }
+    return {
+      baselineId: options.baselineId,
+      provider,
+      externalContainer: options.targetContainer,
+      items: [],
+      summary: {
+        total: stalenessReport.totalStories,
+        created: 0,
+        updated: 0,
+        unchanged: stalenessReport.currentCount,
+        skippedStale: stalenessReport.staleCount + stalenessReport.impactedCount,
+        rejected: 0,
+        failed: 0
+      },
+      exportedAt: now()
+    };
+  }
+
   const useCase = new ExportBacklogUseCase(
     repository,
     gateway,
     authorizer,
     getAuthorityBundleUseCase,
     evaluateStoryReadinessUseCase,
-    buildStoryDependencyGraphUseCase
+    buildStoryDependencyGraphUseCase,
+    evaluateExportStalenessUseCase
   );
 
   const result = await useCase.execute({
     baselineId: options.baselineId,
     targetContainer: options.targetContainer,
-    provider: options.provider,
+    provider,
     storyIds: options.storyIds,
-    forceUpdate: options.forceUpdate,
+    forceUpdate,
+    allowUpdateExisting: allowUpdate,
+    updateRationale: options.rationale,
+    propagateStaleOnly,
     credentials: options.token ? { token: options.token } : undefined,
     actor
   });
 
-  const log = options.log ?? console.log;
-
-  if (options.format === 'json') {
+  if (format === 'json') {
     log(JSON.stringify(result, null, 2));
   } else {
     log(formatExportReport(result));
@@ -274,7 +355,7 @@ export function formatExportReport(result: ExportBacklogResponseDto): string {
   lines.push(`Provider: ${result.provider} | Target: ${result.externalContainer}`);
   lines.push('================================================================');
   lines.push(
-    `Summary: Total: ${result.summary.total} | Created: ${result.summary.created} | Updated: ${result.summary.updated} | Unchanged: ${result.summary.unchanged} | Rejected: ${result.summary.rejected} | Failed: ${result.summary.failed}`
+    `Summary: Total: ${result.summary.total} | Created: ${result.summary.created} | Updated: ${result.summary.updated} | Unchanged: ${result.summary.unchanged} | Skipped Stale: ${result.summary.skippedStale ?? 0} | Rejected: ${result.summary.rejected} | Failed: ${result.summary.failed}`
   );
   lines.push('----------------------------------------------------------------');
 
@@ -283,6 +364,10 @@ export function formatExportReport(result: ExportBacklogResponseDto): string {
       const urlPart = item.externalUrl ? ` -> ${item.externalUrl}` : '';
       lines.push(
         `[${item.status.toUpperCase()}] Story: ${item.storyId} (Issue #${item.externalWorkItemId})${urlPart}`
+      );
+    } else if (item.status === 'skipped-stale') {
+      lines.push(
+        `[SKIPPED-STALE] Story: ${item.storyId} (Issue #${item.externalWorkItemId}) - ${item.message}`
       );
     } else if (item.status === 'rejected') {
       lines.push(
@@ -293,6 +378,26 @@ export function formatExportReport(result: ExportBacklogResponseDto): string {
         `[FAILED] Story: ${item.storyId} - Error: ${item.errorMessage} (Retryable: ${item.retryable})`
       );
     }
+  }
+
+  lines.push('================================================================');
+  return lines.join('\n');
+}
+
+export function formatStalenessReport(report: BaselineExportStalenessReportDto): string {
+  const lines: string[] = [];
+  lines.push('================================================================');
+  lines.push(`Export Staleness Report: Baseline ${report.baselineId}`);
+  lines.push('================================================================');
+  lines.push(
+    `Summary: Total: ${report.totalStories} | Current: ${report.currentCount} | Stale: ${report.staleCount} | Impacted: ${report.impactedCount} | Unexported: ${report.unexportedCount}`
+  );
+  lines.push('----------------------------------------------------------------');
+
+  for (const story of report.stories) {
+    const causesStr =
+      story.causes.length > 0 ? ` (${story.causes.map((c) => c.category).join(', ')})` : '';
+    lines.push(`[${story.classification}] Story: ${story.storyId}${causesStr}`);
   }
 
   lines.push('================================================================');

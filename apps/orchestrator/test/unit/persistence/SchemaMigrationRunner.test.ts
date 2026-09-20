@@ -29,15 +29,16 @@ describe('SchemaMigrationRunner', () => {
     expect(statusBefore.pendingCount).toBeGreaterThanOrEqual(2);
 
     const result = await runner.migrate();
-    expect(result.applied.length).toBeGreaterThanOrEqual(4);
+    expect(result.applied.length).toBeGreaterThanOrEqual(5);
     expect(result.applied[0].version).toBe(1);
     expect(result.applied[1].version).toBe(2);
     expect(result.applied[2].version).toBe(3);
     expect(result.applied[3].version).toBe(4);
+    expect(result.applied[4].version).toBe(5);
 
     const statusAfter = await runner.status();
     expect(statusAfter.pendingCount).toBe(0);
-    expect(statusAfter.currentVersion).toBe(4);
+    expect(statusAfter.currentVersion).toBe(5);
 
     // Verify tables exist
     const tables = await db.query<{ tablename: string }>(
@@ -60,6 +61,7 @@ describe('SchemaMigrationRunner', () => {
     expect(tableNames).toContain('validation_runs');
     expect(tableNames).toContain('governance_approvals');
     expect(tableNames).toContain('backlog_export_mappings');
+    expect(tableNames).toContain('backlog_export_history');
     expect(tableNames).toContain('schema_migrations');
   }, 30000);
 

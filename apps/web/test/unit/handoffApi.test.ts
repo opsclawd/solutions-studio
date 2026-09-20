@@ -8,7 +8,9 @@ import {
   listValidationRuns,
   createGovernanceApproval,
   revokeGovernanceApproval,
-  exportGovernanceAudit
+  exportGovernanceAudit,
+  getExportStaleness,
+  exportBacklog
 } from '../../src/features/handoff/api/handoffApi';
 import { createInstant } from '@solutions-studio/domain';
 import type {
@@ -18,7 +20,9 @@ import type {
   CandidatePromotionStatusDto,
   ValidationRunRecordDto,
   CandidateApprovalRecordDto,
-  GovernanceAuditExportDto
+  GovernanceAuditExportDto,
+  BaselineExportStalenessReportDto,
+  ExportBacklogResponseDto
 } from '@solutions-studio/contracts';
 
 describe('handoffApi', () => {
@@ -422,5 +426,142 @@ describe('handoffApi', () => {
     const res = await exportGovernanceAudit(candidateSha);
     expect(res.candidateSha).toBe(candidateSha);
     expect(res.manifestChecksum).toBe('c'.repeat(64));
+  });
+
+  it('getExportStaleness fetches and parses baseline export staleness report', async () => {
+    const validHash1 = 'a'.repeat(64);
+    const validHash2 = 'b'.repeat(64);
+    const sampleStaleness: BaselineExportStalenessReportDto = {
+      baselineId: 'BASE-001',
+      totalStories: 2,
+      currentCount: 1,
+      staleCount: 1,
+      impactedCount: 0,
+      unexportedCount: 0,
+      stories: [
+        {
+          storyId: 'STORY-1',
+          classification: 'CURRENT',
+          causes: [],
+          impactedByPrerequisiteStoryIds: [],
+          currentContentHash: validHash1,
+          history: [],
+          exportedLineage: {
+            baselineId: 'BASE-001',
+            storyVersion: 1,
+            exportVersion: 1,
+            exportContentHash: validHash1,
+            exportContentHashVersion: 1,
+            exportedAt: createInstant('2026-09-20T12:00:00.000Z'),
+            externalWorkItemId: '41'
+          }
+        },
+        {
+          storyId: 'STORY-2',
+          classification: 'STALE',
+          causes: [
+            {
+              category: 'CONTENT_HASH_MISMATCH',
+              message: 'Hash differs',
+              entityId: 'STORY-2'
+            }
+          ],
+          impactedByPrerequisiteStoryIds: [],
+          currentContentHash: validHash2,
+          history: [],
+          exportedLineage: {
+            baselineId: 'BASE-001',
+            storyVersion: 1,
+            exportVersion: 1,
+            exportContentHash: validHash1,
+            exportContentHashVersion: 1,
+            exportedAt: createInstant('2026-09-20T12:00:00.000Z'),
+            externalWorkItemId: '42'
+          }
+        }
+      ]
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => sampleStaleness
+    } as Response);
+
+    const res = await getExportStaleness('BASE-001', {
+      provider: 'github-issues',
+      targetContainer: 'acme/repo'
+    });
+
+    expect(res.baselineId).toBe('BASE-001');
+    expect(res.totalStories).toBe(2);
+    expect(res.staleCount).toBe(1);
+    expect(res.stories[1].causes[0].category).toBe('CONTENT_HASH_MISMATCH');
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining(
+        '/api/baselines/BASE-001/export/backlog/staleness?provider=github-issues&targetContainer=acme%2Frepo'
+      ),
+      expect.objectContaining({ method: 'GET' })
+    );
+  });
+
+  it('exportBacklog sends export request and parses response', async () => {
+    const validHash = 'c'.repeat(64);
+    const sampleResponse: ExportBacklogResponseDto = {
+      baselineId: 'BASE-001',
+      provider: 'github-issues',
+      externalContainer: 'acme/repo',
+      items: [
+        {
+          storyId: 'STORY-1',
+          status: 'created',
+          externalWorkItemId: '42',
+          externalUrl: 'https://github.com/acme/repo/issues/42',
+          exportContentHash: validHash,
+          exportedAt: createInstant('2026-09-20T12:00:00.000Z')
+        }
+      ],
+      summary: {
+        total: 1,
+        created: 1,
+        updated: 0,
+        unchanged: 0,
+        skippedStale: 0,
+        rejected: 0,
+        failed: 0
+      },
+      exportedAt: createInstant('2026-09-20T12:00:00.000Z')
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => sampleResponse
+    } as Response);
+
+    const res = await exportBacklog('BASE-001', {
+      targetContainer: 'acme/repo',
+      storyIds: ['STORY-1'],
+      allowUpdateExisting: true,
+      updateRationale: 'Updated acceptance criteria'
+    });
+
+    expect(res.summary.created).toBe(1);
+    const firstItem = res.items[0];
+    if (firstItem && firstItem.status === 'created') {
+      expect(firstItem.externalWorkItemId).toBe('42');
+    }
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/baselines/BASE-001/export/backlog'),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          targetContainer: 'acme/repo',
+          storyIds: ['STORY-1'],
+          allowUpdateExisting: true,
+          updateRationale: 'Updated acceptance criteria'
+        })
+      })
+    );
   });
 });

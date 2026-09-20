@@ -45,6 +45,7 @@ export const BACKUP_TABLES = [
   'projections',
   'stories',
   'backlog_export_mappings',
+  'backlog_export_history',
   'evaluation_runs',
   'validation_runs',
   'governance_approvals'

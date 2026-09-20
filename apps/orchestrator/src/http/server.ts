@@ -36,6 +36,7 @@ import { dependencyGraphRoutes } from './routes/dependency-graph.js';
 import { handoffRoutes } from './routes/handoff.js';
 import { governanceRoutes } from './routes/governance.js';
 import type { ExportBacklogUseCase } from '../application/use-cases/ExportBacklogUseCase.js';
+import type { EvaluateExportStalenessUseCase } from '../application/use-cases/EvaluateExportStalenessUseCase.js';
 import type { GetBacklogExportMappingsUseCase } from '../application/use-cases/GetBacklogExportMappingsUseCase.js';
 import { backlogRoutes } from './routes/backlog.js';
 import type { RecordValidationRunUseCase } from '../application/use-cases/governance/RecordValidationRunUseCase.js';
@@ -78,6 +79,7 @@ export interface OrchestratorServerDependencies {
   readonly revokeGovernanceApprovalUseCase?: RevokeGovernanceApprovalUseCase;
   readonly exportGovernanceAuditUseCase?: ExportGovernanceAuditUseCase;
   readonly exportBacklogUseCase?: ExportBacklogUseCase;
+  readonly evaluateExportStalenessUseCase?: EvaluateExportStalenessUseCase;
   readonly getBacklogExportMappingsUseCase?: GetBacklogExportMappingsUseCase;
 }
 
@@ -302,9 +304,14 @@ export function buildServer(
     });
   }
 
-  if (deps.exportBacklogUseCase && deps.getBacklogExportMappingsUseCase) {
+  if (
+    deps.exportBacklogUseCase &&
+    deps.evaluateExportStalenessUseCase &&
+    deps.getBacklogExportMappingsUseCase
+  ) {
     app.register(backlogRoutes, {
       exportBacklogUseCase: deps.exportBacklogUseCase,
+      evaluateExportStalenessUseCase: deps.evaluateExportStalenessUseCase,
       getBacklogExportMappingsUseCase: deps.getBacklogExportMappingsUseCase,
       authorizer: deps.authorizer
     });

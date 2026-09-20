@@ -118,7 +118,8 @@ describe('GetEngineeringHandoffBundleUseCase', () => {
       listStories: async () => [storyRecord],
       listCandidateFindings: async () => [],
       listEngineeringDecisions: async () => [],
-      listProjectionRecords: async () => [storiesProjection]
+      listProjectionRecords: async () => [storiesProjection],
+      listBacklogExportMappings: async () => []
     };
 
     mockGetAuthority = {
@@ -371,5 +372,54 @@ describe('GetEngineeringHandoffBundleUseCase', () => {
 
     const bundle = await useCase.execute({ baselineId: baselineId as string });
     expect(bundle.summary.isHandoffReady).toBe(false);
+  });
+
+  it('includes exportMappings and stalenessSummary when evaluateExportStalenessUseCase is provided', async () => {
+    const mockMapping: any = {
+      id: 'map-1',
+      storyId: storyRecord.id,
+      storyVersion: 1,
+      exportVersion: 1,
+      exportContentHashVersion: 2,
+      baselineId,
+      requirementRevisionIds: [req1],
+      provider: 'github',
+      externalContainer: 'org/repo',
+      externalWorkItemId: '42',
+      exportContentHash: storyHash,
+      exportedAt: now(),
+      exportedBy: 'tester',
+      history: []
+    };
+    mockRepository.listBacklogExportMappings = async () => [mockMapping];
+
+    const mockEvaluateStaleness = {
+      execute: async () => ({
+        baselineId: baselineId as string,
+        provider: 'github',
+        targetContainer: 'org/repo',
+        evaluatedAt: now(),
+        totalStories: 1,
+        currentCount: 1,
+        staleCount: 0,
+        impactedCount: 0,
+        unexportedCount: 0,
+        stories: []
+      })
+    };
+
+    const useCaseWithStaleness = new GetEngineeringHandoffBundleUseCase(
+      mockRepository as IRequirementsRepository,
+      mockGetAuthority as GetAuthorityBundleUseCase,
+      mockEvaluateReadiness as EvaluateStoryReadinessUseCase,
+      mockCoverage as ComputeRequirementCoverageUseCase,
+      mockBuildGraph as BuildStoryDependencyGraphUseCase,
+      mockEvaluateStaleness as any
+    );
+
+    const bundle = await useCaseWithStaleness.execute({ baselineId: baselineId as string });
+    expect(bundle.exportMappings).toHaveLength(1);
+    expect(bundle.exportMappings?.[0]?.id).toBe('map-1');
+    expect(bundle.stalenessSummary?.totalStories).toBe(1);
   });
 });

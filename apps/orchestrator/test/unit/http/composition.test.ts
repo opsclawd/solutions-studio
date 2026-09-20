@@ -237,7 +237,7 @@ describe('HTTP Boundary: Composition Root & Server CLI', () => {
         // Verify migrations ran automatically on startup
         const runner = new SchemaMigrationRunner({ db: underlyingClient });
         const status = await runner.status();
-        expect(status.currentVersion).toBe(4);
+        expect(status.currentVersion).toBe(5);
         expect(status.pendingCount).toBe(0);
 
         // Test operational probes
@@ -251,7 +251,7 @@ describe('HTTP Boundary: Composition Root & Server CLI', () => {
         expect(readyBody.status).toBe('healthy');
         expect(readyBody.database?.status).toBe('healthy');
         expect(readyBody.database?.details?.dialect).toBe('postgresql');
-        expect(readyBody.database?.details?.currentMigration).toBe(4);
+        expect(readyBody.database?.details?.currentMigration).toBe(5);
 
         const healthRes = await composed.app.inject({ method: 'GET', url: '/api/health' });
         expect(healthRes.statusCode).toBe(200);

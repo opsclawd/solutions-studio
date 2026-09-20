@@ -8,7 +8,10 @@ import type {
   CandidateApprovalRecordDto,
   CreateApprovalRequestDto,
   RevokeApprovalRequestDto,
-  GovernanceAuditExportDto
+  GovernanceAuditExportDto,
+  BaselineExportStalenessReportDto,
+  ExportBacklogRequestDto,
+  ExportBacklogResponseDto
 } from '@solutions-studio/contracts';
 import {
   EngineeringHandoffBundleDtoSchema,
@@ -17,7 +20,9 @@ import {
   CandidatePromotionStatusDtoSchema,
   ValidationRunRecordDtoSchema,
   CandidateApprovalRecordDtoSchema,
-  GovernanceAuditExportDtoSchema
+  GovernanceAuditExportDtoSchema,
+  BaselineExportStalenessReportDtoSchema,
+  ExportBacklogResponseDtoSchema
 } from '@solutions-studio/contracts';
 import { apiClient } from '@/features/review/api/client';
 import { listBaselines as listBaselinesFromApi } from '@/features/review/api/baselinesApi';
@@ -164,4 +169,46 @@ export async function exportGovernanceAudit(
     }
   );
   return GovernanceAuditExportDtoSchema.parse(data);
+}
+
+export async function getExportStaleness(
+  baselineId: string,
+  options?: {
+    provider?: string;
+    targetContainer?: string;
+    storyIds?: string[];
+  }
+): Promise<BaselineExportStalenessReportDto> {
+  const params = new URLSearchParams();
+  if (options?.provider) {
+    params.set('provider', options.provider);
+  }
+  if (options?.targetContainer) {
+    params.set('targetContainer', options.targetContainer);
+  }
+  if (options?.storyIds && options.storyIds.length > 0) {
+    params.set('storyIds', options.storyIds.join(','));
+  }
+  const query = params.toString() ? `?${params.toString()}` : '';
+  const data = await apiClient<BaselineExportStalenessReportDto>(
+    `/api/baselines/${encodeURIComponent(baselineId)}/export/backlog/staleness${query}`,
+    {
+      method: 'GET'
+    }
+  );
+  return BaselineExportStalenessReportDtoSchema.parse(data);
+}
+
+export async function exportBacklog(
+  baselineId: string,
+  payload: ExportBacklogRequestDto
+): Promise<ExportBacklogResponseDto> {
+  const data = await apiClient<ExportBacklogResponseDto>(
+    `/api/baselines/${encodeURIComponent(baselineId)}/export/backlog`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }
+  );
+  return ExportBacklogResponseDtoSchema.parse(data);
 }

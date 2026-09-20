@@ -8,7 +8,8 @@ import {
   now,
   type AuthenticatedActor,
   type Story,
-  type BacklogExportMapping
+  type BacklogExportMapping,
+  type BacklogExportHistoryEntry
 } from '@solutions-studio/domain';
 import type {
   ExportBacklogResponseDto,
@@ -19,11 +20,13 @@ import type { IAuthorizationPolicy } from '../ports/identity/IAuthorizationPolic
 import type { GetAuthorityBundleUseCase } from './GetAuthorityBundleUseCase.js';
 import type { EvaluateStoryReadinessUseCase } from './EvaluateStoryReadinessUseCase.js';
 import type { BuildStoryDependencyGraphUseCase } from './BuildStoryDependencyGraphUseCase.js';
+import { EvaluateExportStalenessUseCase } from './EvaluateExportStalenessUseCase.js';
 import { UnknownRequirementsBaselineError } from './ReconciliationErrors.js';
 import { UnknownStoryError } from './StoryProjectionErrors.js';
 import { mapStoryRecordToDomainStory } from './storyMappers.js';
 import {
   computeStoryContentHash,
+  matchesStoryContentHash,
   type IBacklogExportGateway,
   type BacklogExportPayload,
   type BacklogExportPrerequisiteRef,
@@ -39,6 +42,9 @@ export interface ExportBacklogInput {
   readonly provider?: string;
   readonly storyIds?: readonly string[];
   readonly forceUpdate?: boolean;
+  readonly allowUpdateExisting?: boolean;
+  readonly updateRationale?: string;
+  readonly propagateStaleOnly?: boolean;
   readonly credentials?: {
     readonly token?: string;
   };
@@ -56,14 +62,26 @@ function isRetryableError(error: unknown): boolean {
 }
 
 export class ExportBacklogUseCase {
+  private readonly evaluateExportStalenessUseCase: EvaluateExportStalenessUseCase;
+
   constructor(
     private readonly repository: IRequirementsRepository,
     private readonly gatewayResolver: BacklogGatewayResolver,
     private readonly authorizer: IAuthorizationPolicy,
     private readonly getAuthorityBundleUseCase: GetAuthorityBundleUseCase,
     private readonly evaluateStoryReadinessUseCase: EvaluateStoryReadinessUseCase,
-    private readonly buildStoryDependencyGraphUseCase: BuildStoryDependencyGraphUseCase
-  ) {}
+    private readonly buildStoryDependencyGraphUseCase: BuildStoryDependencyGraphUseCase,
+    evaluateExportStalenessUseCase?: EvaluateExportStalenessUseCase
+  ) {
+    this.evaluateExportStalenessUseCase =
+      evaluateExportStalenessUseCase ??
+      new EvaluateExportStalenessUseCase(
+        repository,
+        getAuthorityBundleUseCase,
+        buildStoryDependencyGraphUseCase,
+        authorizer
+      );
+  }
 
   private resolveGateway(providerId: string): IBacklogExportGateway {
     if (typeof this.gatewayResolver === 'function') {
@@ -146,10 +164,29 @@ export class ExportBacklogUseCase {
         return orderA - orderB || a.id.localeCompare(b.id);
       });
 
-      const candidateStories =
+      let candidateStories =
         input.storyIds && input.storyIds.length > 0
           ? sortedStories.filter((s) => input.storyIds!.includes(s.id))
           : sortedStories;
+
+      // Evaluate staleness to carry deterministic classifications into export decisions
+      const stalenessReport = await this.evaluateExportStalenessUseCase.execute({
+        baselineId: input.baselineId,
+        provider: providerId,
+        targetContainer: input.targetContainer,
+        actor: input.actor
+      });
+      const stalenessMap = new Map(stalenessReport.stories.map((s) => [s.storyId, s]));
+
+      // If propagateStaleOnly is requested, export only STALE or IMPACTED stories
+      if (input.propagateStaleOnly) {
+        const staleOrImpactedIds = new Set(
+          stalenessReport.stories
+            .filter((s) => s.classification === 'STALE' || s.classification === 'IMPACTED')
+            .map((s) => s.storyId)
+        );
+        candidateStories = candidateStories.filter((s) => staleOrImpactedIds.has(s.id));
+      }
 
       const items: ExportStoryItemResultDto[] = [];
       const processedMappings = new Map<string, BacklogExportMapping>();
@@ -229,6 +266,9 @@ export class ExportBacklogUseCase {
             storyId: story.id
           });
 
+          const currentStoryRecord = storyRecords.find((r) => r.id === story.id);
+          const currentStoryVersion = currentStoryRecord?.version ?? story.version ?? 1;
+
           const reqRevisionSet = new Set(story.requirementRevisionIds);
           const storyReqRevs = authorityBundle.requirements.filter((r) => reqRevisionSet.has(r.id));
 
@@ -237,39 +277,44 @@ export class ExportBacklogUseCase {
             policyRevisionSet.has(p.id)
           );
 
-          const payload: BacklogExportPayload = {
-            story,
-            baseline,
-            requirements: storyReqRevs,
-            policyConstraints: storyPolicyRevs,
-            engineeringDecisions,
-            contentHash,
-            targetContainer: input.targetContainer,
-            prerequisites
-          };
-
           // If no local mapping, attempt remote reconciliation with provider
           // (recovering from prior provider-success-plus-persistence-failure)
           if (!existingMapping && gateway.findWorkItem) {
             try {
               const remoteItem = await gateway.findWorkItem({
                 targetContainer: input.targetContainer,
-                payload,
+                payload: {
+                  story,
+                  baseline,
+                  requirements: storyReqRevs,
+                  policyConstraints: storyPolicyRevs,
+                  engineeringDecisions,
+                  contentHash,
+                  targetContainer: input.targetContainer,
+                  prerequisites,
+                  exportVersion: 1,
+                  history: []
+                },
                 credentials: input.credentials
               });
               if (remoteItem) {
                 const recoveredMapping = createBacklogExportMapping({
                   id: createBacklogExportMappingId(randomUUID()),
                   storyId: story.id,
+                  storyVersion: currentStoryVersion,
+                  exportVersion: 1,
                   baselineId: baseline.id,
                   provider: providerId,
                   externalContainer: input.targetContainer,
                   externalWorkItemId: remoteItem.externalWorkItemId,
                   externalUrl: remoteItem.externalUrl,
                   exportContentHash: contentHash,
+                  requirementRevisionIds: story.requirementRevisionIds ?? [],
+                  policyConstraintRevisionIds: story.policyConstraintRevisionIds ?? [],
                   exportedAt: now(),
                   exportedBy: input.actor.id,
-                  metadata: { ...remoteItem.metadata, reconciled: true }
+                  metadata: { ...remoteItem.metadata, reconciled: true },
+                  history: []
                 });
                 await this.repository.saveBacklogExportMapping(recoveredMapping);
                 existingMapping = recoveredMapping;
@@ -279,12 +324,28 @@ export class ExportBacklogUseCase {
             }
           }
 
+          const storyStaleness = stalenessMap.get(story.id);
+
+          const isContentHashEqual = existingMapping
+            ? matchesStoryContentHash({
+                mappingHash: existingMapping.exportContentHash,
+                mappingHashVersion: existingMapping.exportContentHashVersion,
+                currentStory: story,
+                mappingBaselineId: existingMapping.baselineId,
+                currentBaselineId: baseline.id,
+                engineeringDecisionIds: engineeringDecisions.map((d) => d.id),
+                prerequisites
+              })
+            : false;
+
+          const isCurrent =
+            !storyStaleness ||
+            storyStaleness.classification === 'CURRENT' ||
+            (storyStaleness.classification === 'UNEXPORTED' && Boolean(existingMapping));
+
           // Idempotency check: unchanged story produces 0 provider calls
-          if (
-            existingMapping &&
-            existingMapping.exportContentHash === contentHash &&
-            !input.forceUpdate
-          ) {
+          // Only unchanged if content hash matches AND classification is CURRENT AND not forceUpdate
+          if (existingMapping && isContentHashEqual && isCurrent && !input.forceUpdate) {
             processedMappings.set(story.id, existingMapping);
             items.push({
               storyId: story.id,
@@ -297,8 +358,68 @@ export class ExportBacklogUseCase {
             return;
           }
 
+          // Fail closed: if existing mapping differs / is STALE / is IMPACTED and allowUpdateExisting/forceUpdate is NOT granted, skip
+          if (existingMapping && !input.allowUpdateExisting && !input.forceUpdate) {
+            processedMappings.set(story.id, existingMapping);
+
+            items.push({
+              storyId: story.id,
+              status: 'skipped-stale',
+              externalWorkItemId: existingMapping.externalWorkItemId,
+              externalUrl: existingMapping.externalUrl,
+              stalenessReport: storyStaleness,
+              message: `Story '${story.id}' already exported (work item #${existingMapping.externalWorkItemId}) has changed or is stale (${storyStaleness?.classification ?? 'CHANGED'}). Explicit confirmation (allowUpdateExisting: true) is required to update.`
+            });
+            return;
+          }
+
           if (existingMapping) {
             // Explicit update of existing work item
+            const prereqExportVersions: Record<string, number> = {};
+            for (const depId of story.dependencies ?? []) {
+              const depMapping =
+                processedMappings.get(depId) ??
+                (await this.repository.findBacklogExportMapping({
+                  storyId: depId,
+                  provider: providerId,
+                  externalContainer: input.targetContainer
+                }));
+              if (depMapping) {
+                prereqExportVersions[depId] = depMapping.exportVersion;
+              }
+            }
+
+            const nextExportVersion = (existingMapping.exportVersion ?? 1) + 1;
+            const historyEntry: BacklogExportHistoryEntry = {
+              exportVersion: existingMapping.exportVersion ?? 1,
+              storyVersion: existingMapping.storyVersion ?? 1,
+              baselineId: existingMapping.baselineId,
+              exportContentHash: existingMapping.exportContentHash,
+              exportContentHashVersion: existingMapping.exportContentHashVersion ?? 1,
+              prerequisiteExportVersions: existingMapping.prerequisiteExportVersions,
+              requirementRevisionIds: existingMapping.requirementRevisionIds ?? [],
+              policyConstraintRevisionIds: existingMapping.policyConstraintRevisionIds ?? [],
+              exportedAt: existingMapping.exportedAt,
+              exportedBy: existingMapping.exportedBy,
+              externalWorkItemId: existingMapping.externalWorkItemId,
+              externalUrl: existingMapping.externalUrl,
+              updateRationale: input.updateRationale
+            };
+            const updatedHistory = [...(existingMapping.history ?? []), historyEntry];
+
+            const payload: BacklogExportPayload = {
+              story,
+              baseline,
+              requirements: storyReqRevs,
+              policyConstraints: storyPolicyRevs,
+              engineeringDecisions,
+              contentHash,
+              targetContainer: input.targetContainer,
+              prerequisites,
+              exportVersion: nextExportVersion,
+              history: updatedHistory
+            };
+
             try {
               const result = await gateway.updateWorkItem({
                 targetContainer: input.targetContainer,
@@ -310,15 +431,22 @@ export class ExportBacklogUseCase {
               const updatedMapping = createBacklogExportMapping({
                 id: existingMapping.id,
                 storyId: story.id,
+                storyVersion: currentStoryVersion,
+                exportVersion: nextExportVersion,
+                exportContentHashVersion: 2,
+                prerequisiteExportVersions: prereqExportVersions,
                 baselineId: baseline.id,
                 provider: providerId,
                 externalContainer: input.targetContainer,
                 externalWorkItemId: result.externalWorkItemId,
                 externalUrl: result.externalUrl ?? existingMapping.externalUrl,
                 exportContentHash: contentHash,
+                requirementRevisionIds: story.requirementRevisionIds ?? [],
+                policyConstraintRevisionIds: story.policyConstraintRevisionIds ?? [],
                 exportedAt: now(),
                 exportedBy: input.actor.id,
-                metadata: result.metadata ?? existingMapping.metadata
+                metadata: result.metadata ?? existingMapping.metadata,
+                history: updatedHistory
               });
 
               await this.repository.updateBacklogExportMapping(updatedMapping);
@@ -346,6 +474,19 @@ export class ExportBacklogUseCase {
             }
           } else {
             // Create new work item
+            const payload: BacklogExportPayload = {
+              story,
+              baseline,
+              requirements: storyReqRevs,
+              policyConstraints: storyPolicyRevs,
+              engineeringDecisions,
+              contentHash,
+              targetContainer: input.targetContainer,
+              prerequisites,
+              exportVersion: 1,
+              history: []
+            };
+
             try {
               const result = await gateway.createWorkItem({
                 targetContainer: input.targetContainer,
@@ -353,18 +494,39 @@ export class ExportBacklogUseCase {
                 credentials: input.credentials
               });
 
+              const prereqExportVersions: Record<string, number> = {};
+              for (const depId of story.dependencies ?? []) {
+                const depMapping =
+                  processedMappings.get(depId) ??
+                  (await this.repository.findBacklogExportMapping({
+                    storyId: depId,
+                    provider: providerId,
+                    externalContainer: input.targetContainer
+                  }));
+                if (depMapping) {
+                  prereqExportVersions[depId] = depMapping.exportVersion;
+                }
+              }
+
               const newMapping = createBacklogExportMapping({
                 id: createBacklogExportMappingId(randomUUID()),
                 storyId: story.id,
+                storyVersion: currentStoryVersion,
+                exportVersion: 1,
+                exportContentHashVersion: 2,
+                prerequisiteExportVersions: prereqExportVersions,
                 baselineId: baseline.id,
                 provider: providerId,
                 externalContainer: input.targetContainer,
                 externalWorkItemId: result.externalWorkItemId,
                 externalUrl: result.externalUrl,
                 exportContentHash: contentHash,
+                requirementRevisionIds: story.requirementRevisionIds ?? [],
+                policyConstraintRevisionIds: story.policyConstraintRevisionIds ?? [],
                 exportedAt: now(),
                 exportedBy: input.actor.id,
-                metadata: result.metadata
+                metadata: result.metadata,
+                history: []
               });
 
               await this.repository.saveBacklogExportMapping(newMapping);
@@ -399,6 +561,7 @@ export class ExportBacklogUseCase {
         created: items.filter((i) => i.status === 'created').length,
         updated: items.filter((i) => i.status === 'updated').length,
         unchanged: items.filter((i) => i.status === 'unchanged').length,
+        skippedStale: items.filter((i) => i.status === 'skipped-stale').length,
         rejected: items.filter((i) => i.status === 'rejected').length,
         failed: items.filter((i) => i.status === 'failed').length
       };

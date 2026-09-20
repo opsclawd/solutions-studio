@@ -5,7 +5,8 @@ import type {
   RequirementRevision,
   PolicyConstraintRevision,
   EngineeringDecision,
-  BacklogExportMapping
+  BacklogExportMapping,
+  BacklogExportHistoryEntry
 } from '@solutions-studio/domain';
 
 export interface BacklogExportPrerequisiteRef {
@@ -23,6 +24,8 @@ export interface BacklogExportPayload {
   readonly contentHash: string;
   readonly targetContainer: string;
   readonly prerequisites: readonly BacklogExportPrerequisiteRef[];
+  readonly exportVersion?: number;
+  readonly history?: readonly BacklogExportHistoryEntry[];
 }
 
 export interface ExportWorkItemParams {

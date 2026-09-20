@@ -148,6 +148,7 @@ export class RestoreService {
     // Truncate / delete all tables in reverse order
     await this.db.transaction(async (tx) => {
       await tx.exec(`
+        DELETE FROM backlog_export_history;
         DELETE FROM backlog_export_mappings;
         DELETE FROM governance_approvals;
         DELETE FROM validation_runs;
@@ -439,8 +440,11 @@ export class RestoreService {
           `INSERT INTO backlog_export_mappings (
              id, story_id, baseline_id, provider, external_container,
              external_work_item_id, external_url, export_content_hash,
-             exported_at, exported_by, metadata, created_at, updated_at
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13);`,
+             exported_at, exported_by, metadata, export_version, story_version,
+             requirement_revision_ids, policy_constraint_revision_ids, history,
+             export_content_hash_version, prerequisite_export_versions,
+             created_at, updated_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20);`,
           [
             row.id,
             row.story_id,
@@ -453,8 +457,47 @@ export class RestoreService {
             row.exported_at,
             row.exported_by,
             jsonCol(row.metadata),
+            row.export_version ?? 1,
+            row.story_version ?? 1,
+            jsonCol(row.requirement_revision_ids ?? []),
+            row.policy_constraint_revision_ids ? jsonCol(row.policy_constraint_revision_ids) : null,
+            jsonCol(row.history ?? []),
+            row.export_content_hash_version ?? 1,
+            jsonCol(row.prerequisite_export_versions ?? {}),
             row.created_at ?? new Date().toISOString(),
             row.updated_at ?? new Date().toISOString()
+          ]
+        );
+      }
+
+      // 14b. backlog_export_history
+      for (const row of await loadRows('backlog_export_history')) {
+        await tx.query(
+          `INSERT INTO backlog_export_history (
+             id, mapping_id, export_version, baseline_id, story_id,
+             story_version, requirement_revision_ids, policy_constraint_revision_ids,
+             export_content_hash, exported_at, exported_by, external_work_item_id,
+             external_url, update_rationale, export_content_hash_version,
+             prerequisite_export_versions, created_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17);`,
+          [
+            row.id,
+            row.mapping_id,
+            row.export_version,
+            row.baseline_id,
+            row.story_id,
+            row.story_version ?? 1,
+            jsonCol(row.requirement_revision_ids ?? []),
+            row.policy_constraint_revision_ids ? jsonCol(row.policy_constraint_revision_ids) : null,
+            row.export_content_hash,
+            row.exported_at,
+            row.exported_by,
+            row.external_work_item_id,
+            row.external_url ?? null,
+            row.update_rationale ?? null,
+            row.export_content_hash_version ?? 1,
+            jsonCol(row.prerequisite_export_versions ?? {}),
+            row.created_at ?? new Date().toISOString()
           ]
         );
       }

@@ -7,7 +7,10 @@ import type {
   StoryReadinessReportDto,
   CandidatePromotionStatusDto,
   ValidationRunRecordDto,
-  CandidateApprovalRecordDto
+  CandidateApprovalRecordDto,
+  BaselineExportStalenessReportDto,
+  ExportBacklogRequestDto,
+  ExportBacklogResponseDto
 } from '@solutions-studio/contracts';
 import {
   getEngineeringHandoffBundle,
@@ -19,7 +22,9 @@ import {
   listGovernanceApprovals,
   createGovernanceApproval,
   revokeGovernanceApproval,
-  exportGovernanceAudit
+  exportGovernanceAudit,
+  getExportStaleness,
+  exportBacklog
 } from '../api/handoffApi';
 
 export type HandoffTab =
@@ -43,15 +48,24 @@ export interface UseHandoffStateReturn {
   readonly governanceApprovals: readonly CandidateApprovalRecordDto[];
   readonly isLoadingGovernance: boolean;
   readonly governanceError: string | null;
+  readonly stalenessReport: BaselineExportStalenessReportDto | null;
+  readonly isLoadingStaleness: boolean;
+  readonly stalenessError: string | null;
+  readonly selectedProvider?: string;
+  readonly selectedContainer?: string;
+  readonly setSelectedProvider: (provider?: string) => void;
+  readonly setSelectedContainer: (container?: string) => void;
   readonly setCandidateSha: (sha: string) => void;
   readonly selectBaseline: (baselineId: string) => void;
   readonly setActiveTab: (tab: HandoffTab) => void;
   readonly selectStory: (storyId: string | null) => void;
   readonly refresh: () => Promise<void>;
   readonly refreshGovernance: () => Promise<void>;
+  readonly refreshStaleness: () => Promise<void>;
   readonly approveCandidate: (decision: 'GO' | 'DESIGN_CHANGE', rationale: string) => Promise<void>;
   readonly revokeApproval: (approvalId: string, rationale: string) => Promise<void>;
   readonly exportAudit: () => Promise<void>;
+  readonly exportStories: (request: ExportBacklogRequestDto) => Promise<ExportBacklogResponseDto>;
   readonly mutateStoryDependencies: (
     storyId: string,
     dependencies: string[]
@@ -83,6 +97,15 @@ export function useHandoffState(
   const [isLoadingGovernance, setIsLoadingGovernance] = useState(false);
   const [governanceError, setGovernanceError] = useState<string | null>(null);
 
+  // Staleness state
+  const [stalenessReport, setStalenessReport] = useState<BaselineExportStalenessReportDto | null>(
+    null
+  );
+  const [isLoadingStaleness, setIsLoadingStaleness] = useState(false);
+  const [stalenessError, setStalenessError] = useState<string | null>(null);
+  const [selectedProvider, setSelectedProvider] = useState<string | undefined>(undefined);
+  const [selectedContainer, setSelectedContainer] = useState<string | undefined>(undefined);
+
   const requestSeqRef = useRef<number>(0);
   const activeBaselineIdRef = useRef<string | null>(initialBaselineId ?? null);
 
@@ -111,6 +134,37 @@ export function useHandoffState(
     };
   }, []);
 
+  // Fetch staleness report whenever activeBaselineId changes
+  const fetchStaleness = useCallback(
+    async (baselineId: string, provider?: string, container?: string) => {
+      setIsLoadingStaleness(true);
+      setStalenessError(null);
+      try {
+        const options =
+          provider || container
+            ? {
+                provider,
+                targetContainer: container
+              }
+            : undefined;
+        const data = options
+          ? await getExportStaleness(baselineId, options)
+          : await getExportStaleness(baselineId);
+        if (activeBaselineIdRef.current === baselineId) {
+          setStalenessReport(data);
+        }
+      } catch (err) {
+        if (activeBaselineIdRef.current === baselineId) {
+          const msg = err instanceof Error ? err.message : 'Failed to load export staleness report';
+          setStalenessError(msg);
+        }
+      } finally {
+        setIsLoadingStaleness(false);
+      }
+    },
+    []
+  );
+
   // Fetch handoff bundle whenever activeBaselineId changes
   const fetchBundle = useCallback(async (baselineId: string) => {
     const seq = ++requestSeqRef.current;
@@ -136,8 +190,11 @@ export function useHandoffState(
     activeBaselineIdRef.current = activeBaselineId;
     if (activeBaselineId) {
       fetchBundle(activeBaselineId);
+      fetchStaleness(activeBaselineId, selectedProvider, selectedContainer);
+    } else {
+      setStalenessReport(null);
     }
-  }, [activeBaselineId, fetchBundle]);
+  }, [activeBaselineId, selectedProvider, selectedContainer, fetchBundle, fetchStaleness]);
 
   // Load authoritative current candidate on mount if not explicitly supplied
   useEffect(() => {
@@ -247,17 +304,55 @@ export function useHandoffState(
     setUpdateDependenciesError(null);
   }, []);
 
-  const selectStory = useCallback((id: string | null) => {
-    setSelectedStoryId(id);
-  }, []);
+  const refreshStaleness = useCallback(async () => {
+    const current = activeBaselineIdRef.current;
+    if (current) {
+      await fetchStaleness(current, selectedProvider, selectedContainer);
+    }
+  }, [fetchStaleness, selectedProvider, selectedContainer]);
+
+  const exportStories = useCallback(
+    async (request: ExportBacklogRequestDto): Promise<ExportBacklogResponseDto> => {
+      const currentBaseline = activeBaselineIdRef.current;
+      if (!currentBaseline) {
+        throw new Error('Baseline is required to export backlog');
+      }
+      setIsLoadingStaleness(true);
+      setStalenessError(null);
+      try {
+        const result = await exportBacklog(currentBaseline, request);
+        await fetchStaleness(
+          currentBaseline,
+          request.provider ?? selectedProvider,
+          request.targetContainer ?? selectedContainer
+        );
+        return result;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Failed to export backlog';
+        setStalenessError(msg);
+        throw err;
+      } finally {
+        setIsLoadingStaleness(false);
+      }
+    },
+    [fetchStaleness, selectedProvider, selectedContainer]
+  );
 
   const refresh = useCallback(async () => {
     const current = activeBaselineIdRef.current;
     await Promise.all([
       current ? fetchBundle(current) : Promise.resolve(),
+      current ? fetchStaleness(current, selectedProvider, selectedContainer) : Promise.resolve(),
       fetchGovernance(candidateSha)
     ]);
-  }, [fetchBundle, fetchGovernance, candidateSha]);
+  }, [
+    fetchBundle,
+    fetchStaleness,
+    fetchGovernance,
+    candidateSha,
+    selectedProvider,
+    selectedContainer
+  ]);
 
   const mutateStoryDependencies = useCallback(
     async (storyId: string, dependencies: string[]): Promise<StoryDto | undefined> => {
@@ -286,6 +381,10 @@ export function useHandoffState(
     setUpdateDependenciesError(null);
   }, []);
 
+  const selectStory = useCallback((id: string | null) => {
+    setSelectedStoryId(id);
+  }, []);
+
   const selectedStory = bundle?.stories.find((s) => s.id === selectedStoryId) ?? null;
   const selectedStoryReadiness =
     bundle?.readinessReports.find((r) => r.storyId === selectedStoryId) ?? null;
@@ -308,15 +407,24 @@ export function useHandoffState(
     governanceApprovals,
     isLoadingGovernance,
     governanceError,
+    stalenessReport,
+    isLoadingStaleness,
+    stalenessError,
+    selectedProvider,
+    selectedContainer,
+    setSelectedProvider,
+    setSelectedContainer,
     setCandidateSha,
     selectBaseline,
     setActiveTab,
     selectStory,
     refresh,
     refreshGovernance,
+    refreshStaleness,
     approveCandidate,
     revokeApproval,
     exportAudit,
+    exportStories,
     mutateStoryDependencies,
     clearMutationError
   };

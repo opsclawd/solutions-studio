@@ -33,10 +33,12 @@ export function EngineeringHandoffWorkspace({
     governanceApprovals,
     isLoadingGovernance,
     governanceError,
+    stalenessReport,
     setCandidateSha,
     approveCandidate,
     revokeApproval,
     exportAudit,
+    exportStories,
     refreshGovernance,
     selectBaseline,
     setActiveTab,
@@ -101,6 +103,7 @@ export function EngineeringHandoffWorkspace({
         candidateSha={candidateSha}
         onCandidateShaChange={setCandidateSha}
         promotionStatus={promotionStatus}
+        stalenessReport={stalenessReport}
         onSelectBaseline={selectBaseline}
         onRefresh={refresh}
       />
@@ -240,7 +243,9 @@ export function EngineeringHandoffWorkspace({
                 stories={bundle.stories}
                 readinessReports={bundle.readinessReports}
                 coverage={bundle.coverage}
+                stalenessReport={stalenessReport}
                 onUpdateDependencies={handleUpdateDeps}
+                onExportBacklog={exportStories}
                 isUpdatingDependencies={isUpdatingDependencies}
                 mutationError={updateDependenciesError}
               />

@@ -87,6 +87,8 @@ export function formatGitHubIssueBody(
   const edIds = payload.engineeringDecisions.map((d) => d.id).join(', ') || 'None';
   const policyIds = (story.policyConstraintRevisionIds ?? []).join(', ') || 'None';
   const reqIds = story.requirementRevisionIds.join(', ');
+  const storyVersion = story.version ?? 1;
+  const exportVersion = payload.exportVersion ?? 1;
 
   const traceabilitySection = [
     '### Traceability & Lineage',
@@ -95,6 +97,8 @@ export function formatGitHubIssueBody(
     '| :--- | :--- |',
     `| **Baseline ID** | \`${baseline.id}\` |`,
     `| **Story ID** | \`${story.id}\` |`,
+    `| **Story Version** | \`v${storyVersion}\` |`,
+    `| **Export Version** | \`v${exportVersion}\` |`,
     `| **Requirement Revisions** | \`${reqIds}\` |`,
     `| **Policy Constraints** | \`${policyIds}\` |`,
     `| **Engineering Decisions** | \`${edIds}\` |`,
@@ -102,11 +106,30 @@ export function formatGitHubIssueBody(
     ''
   ].join('\n');
 
-  // 6. Machine-readable Provenance HTML comment
+  // 6. Export History (if previous snapshots exist)
+  let historySection = '';
+  if (payload.history && payload.history.length > 0) {
+    historySection = [
+      '### Export History',
+      '',
+      '| Export Version | Story Version | Baseline | Content Hash | Exported At | Rationale |',
+      '| :--- | :--- | :--- | :--- | :--- | :--- |',
+      ...payload.history.map(
+        (h) =>
+          `| v${h.exportVersion} | v${h.storyVersion} | \`${h.baselineId}\` | \`${h.exportContentHash.slice(0, 8)}...\` | ${h.exportedAt} | ${h.updateRationale ?? 'N/A'} |`
+      ),
+      '',
+      ''
+    ].join('\n');
+  }
+
+  // 7. Machine-readable Provenance HTML comment
   const machineReadableProvenance = {
     declaredProvenance: {
       baselineId: baseline.id,
       storyId: story.id,
+      storyVersion,
+      exportVersion,
       requirementRevisionIds: story.requirementRevisionIds,
       policyConstraintRevisionIds: story.policyConstraintRevisionIds ?? [],
       engineeringDecisionIds: payload.engineeringDecisions.map((d) => d.id)
@@ -137,6 +160,7 @@ export function formatGitHubIssueBody(
     scenariosSection,
     prereqSection,
     traceabilitySection,
+    historySection,
     provenanceComment
   ]
     .filter(Boolean)

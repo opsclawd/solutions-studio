@@ -58,6 +58,7 @@ import {
   type SourceType,
   type BacklogExportMapping,
   type BacklogExportMappingId,
+  type BacklogExportHistoryEntry,
   createBacklogExportMapping
 } from '@solutions-studio/domain';
 import {
@@ -1845,7 +1846,7 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
     action: () => Promise<T>
   ): Promise<T> {
     assertSafeIdentifier(baselineId, 'baselineId');
-    return this.acquireEntityLock(getBaselineLockKey(baselineId), action);
+    return this.acquireFileLock(getBaselineLockKey(baselineId), action);
   }
 
   async saveValidationRun(run: ValidationRunRecord): Promise<void> {
@@ -2170,7 +2171,13 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
       const payload: BacklogExportMappingDto = {
         id: mapping.id,
         storyId: mapping.storyId,
+        storyVersion: mapping.storyVersion ?? 1,
+        exportVersion: mapping.exportVersion ?? 1,
         baselineId: mapping.baselineId,
+        requirementRevisionIds: [...mapping.requirementRevisionIds],
+        policyConstraintRevisionIds: mapping.policyConstraintRevisionIds
+          ? [...mapping.policyConstraintRevisionIds]
+          : undefined,
         provider: mapping.provider,
         externalContainer: mapping.externalContainer,
         externalWorkItemId: mapping.externalWorkItemId,
@@ -2178,7 +2185,30 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
         exportContentHash: mapping.exportContentHash,
         exportedAt: mapping.exportedAt,
         exportedBy: mapping.exportedBy,
-        metadata: mapping.metadata ? { ...mapping.metadata } : undefined
+        metadata: mapping.metadata ? { ...mapping.metadata } : undefined,
+        exportContentHashVersion: mapping.exportContentHashVersion ?? 1,
+        prerequisiteExportVersions: mapping.prerequisiteExportVersions
+          ? { ...mapping.prerequisiteExportVersions }
+          : undefined,
+        history: (mapping.history ?? []).map((h) => ({
+          exportVersion: h.exportVersion,
+          storyVersion: h.storyVersion,
+          baselineId: h.baselineId,
+          requirementRevisionIds: [...h.requirementRevisionIds],
+          policyConstraintRevisionIds: h.policyConstraintRevisionIds
+            ? [...h.policyConstraintRevisionIds]
+            : undefined,
+          exportContentHash: h.exportContentHash,
+          exportContentHashVersion: h.exportContentHashVersion ?? 1,
+          prerequisiteExportVersions: h.prerequisiteExportVersions
+            ? { ...h.prerequisiteExportVersions }
+            : undefined,
+          exportedAt: h.exportedAt,
+          exportedBy: h.exportedBy,
+          externalWorkItemId: h.externalWorkItemId,
+          externalUrl: h.externalUrl,
+          updateRationale: h.updateRationale
+        }))
       };
       await writeJsonExclusive(filePath, payload);
     });
@@ -2196,15 +2226,44 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
     return createBacklogExportMapping({
       id: record.id,
       storyId: record.storyId,
+      storyVersion: record.storyVersion ?? 1,
+      exportVersion: record.exportVersion ?? 1,
       baselineId: record.baselineId,
+      requirementRevisionIds: record.requirementRevisionIds ?? [],
+      policyConstraintRevisionIds: record.policyConstraintRevisionIds,
       provider: record.provider,
       externalContainer: record.externalContainer,
       externalWorkItemId: record.externalWorkItemId,
       externalUrl: record.externalUrl,
       exportContentHash: record.exportContentHash,
+      exportContentHashVersion: record.exportContentHashVersion ?? 1,
+      prerequisiteExportVersions: record.prerequisiteExportVersions
+        ? { ...record.prerequisiteExportVersions }
+        : undefined,
       exportedAt: record.exportedAt,
       exportedBy: record.exportedBy,
-      metadata: record.metadata
+      metadata: record.metadata,
+      history: record.history
+        ? record.history.map((h) => ({
+            exportVersion: h.exportVersion,
+            storyVersion: h.storyVersion,
+            baselineId: createRequirementsBaselineId(h.baselineId),
+            requirementRevisionIds: h.requirementRevisionIds.map(createRequirementRevisionId),
+            policyConstraintRevisionIds: h.policyConstraintRevisionIds?.map(
+              createPolicyConstraintRevisionId
+            ),
+            exportContentHash: h.exportContentHash,
+            exportContentHashVersion: h.exportContentHashVersion ?? 1,
+            prerequisiteExportVersions: h.prerequisiteExportVersions
+              ? { ...h.prerequisiteExportVersions }
+              : undefined,
+            exportedAt: h.exportedAt,
+            exportedBy: createActorId(h.exportedBy),
+            externalWorkItemId: h.externalWorkItemId,
+            externalUrl: h.externalUrl,
+            updateRationale: h.updateRationale
+          }))
+        : undefined
     });
   }
 
@@ -2272,17 +2331,100 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
     const payload: BacklogExportMappingDto = {
       id: mapping.id,
       storyId: mapping.storyId,
+      storyVersion: mapping.storyVersion ?? 1,
+      exportVersion: mapping.exportVersion ?? 1,
       baselineId: mapping.baselineId,
+      requirementRevisionIds: [...mapping.requirementRevisionIds],
+      policyConstraintRevisionIds: mapping.policyConstraintRevisionIds
+        ? [...mapping.policyConstraintRevisionIds]
+        : undefined,
       provider: mapping.provider,
       externalContainer: mapping.externalContainer,
       externalWorkItemId: mapping.externalWorkItemId,
       externalUrl: mapping.externalUrl,
       exportContentHash: mapping.exportContentHash,
+      exportContentHashVersion: mapping.exportContentHashVersion ?? 1,
+      prerequisiteExportVersions: mapping.prerequisiteExportVersions
+        ? { ...mapping.prerequisiteExportVersions }
+        : undefined,
       exportedAt: mapping.exportedAt,
       exportedBy: mapping.exportedBy,
-      metadata: mapping.metadata ? { ...mapping.metadata } : undefined
+      metadata: mapping.metadata ? { ...mapping.metadata } : undefined,
+      history: (mapping.history ?? []).map((h) => ({
+        exportVersion: h.exportVersion,
+        storyVersion: h.storyVersion,
+        baselineId: h.baselineId,
+        requirementRevisionIds: [...h.requirementRevisionIds],
+        policyConstraintRevisionIds: h.policyConstraintRevisionIds
+          ? [...h.policyConstraintRevisionIds]
+          : undefined,
+        exportContentHash: h.exportContentHash,
+        exportContentHashVersion: h.exportContentHashVersion ?? 1,
+        prerequisiteExportVersions: h.prerequisiteExportVersions
+          ? { ...h.prerequisiteExportVersions }
+          : undefined,
+        exportedAt: h.exportedAt,
+        exportedBy: h.exportedBy,
+        externalWorkItemId: h.externalWorkItemId,
+        externalUrl: h.externalUrl,
+        updateRationale: h.updateRationale
+      }))
     };
     await writeJsonAtomic(filePath, payload);
+
+    if (mapping.history && mapping.history.length > 0) {
+      const latestSnapshot = mapping.history[mapping.history.length - 1];
+      const historyDir = resolveStorePath(this.baseDir, 'backlog-export-history', mapping.id);
+      await fs.mkdir(historyDir, { recursive: true });
+      const snapshotPath = path.join(historyDir, `v${latestSnapshot.exportVersion}.json`);
+      const existingSnapshot = await readJson<BacklogExportHistoryEntry>(snapshotPath);
+      if (existingSnapshot) {
+        if (existingSnapshot.exportContentHash !== latestSnapshot.exportContentHash) {
+          throw new ImmutableRecordConflictError(
+            snapshotPath,
+            `Immutable backlog export history conflict: mapping '${mapping.id}' export version ${latestSnapshot.exportVersion} already recorded with different content hash`
+          );
+        }
+      } else {
+        await writeJsonAtomic(snapshotPath, latestSnapshot);
+      }
+    }
+  }
+
+  async listBacklogExportHistory(
+    mappingId: BacklogExportMappingId | string
+  ): Promise<readonly BacklogExportHistoryEntry[]> {
+    assertSafeIdentifier(mappingId, 'mappingId');
+    const mapping = await this.getBacklogExportMapping(mappingId);
+    if (mapping?.history && mapping.history.length > 0) {
+      return mapping.history;
+    }
+
+    const historyDir = resolveStorePath(this.baseDir, 'backlog-export-history', String(mappingId));
+    try {
+      const files = await fs.readdir(historyDir);
+      const jsonFiles = files.filter((f) => f.endsWith('.json')).sort();
+      const results: BacklogExportHistoryEntry[] = [];
+      for (const f of jsonFiles) {
+        const entry = await readJson<BacklogExportHistoryEntry>(path.join(historyDir, f));
+        if (entry) {
+          results.push({
+            ...entry,
+            exportContentHashVersion: entry.exportContentHashVersion ?? 1,
+            prerequisiteExportVersions: entry.prerequisiteExportVersions
+              ? { ...entry.prerequisiteExportVersions }
+              : undefined
+          });
+        }
+      }
+      results.sort((a, b) => a.exportVersion - b.exportVersion);
+      return Object.freeze(results);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return Object.freeze([]);
+      }
+      throw err;
+    }
   }
 
   async withBacklogExportLock<T>(
