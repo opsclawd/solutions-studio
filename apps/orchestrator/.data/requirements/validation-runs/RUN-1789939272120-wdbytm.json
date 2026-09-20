@@ -1,0 +1,42 @@
+{
+  "id": "RUN-1789939272120-wdbytm",
+  "candidateSha": "9abbeed744a2df142dee10c4d56761fe19f548c2",
+  "executedAt": "2026-09-20T21:21:12.120Z",
+  "executedBy": "cli:run-phase-3-exit-gate",
+  "phase": "phase-3",
+  "executionMode": "deterministic-ci",
+  "provider": "fake",
+  "artifacts": [
+    {
+      "name": "schema-ddl.sql",
+      "artifactType": "sql-ddl",
+      "contentHash": "f101557ec65e1c352658db571fdfa734307ea1b849c36997b52685a50b4049bd",
+      "payloadRef": "projections/schema-ddl.sql"
+    },
+    {
+      "name": "openapi-spec.json",
+      "artifactType": "openapi-spec",
+      "contentHash": "799a457a1b60cb90f5914c7ff76f6420e474b9d5d237c900c50a2080de6c4428",
+      "payloadRef": "projections/openapi-spec.json"
+    },
+    {
+      "name": "story-order-create.md",
+      "artifactType": "story-projection",
+      "contentHash": "256d34a20dfd7aba67272dc48d38f6d283367bcc13ec2da482e7c537097c07d8",
+      "payloadRef": "stories/story-order-create.md"
+    },
+    {
+      "name": "story-order-cancel.md",
+      "artifactType": "story-projection",
+      "contentHash": "e08f4502b86897e3aa7273e3c22ab688817272e4b9c14e9e2bde7e4a15056525",
+      "payloadRef": "stories/story-order-cancel.md"
+    }
+  ],
+  "evidenceDigest": "daee2e824df5759b8843e5cb35703139607a0932fd842880cfe7964007982fd2",
+  "proposedDisposition": "GO",
+  "summary": {
+    "success": true,
+    "runsCount": 1,
+    "totalDurationMs": 20180
+  }
+}

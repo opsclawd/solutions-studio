@@ -1,0 +1,14 @@
+{
+  "id": "FINDING-1b9d00bc-a0b0-44f0-ab79-7f90c2a7cded",
+  "type": "missing-authorization",
+  "affectedRequirementRevisions": [
+    "REQ-002-R1"
+  ],
+  "evidence": [],
+  "discoveredBy": "artifact-validation",
+  "disposition": "RESOLVED",
+  "rationale": "Resolved by defining explicit 15-minute inactivity timeout requirement.",
+  "actorId": "lead-reviewer",
+  "baselineId": "BASE-001",
+  "originatingProjectionId": "PROJ-002"
+}

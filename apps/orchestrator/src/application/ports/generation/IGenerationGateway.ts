@@ -23,6 +23,15 @@ export interface GenerationResult {
   metadata?: GenerationMetadata;
 }
 
+export interface GenerationHealthReport {
+  readonly status: 'healthy' | 'unhealthy' | 'degraded';
+  readonly provider: string;
+  readonly available: boolean;
+  readonly latencyMs?: number;
+  readonly error?: string;
+}
+
 export interface IGenerationGateway {
   generate(request: GenerationRequest): Promise<GenerationResult>;
+  checkHealth?(): Promise<GenerationHealthReport>;
 }

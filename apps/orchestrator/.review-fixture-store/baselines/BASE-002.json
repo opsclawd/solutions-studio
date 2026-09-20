@@ -2,9 +2,9 @@
   "id": "BASE-002",
   "requirementRevisions": [
     "REQ-002-R1",
-    "REQ-53504457-39ad-4011-bb58-612c1afee2a4-R3"
+    "REQ-694cf196-d3dc-4143-a4b0-e0a62d0fff25-R3"
   ],
   "policyConstraintRevisions": [],
-  "createdAt": "2026-09-20T13:18:14.540Z",
+  "createdAt": "2026-09-20T21:22:12.362Z",
   "createdBy": "lead-reviewer"
 }

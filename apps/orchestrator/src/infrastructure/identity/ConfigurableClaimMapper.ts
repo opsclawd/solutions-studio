@@ -90,8 +90,12 @@ export class ConfigurableClaimMapper implements IClaimMapper {
     // Derive stable internal identity string
     const id =
       claims.preferred_username ||
-      (typeof claims.upn === 'string' ? claims.upn : undefined) ||
-      (typeof claims.oid === 'string' ? claims.oid : undefined) ||
+      (typeof claims.upn === 'string' && claims.upn.trim().length > 0
+        ? claims.upn.trim()
+        : undefined) ||
+      (typeof claims.oid === 'string' && claims.oid.trim().length > 0
+        ? claims.oid.trim()
+        : undefined) ||
       claims.sub;
 
     const name =

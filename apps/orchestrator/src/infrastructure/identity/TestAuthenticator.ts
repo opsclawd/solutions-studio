@@ -1,7 +1,8 @@
 import { createAuthenticatedActor, type AuthenticatedActor } from '@solutions-studio/domain';
 import {
   AuthenticationError,
-  type IAuthenticator
+  type IAuthenticator,
+  type IdentityHealthReport
 } from '../../application/ports/identity/index.js';
 
 export interface TestAuthenticatorOptions {
@@ -121,5 +122,13 @@ export class TestAuthenticator implements IAuthenticator {
     throw new AuthenticationError(`Invalid or unrecognized test token: '${cleanToken}'`, {
       reason: 'INVALID_TOKEN'
     });
+  }
+
+  async checkHealth(): Promise<IdentityHealthReport> {
+    return {
+      status: 'healthy',
+      provider: 'test',
+      reachable: true
+    };
   }
 }

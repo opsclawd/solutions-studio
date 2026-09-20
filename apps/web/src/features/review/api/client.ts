@@ -41,6 +41,13 @@ export async function apiClient<T>(
       headers.set('Authorization', `Bearer ${token}`);
     }
   }
+  if (!headers.has('X-Correlation-ID') && !headers.has('x-correlation-id')) {
+    const correlationId =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? `c-${crypto.randomUUID()}`
+        : `c-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    headers.set('X-Correlation-ID', correlationId);
+  }
 
   let response: Response;
   try {

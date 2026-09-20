@@ -1,0 +1,5 @@
+# Daily maintenance: Class B transient artifact pruning at 03:00 UTC
+# Horizon 1: Prunes raw fixture blobs > 14 days
+# Horizon 2: Prunes evaluation run summaries > 90 days, keeping last 10
+# Invariant: Tier 1 Class A baselines, requirement revisions, and audit lineage are never pruned.
+0 3 * * * node /app/apps/orchestrator/dist/scripts/run-retention-cleanup.js >> /var/log/retention.log 2>&1

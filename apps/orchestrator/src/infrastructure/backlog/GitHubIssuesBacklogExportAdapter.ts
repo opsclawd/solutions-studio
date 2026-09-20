@@ -512,4 +512,57 @@ export class GitHubIssuesBacklogExportAdapter implements IBacklogExportGateway {
       true
     );
   }
+
+  async checkHealth(): Promise<{
+    status: 'healthy' | 'unhealthy' | 'degraded';
+    provider: string;
+    reachable?: boolean;
+    latencyMs?: number;
+    error?: string;
+  }> {
+    const start = Date.now();
+    const token = this.defaultToken ?? process.env.GITHUB_TOKEN;
+    if (!token) {
+      return {
+        status: 'degraded',
+        provider: 'github-issues',
+        reachable: false,
+        latencyMs: 0,
+        error: 'Unconfigured: GITHUB_TOKEN not set'
+      };
+    }
+    try {
+      const res = await (this.fetchFn ?? fetch)(`${this.baseUrl}/zen`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'User-Agent': 'solutions-studio'
+        },
+        signal: AbortSignal.timeout(3000)
+      });
+      const latencyMs = Date.now() - start;
+      if (res.ok) {
+        return {
+          status: 'healthy',
+          provider: 'github-issues',
+          reachable: true,
+          latencyMs
+        };
+      }
+      return {
+        status: 'degraded',
+        provider: 'github-issues',
+        reachable: false,
+        latencyMs,
+        error: `GitHub API returned HTTP ${res.status}`
+      };
+    } catch (err) {
+      return {
+        status: 'unhealthy',
+        provider: 'github-issues',
+        reachable: false,
+        latencyMs: Date.now() - start,
+        error: err instanceof Error ? err.message : String(err)
+      };
+    }
+  }
 }

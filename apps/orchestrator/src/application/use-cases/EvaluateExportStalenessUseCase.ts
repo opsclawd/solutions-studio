@@ -22,6 +22,7 @@ import {
   computeStoryContentHash,
   matchesStoryContentHash
 } from '../ports/backlog/computeStoryContentHash.js';
+import { type ITelemetryRegistry, TelemetryProvider } from '../ports/observability/index.js';
 
 export interface EvaluateExportStalenessInput {
   readonly baselineId: string;
@@ -37,7 +38,8 @@ export class EvaluateExportStalenessUseCase {
     private readonly getAuthorityBundleUseCase: GetAuthorityBundleUseCase,
     private readonly buildStoryDependencyGraphUseCase: BuildStoryDependencyGraphUseCase,
     private readonly authorizer?: IAuthorizationPolicy,
-    private readonly semanticImpactAdvisor?: ISemanticImpactAdvisor
+    private readonly semanticImpactAdvisor?: ISemanticImpactAdvisor,
+    private readonly telemetryRegistry: ITelemetryRegistry = TelemetryProvider.default
   ) {}
 
   async execute(input: EvaluateExportStalenessInput): Promise<BaselineExportStalenessReportDto> {
@@ -212,6 +214,27 @@ export class EvaluateExportStalenessUseCase {
         advisorySemanticImpacts,
         targetStoryIds: input.storyIds
       });
+
+      this.telemetryRegistry.setGauge(
+        'solutions_studio_export_staleness_count',
+        report.currentCount,
+        { classification: 'CURRENT' }
+      );
+      this.telemetryRegistry.setGauge(
+        'solutions_studio_export_staleness_count',
+        report.staleCount,
+        { classification: 'STALE' }
+      );
+      this.telemetryRegistry.setGauge(
+        'solutions_studio_export_staleness_count',
+        report.impactedCount,
+        { classification: 'IMPACTED' }
+      );
+      this.telemetryRegistry.setGauge(
+        'solutions_studio_export_staleness_count',
+        report.unexportedCount,
+        { classification: 'UNEXPORTED' }
+      );
 
       return {
         baselineId: report.baselineId,
