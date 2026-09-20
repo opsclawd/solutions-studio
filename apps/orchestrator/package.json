@@ -18,7 +18,8 @@
     "eval": "tsx scripts/run-evaluation.ts",
     "project": "tsx scripts/run-project-baseline.ts",
     "serve": "tsx scripts/run-http-server.ts",
-    "governance": "tsx scripts/run-governance.ts"
+    "governance": "tsx scripts/run-governance.ts",
+    "export:backlog": "tsx scripts/run-backlog-export.ts"
   },
   "dependencies": {
     "@babel/standalone": "^7.26.4",

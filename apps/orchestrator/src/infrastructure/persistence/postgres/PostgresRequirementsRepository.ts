@@ -63,7 +63,10 @@ import {
   type ValidationRunId,
   type CandidateApprovalRecord,
   type GovernanceApprovalId,
-  type GovernanceApprovalStatus
+  type GovernanceApprovalStatus,
+  type BacklogExportMapping,
+  type BacklogExportMappingId,
+  createBacklogExportMapping
 } from '@solutions-studio/domain';
 import {
   ImmutableRecordConflictError,
@@ -2575,6 +2578,23 @@ export class PostgresRequirementsRepository
     }
   }
 
+  async withBacklogExportLock<T>(
+    key: { provider: string; externalContainer: string; storyId: StoryId | string },
+    action: () => Promise<T>
+  ): Promise<T> {
+    const lockKey = `bmap:${key.provider}:${key.externalContainer}:${key.storyId}`;
+    return this.db.withSession(async (sessionClient) => {
+      return this.sessionContext.run(sessionClient, async () => {
+        await sessionClient.query('SELECT pg_advisory_lock(hashtext($1));', [lockKey]);
+        try {
+          return await action();
+        } finally {
+          await sessionClient.query('SELECT pg_advisory_unlock(hashtext($1));', [lockKey]);
+        }
+      });
+    });
+  }
+
   // --- HEALTH CHECK ---
 
   // --- GOVERNANCE AUDIT & PROMOTION INTEGRITY ---
@@ -2977,6 +2997,234 @@ export class PostgresRequirementsRepository
       throw new OptimisticConcurrencyConflictError(
         `Governance approval '${approval.id}' status conflict: expected '${expectedCurrentStatus}', but found '${existing.rows[0].status}'.`
       );
+    }
+  }
+
+  async saveBacklogExportMapping(
+    mapping: BacklogExportMapping,
+    executor: ISqlDatabaseClient = this.activeDb
+  ): Promise<void> {
+    assertSafeIdentifier(mapping.id, 'mappingId');
+    assertSafeIdentifier(mapping.storyId, 'storyId');
+    assertSafeIdentifier(mapping.baselineId, 'baselineId');
+
+    await executor.query(
+      `INSERT INTO backlog_export_mappings (
+         id, story_id, baseline_id, provider, external_container,
+         external_work_item_id, external_url, export_content_hash,
+         exported_at, exported_by, metadata, created_at, updated_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW());`,
+      [
+        mapping.id,
+        mapping.storyId,
+        mapping.baselineId,
+        mapping.provider,
+        mapping.externalContainer,
+        mapping.externalWorkItemId,
+        mapping.externalUrl ?? null,
+        mapping.exportContentHash,
+        mapping.exportedAt,
+        mapping.exportedBy,
+        JSON.stringify(mapping.metadata ?? {})
+      ]
+    );
+  }
+
+  async getBacklogExportMapping(
+    id: BacklogExportMappingId | string,
+    executor: ISqlDatabaseClient = this.activeDb
+  ): Promise<BacklogExportMapping | undefined> {
+    assertSafeIdentifier(id, 'mappingId');
+    const result = await executor.query<{
+      id: string;
+      story_id: string;
+      baseline_id: string;
+      provider: string;
+      external_container: string;
+      external_work_item_id: string;
+      external_url: string | null;
+      export_content_hash: string;
+      exported_at: string | Date;
+      exported_by: string;
+      metadata: Record<string, unknown>;
+    }>(
+      `SELECT id, story_id, baseline_id, provider, external_container,
+              external_work_item_id, external_url, export_content_hash,
+              exported_at, exported_by, metadata
+       FROM backlog_export_mappings WHERE id = $1;`,
+      [id]
+    );
+    if (result.rows.length === 0) {
+      return undefined;
+    }
+    const row = result.rows[0];
+    return createBacklogExportMapping({
+      id: row.id,
+      storyId: row.story_id,
+      baselineId: row.baseline_id,
+      provider: row.provider,
+      externalContainer: row.external_container,
+      externalWorkItemId: row.external_work_item_id,
+      externalUrl: row.external_url ?? undefined,
+      exportContentHash: row.export_content_hash,
+      exportedAt:
+        row.exported_at instanceof Date ? row.exported_at.toISOString() : String(row.exported_at),
+      exportedBy: row.exported_by,
+      metadata: typeof row.metadata === 'object' && row.metadata !== null ? row.metadata : {}
+    });
+  }
+
+  async findBacklogExportMapping(
+    filter: {
+      provider: string;
+      externalContainer: string;
+      storyId: StoryId | string;
+    },
+    executor: ISqlDatabaseClient = this.activeDb
+  ): Promise<BacklogExportMapping | undefined> {
+    assertSafeIdentifier(filter.storyId, 'storyId');
+    const result = await executor.query<{
+      id: string;
+      story_id: string;
+      baseline_id: string;
+      provider: string;
+      external_container: string;
+      external_work_item_id: string;
+      external_url: string | null;
+      export_content_hash: string;
+      exported_at: string | Date;
+      exported_by: string;
+      metadata: Record<string, unknown>;
+    }>(
+      `SELECT id, story_id, baseline_id, provider, external_container,
+              external_work_item_id, external_url, export_content_hash,
+              exported_at, exported_by, metadata
+       FROM backlog_export_mappings
+       WHERE provider = $1 AND external_container = $2 AND story_id = $3;`,
+      [filter.provider, filter.externalContainer, filter.storyId]
+    );
+    if (result.rows.length === 0) {
+      return undefined;
+    }
+    const row = result.rows[0];
+    return createBacklogExportMapping({
+      id: row.id,
+      storyId: row.story_id,
+      baselineId: row.baseline_id,
+      provider: row.provider,
+      externalContainer: row.external_container,
+      externalWorkItemId: row.external_work_item_id,
+      externalUrl: row.external_url ?? undefined,
+      exportContentHash: row.export_content_hash,
+      exportedAt:
+        row.exported_at instanceof Date ? row.exported_at.toISOString() : String(row.exported_at),
+      exportedBy: row.exported_by,
+      metadata: typeof row.metadata === 'object' && row.metadata !== null ? row.metadata : {}
+    });
+  }
+
+  async listBacklogExportMappings(
+    filter?: {
+      baselineId?: RequirementsBaselineId | string;
+      storyId?: StoryId | string;
+      provider?: string;
+      externalContainer?: string;
+    },
+    executor: ISqlDatabaseClient = this.activeDb
+  ): Promise<readonly BacklogExportMapping[]> {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    let idx = 1;
+
+    if (filter?.baselineId) {
+      conditions.push(`baseline_id = $${idx++}`);
+      params.push(filter.baselineId);
+    }
+    if (filter?.storyId) {
+      conditions.push(`story_id = $${idx++}`);
+      params.push(filter.storyId);
+    }
+    if (filter?.provider) {
+      conditions.push(`provider = $${idx++}`);
+      params.push(filter.provider);
+    }
+    if (filter?.externalContainer) {
+      conditions.push(`external_container = $${idx++}`);
+      params.push(filter.externalContainer);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const result = await executor.query<{
+      id: string;
+      story_id: string;
+      baseline_id: string;
+      provider: string;
+      external_container: string;
+      external_work_item_id: string;
+      external_url: string | null;
+      export_content_hash: string;
+      exported_at: string | Date;
+      exported_by: string;
+      metadata: Record<string, unknown>;
+    }>(
+      `SELECT id, story_id, baseline_id, provider, external_container,
+              external_work_item_id, external_url, export_content_hash,
+              exported_at, exported_by, metadata
+       FROM backlog_export_mappings
+       ${whereClause}
+       ORDER BY exported_at ASC, id ASC;`,
+      params
+    );
+
+    return Object.freeze(
+      result.rows.map((row) =>
+        createBacklogExportMapping({
+          id: row.id,
+          storyId: row.story_id,
+          baselineId: row.baseline_id,
+          provider: row.provider,
+          externalContainer: row.external_container,
+          externalWorkItemId: row.external_work_item_id,
+          externalUrl: row.external_url ?? undefined,
+          exportContentHash: row.export_content_hash,
+          exportedAt:
+            row.exported_at instanceof Date
+              ? row.exported_at.toISOString()
+              : String(row.exported_at),
+          exportedBy: row.exported_by,
+          metadata: typeof row.metadata === 'object' && row.metadata !== null ? row.metadata : {}
+        })
+      )
+    );
+  }
+
+  async updateBacklogExportMapping(
+    mapping: BacklogExportMapping,
+    executor: ISqlDatabaseClient = this.activeDb
+  ): Promise<void> {
+    assertSafeIdentifier(mapping.id, 'mappingId');
+    const result = await executor.query(
+      `UPDATE backlog_export_mappings
+       SET external_work_item_id = $1,
+           external_url = $2,
+           export_content_hash = $3,
+           exported_at = $4,
+           exported_by = $5,
+           metadata = $6,
+           updated_at = NOW()
+       WHERE id = $7;`,
+      [
+        mapping.externalWorkItemId,
+        mapping.externalUrl ?? null,
+        mapping.exportContentHash,
+        mapping.exportedAt,
+        mapping.exportedBy,
+        JSON.stringify(mapping.metadata ?? {}),
+        mapping.id
+      ]
+    );
+    if (result.rowCount === 0) {
+      throw new Error(`Backlog export mapping '${mapping.id}' not found`);
     }
   }
 

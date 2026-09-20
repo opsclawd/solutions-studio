@@ -21,6 +21,8 @@ import {
   createValidationRunRecord,
   createCandidateApprovalRecord,
   revokeCandidateApprovalRecord,
+  createBacklogExportMapping,
+  createBacklogExportMappingId,
   createInstant,
   now
 } from '@solutions-studio/domain';
@@ -301,6 +303,22 @@ describe('Disaster Recovery: BackupService & RestoreService', () => {
     );
     await repo.updateGovernanceApproval(revoked3, 'ACTIVE');
 
+    const mappingId = createBacklogExportMappingId('BMAP-DR-001');
+    const mapping = createBacklogExportMapping({
+      id: mappingId,
+      storyId,
+      baselineId: baseId,
+      provider: 'github-issues',
+      externalContainer: 'acme/solutions-studio',
+      externalWorkItemId: '42',
+      externalUrl: 'https://github.com/acme/solutions-studio/issues/42',
+      exportContentHash: 'a'.repeat(64),
+      exportedAt: createInstant('2026-09-20T10:25:00Z'),
+      exportedBy: createActorId('LEAD-REVIEWER'),
+      metadata: { targetBranch: 'main' }
+    });
+    await repo.saveBacklogExportMapping(mapping);
+
     // 2. Perform backup
     const backupDir = path.join(tempDir, 'backup-1');
     const backupService = new BackupService({
@@ -313,6 +331,7 @@ describe('Disaster Recovery: BackupService & RestoreService', () => {
     expect(manifest.tables.baselines.count).toBe(1);
     expect(manifest.tables.requirement_revisions.count).toBe(1);
     expect(manifest.tables.stories.count).toBe(1);
+    expect(manifest.tables.backlog_export_mappings.count).toBe(1);
     expect(manifest.tables.validation_runs.count).toBe(2);
     expect(manifest.tables.governance_approvals.count).toBe(3);
     expect(manifest.blobs.length).toBeGreaterThan(0);
@@ -410,6 +429,13 @@ describe('Disaster Recovery: BackupService & RestoreService', () => {
 
     expect(restoreResult.verifiedValidationRuns).toHaveLength(2);
     expect(restoreResult.verifiedGovernanceApprovals).toHaveLength(3);
+    expect(restoreResult.verifiedBacklogExportMappings).toHaveLength(1);
+
+    const restoredMapping = await freshRepo.getBacklogExportMapping(mappingId);
+    expect(restoredMapping).toBeDefined();
+    expect(restoredMapping?.externalWorkItemId).toBe('42');
+    expect(restoredMapping?.externalContainer).toBe('acme/solutions-studio');
+    expect(restoredMapping?.exportContentHash).toBe('a'.repeat(64));
 
     await freshDbClient.close().catch(() => {});
     await freshPglite.close().catch(() => {});

@@ -7,7 +7,8 @@ import type {
   AuthorityBundle,
   StoryReadinessReport,
   BaselineRequirementCoverage,
-  StoryDependencyGraph
+  StoryDependencyGraph,
+  BacklogExportMapping
 } from '@solutions-studio/domain';
 import type {
   RequirementRevisionDto,
@@ -24,7 +25,8 @@ import type {
   StoryReadinessReportDto,
   BaselineRequirementCoverageDto,
   StoryDependencyGraphDto,
-  EngineeringHandoffBundleDto
+  EngineeringHandoffBundleDto,
+  BacklogExportMappingDto
 } from '@solutions-studio/contracts';
 import type {
   ReconciliationRecord,
@@ -359,5 +361,23 @@ export function mapEngineeringHandoffBundleToDto(
     blockingFindings: bundle.blockingFindings.map(mapCandidateFindingToDto),
     unresolvedRequirements: bundle.unresolvedRequirements.map(mapRequirementRevisionToDto),
     summary: { ...bundle.summary }
+  };
+}
+
+export function mapBacklogExportMappingToDto(
+  mapping: BacklogExportMapping
+): BacklogExportMappingDto {
+  return {
+    id: mapping.id,
+    storyId: mapping.storyId,
+    baselineId: mapping.baselineId,
+    provider: mapping.provider,
+    externalContainer: mapping.externalContainer,
+    externalWorkItemId: mapping.externalWorkItemId,
+    externalUrl: mapping.externalUrl,
+    exportContentHash: mapping.exportContentHash,
+    exportedAt: mapping.exportedAt,
+    exportedBy: mapping.exportedBy,
+    metadata: mapping.metadata ? { ...mapping.metadata } : undefined
   };
 }
