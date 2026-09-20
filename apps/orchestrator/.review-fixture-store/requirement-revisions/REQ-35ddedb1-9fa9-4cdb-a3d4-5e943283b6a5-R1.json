@@ -1,0 +1,15 @@
+{
+  "id": "REQ-35ddedb1-9fa9-4cdb-a3d4-5e943283b6a5-R1",
+  "requirementId": "REQ-35ddedb1-9fa9-4cdb-a3d4-5e943283b6a5",
+  "revision": 1,
+  "statement": "Prototype reveals user needs confirmation before submitting final order",
+  "category": "business-rule",
+  "origin": "REVIEWER_PROPOSAL",
+  "reviewState": "PENDING",
+  "resolutionState": "UNRESOLVED",
+  "evidence": [],
+  "rationale": "Observed accidental submission during clickable walkthrough",
+  "actorId": "lead-reviewer",
+  "baselineId": "BASE-001",
+  "originatingProjectionId": "PROJ-002"
+}

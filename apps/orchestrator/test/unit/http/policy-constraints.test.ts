@@ -53,7 +53,7 @@ describe('HTTP Boundary: Policy Constraints API', () => {
       expect(validated.id).toBe('PC-SEC-001@r1');
       expect(validated.state).toBe('ACCEPTED');
       expect(validated.authorityReference).toBe('NIST SP 800-52 Rev 2');
-      expect(validated.createdBy).toBe('sec-lead');
+      expect(validated.createdBy).toBe('lead-reviewer');
     });
 
     it('creates successor revision with supersedes link', async () => {

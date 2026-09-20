@@ -8,10 +8,13 @@ import {
 } from '@solutions-studio/contracts';
 import { createSourceRevisionId, createEvidenceLocator } from '@solutions-studio/domain';
 import type { ReconcileRequirementsUseCase } from '../../application/use-cases/ReconcileRequirementsUseCase.js';
+import type { IAuthorizationPolicy } from '../../application/ports/identity/IAuthorizationPolicy.js';
+import { AuthenticationError } from '../../application/ports/identity/IdentityErrors.js';
 import { mapRequirementRevisionToDto } from '../dto-mappers.js';
 
 export interface RequirementsRoutesOptions {
   readonly reconcileUseCase: ReconcileRequirementsUseCase;
+  readonly authorizer?: IAuthorizationPolicy;
 }
 
 const revisionParamsSchema = z.object({
@@ -34,9 +37,18 @@ export const requirementsRoutes: FastifyPluginAsync<RequirementsRoutesOptions> =
       }
     },
     async (request, reply) => {
+      if (options.authorizer) {
+        if (!request.actor) {
+          throw new AuthenticationError('Unauthenticated request', { reason: 'NO_ACTOR' });
+        }
+        options.authorizer.authorize(request.actor, 'requirements:reconcile');
+      }
+
+      const actorId = request.actor?.id ?? request.body.actorId;
       const result = await options.reconcileUseCase.acceptRequirement({
         revisionId: request.params.revisionId,
-        ...request.body
+        ...request.body,
+        actorId
       });
       return reply.status(200).send(mapRequirementRevisionToDto(result));
     }
@@ -54,9 +66,18 @@ export const requirementsRoutes: FastifyPluginAsync<RequirementsRoutesOptions> =
       }
     },
     async (request, reply) => {
+      if (options.authorizer) {
+        if (!request.actor) {
+          throw new AuthenticationError('Unauthenticated request', { reason: 'NO_ACTOR' });
+        }
+        options.authorizer.authorize(request.actor, 'requirements:reconcile');
+      }
+
+      const actorId = request.actor?.id ?? request.body.actorId;
       const result = await options.reconcileUseCase.rejectRequirement({
         revisionId: request.params.revisionId,
-        ...request.body
+        ...request.body,
+        actorId
       });
       return reply.status(200).send(mapRequirementRevisionToDto(result));
     }
@@ -74,6 +95,14 @@ export const requirementsRoutes: FastifyPluginAsync<RequirementsRoutesOptions> =
       }
     },
     async (request, reply) => {
+      if (options.authorizer) {
+        if (!request.actor) {
+          throw new AuthenticationError('Unauthenticated request', { reason: 'NO_ACTOR' });
+        }
+        options.authorizer.authorize(request.actor, 'requirements:reconcile');
+      }
+
+      const actorId = request.actor?.id ?? request.body.actorId;
       const evidence = request.body.evidence?.map((e) => ({
         sourceRevisionId: createSourceRevisionId(e.sourceRevisionId),
         locator: createEvidenceLocator(e.locator)
@@ -82,7 +111,8 @@ export const requirementsRoutes: FastifyPluginAsync<RequirementsRoutesOptions> =
       const result = await options.reconcileUseCase.reviseRequirement({
         revisionId: request.params.revisionId,
         ...request.body,
-        evidence
+        evidence,
+        actorId
       });
       return reply.status(200).send(mapRequirementRevisionToDto(result));
     }
@@ -100,9 +130,18 @@ export const requirementsRoutes: FastifyPluginAsync<RequirementsRoutesOptions> =
       }
     },
     async (request, reply) => {
+      if (options.authorizer) {
+        if (!request.actor) {
+          throw new AuthenticationError('Unauthenticated request', { reason: 'NO_ACTOR' });
+        }
+        options.authorizer.authorize(request.actor, 'requirements:reconcile');
+      }
+
+      const actorId = request.actor?.id ?? request.body.actorId;
       const result = await options.reconcileUseCase.resolveRequirement({
         revisionId: request.params.revisionId,
-        ...request.body
+        ...request.body,
+        actorId
       });
       return reply.status(200).send(mapRequirementRevisionToDto(result));
     }

@@ -1,6 +1,7 @@
 import type { ApiErrorDto, ApiErrorCode } from '@solutions-studio/contracts';
 import { ApiErrorDtoSchema } from '@solutions-studio/contracts';
 import { getOrchestratorBaseUrl } from './config';
+import { getAuthToken } from '../../auth/tokenStore';
 
 export class ApiError extends Error {
   readonly code: ApiErrorCode;
@@ -33,6 +34,12 @@ export async function apiClient<T>(
   const headers = new Headers(options?.headers);
   if (options?.body && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
+  }
+  if (!headers.has('Authorization')) {
+    const token = getAuthToken();
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
   }
 
   let response: Response;

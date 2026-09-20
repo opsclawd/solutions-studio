@@ -50,6 +50,11 @@ import { BabelTsxValidatorAdapter } from '../infrastructure/validation/BabelTsxV
 import { PGliteSqlValidatorAdapter } from '../infrastructure/validation/PGliteSqlValidatorAdapter.js';
 import { OpenApiStructuralValidatorAdapter } from '../infrastructure/validation/OpenApiStructuralValidatorAdapter.js';
 import { GherkinValidatorAdapter } from '../infrastructure/validation/GherkinValidatorAdapter.js';
+import type { IAuthenticator } from '../application/ports/identity/IAuthenticator.js';
+import type { IAuthorizationPolicy } from '../application/ports/identity/IAuthorizationPolicy.js';
+import { GenericOidcAuthenticator } from '../infrastructure/identity/GenericOidcAuthenticator.js';
+import { TestAuthenticator } from '../infrastructure/identity/TestAuthenticator.js';
+import { DefaultAuthorizationPolicy } from '../infrastructure/identity/DefaultAuthorizationPolicy.js';
 import { buildServer } from './server.js';
 
 export interface ComposeHttpServerOptions {
@@ -57,6 +62,8 @@ export interface ComposeHttpServerOptions {
   readonly connectionString?: string;
   readonly dbClient?: ISqlDatabaseClient;
   readonly objectStore?: IObjectStore;
+  readonly authenticator?: IAuthenticator;
+  readonly authorizer?: IAuthorizationPolicy;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   readonly pool?: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -135,6 +142,8 @@ export interface ComposedHttpServer {
   readonly recordEngineeringDecisionUseCase: RecordEngineeringDecisionUseCase;
   readonly transitionEngineeringDecisionUseCase: TransitionEngineeringDecisionUseCase;
   readonly getEngineeringDecisionsUseCase: GetEngineeringDecisionsUseCase;
+  readonly authenticator: IAuthenticator;
+  readonly authorizer: IAuthorizationPolicy;
 }
 
 export function composeOrchestratorHttpServer(
@@ -309,9 +318,76 @@ export function composeOrchestratorHttpServer(
       buildStoryDependencyGraphUseCase
     );
 
+  const resolveAuthenticator = (): IAuthenticator => {
+    if (options.authenticator) {
+      return options.authenticator;
+    }
+
+    const authProviderEnv = process.env.AUTH_PROVIDER?.trim().toLowerCase();
+    const isProduction = process.env.NODE_ENV === 'production';
+    const isTestEnv = process.env.NODE_ENV === 'test';
+
+    // 1. Fail closed on unknown/misspelled provider values
+    if (authProviderEnv && authProviderEnv !== 'oidc' && authProviderEnv !== 'test') {
+      throw new Error(
+        `Invalid or unsupported AUTH_PROVIDER: '${process.env.AUTH_PROVIDER}'. Supported values are 'oidc' and 'test'.`
+      );
+    }
+
+    // 2. Reject test auth in production environment
+    if (isProduction && authProviderEnv === 'test') {
+      throw new Error(
+        'Test authentication (AUTH_PROVIDER=test) is not permitted in production (NODE_ENV=production).'
+      );
+    }
+
+    // 3. Determine effective auth provider
+    // When unset: default to 'test' under test environment (NODE_ENV=test), otherwise default to 'oidc'
+    const effectiveProvider = authProviderEnv ?? (isTestEnv ? 'test' : 'oidc');
+
+    if (effectiveProvider === 'oidc') {
+      const issuer = (process.env.OIDC_ISSUER ?? process.env.OIDC_ISSUER_URL)?.trim();
+      const audience = process.env.OIDC_AUDIENCE?.trim();
+      const jwksUri = process.env.OIDC_JWKS_URI?.trim();
+
+      if (isProduction) {
+        if (!issuer) {
+          throw new Error(
+            'Missing required OIDC configuration in production: OIDC_ISSUER (or OIDC_ISSUER_URL)'
+          );
+        }
+        if (!audience) {
+          throw new Error('Missing required OIDC configuration in production: OIDC_AUDIENCE');
+        }
+      }
+
+      const effectiveIssuer = issuer || 'http://localhost:8080/realms/solutions-studio';
+      const effectiveAudience = audience || 'solutions-studio-api';
+      const effectiveJwksUri =
+        jwksUri ||
+        (effectiveIssuer.endsWith('/')
+          ? `${effectiveIssuer}protocol/openid-connect/certs`
+          : `${effectiveIssuer}/protocol/openid-connect/certs`);
+
+      return new GenericOidcAuthenticator({
+        issuer: effectiveIssuer,
+        audience: effectiveAudience,
+        jwksUri: effectiveJwksUri
+      });
+    }
+
+    return new TestAuthenticator();
+  };
+
+  const authenticator = resolveAuthenticator();
+
+  const authorizer = options.authorizer ?? new DefaultAuthorizationPolicy();
+
   const app = buildServer(
     {
       repository,
+      authenticator,
+      authorizer,
       reviewStateUseCase,
       reconcileUseCase,
       baselineUseCase,
@@ -380,7 +456,9 @@ export function composeOrchestratorHttpServer(
     getAuthorityBundleUseCase,
     recordEngineeringDecisionUseCase,
     transitionEngineeringDecisionUseCase,
-    getEngineeringDecisionsUseCase
+    getEngineeringDecisionsUseCase,
+    authenticator,
+    authorizer
   };
 }
 

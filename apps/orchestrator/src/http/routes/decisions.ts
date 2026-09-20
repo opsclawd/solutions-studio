@@ -3,11 +3,14 @@ import { z } from 'zod';
 import { TransitionEngineeringDecisionRequestDtoSchema } from '@solutions-studio/contracts';
 import type { TransitionEngineeringDecisionUseCase } from '../../application/use-cases/TransitionEngineeringDecisionUseCase.js';
 import type { GetEngineeringDecisionsUseCase } from '../../application/use-cases/GetEngineeringDecisionsUseCase.js';
+import type { IAuthorizationPolicy } from '../../application/ports/identity/IAuthorizationPolicy.js';
+import { AuthenticationError } from '../../application/ports/identity/IdentityErrors.js';
 import { mapEngineeringDecisionToDto } from '../dto-mappers.js';
 
 export interface DecisionsRoutesOptions {
   readonly transitionEngineeringDecisionUseCase: TransitionEngineeringDecisionUseCase;
   readonly getEngineeringDecisionsUseCase: GetEngineeringDecisionsUseCase;
+  readonly authorizer?: IAuthorizationPolicy;
 }
 
 const decisionParamsSchema = z.object({
@@ -44,11 +47,19 @@ export const decisionsRoutes: FastifyPluginAsync<DecisionsRoutesOptions> = async
       }
     },
     async (request, reply) => {
+      if (options.authorizer) {
+        if (!request.actor) {
+          throw new AuthenticationError('Unauthenticated request', { reason: 'NO_ACTOR' });
+        }
+        options.authorizer.authorize(request.actor, 'engineering-decision:approve');
+      }
+
+      const actorId = request.actor?.id ?? request.body.actorId ?? 'lead-architect';
       const result = await options.transitionEngineeringDecisionUseCase.execute({
         decisionId: request.params.decisionId,
         newState: request.body.newState,
         rationale: request.body.rationale,
-        actorId: request.body.actorId
+        actorId
       });
       return reply.status(200).send(mapEngineeringDecisionToDto(result));
     }

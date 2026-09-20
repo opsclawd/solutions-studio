@@ -15,6 +15,8 @@ import type { GetAuthorityBundleUseCase } from '../../application/use-cases/GetA
 import type { RecordEngineeringDecisionUseCase } from '../../application/use-cases/RecordEngineeringDecisionUseCase.js';
 import type { GetEngineeringDecisionsUseCase } from '../../application/use-cases/GetEngineeringDecisionsUseCase.js';
 import type { ComputeRequirementCoverageUseCase } from '../../application/use-cases/ComputeRequirementCoverageUseCase.js';
+import type { IAuthorizationPolicy } from '../../application/ports/identity/IAuthorizationPolicy.js';
+import { AuthenticationError } from '../../application/ports/identity/IdentityErrors.js';
 import { UnknownProjectionError } from '../../application/use-cases/DiscoveryErrors.js';
 import {
   mapRequirementsBaselineToDto,
@@ -32,6 +34,7 @@ export interface BaselinesRoutesOptions {
   readonly recordEngineeringDecisionUseCase?: RecordEngineeringDecisionUseCase;
   readonly getEngineeringDecisionsUseCase?: GetEngineeringDecisionsUseCase;
   readonly computeRequirementCoverageUseCase?: ComputeRequirementCoverageUseCase;
+  readonly authorizer?: IAuthorizationPolicy;
 }
 
 const baselineParamsSchema = z.object({
@@ -50,7 +53,7 @@ const createBaselineDecisionBodySchema = z.object({
   rationale: z.string().min(1),
   requirementRevisionIds: z.array(z.string().min(1)).default([]),
   policyConstraintRevisionIds: z.array(z.string().min(1)).default([]),
-  createdBy: z.string().min(1),
+  createdBy: z.string().min(1).optional(),
   supersedes: z.string().min(1).optional()
 });
 
@@ -69,11 +72,19 @@ export const baselinesRoutes: FastifyPluginAsync<BaselinesRoutesOptions> = async
       }
     },
     async (request, reply) => {
+      if (options.authorizer) {
+        if (!request.actor) {
+          throw new AuthenticationError('Unauthenticated request', { reason: 'NO_ACTOR' });
+        }
+        options.authorizer.authorize(request.actor, 'baseline:create');
+      }
+
+      const createdBy = request.actor?.id ?? request.body.createdBy ?? 'lead-reviewer';
       const result = await options.baselineUseCase.create({
         id: request.body.id,
         requirementRevisionIds: request.body.requirementRevisions,
         policyConstraintRevisionIds: request.body.policyConstraintRevisions,
-        createdBy: request.body.createdBy,
+        createdBy,
         createdAt: request.body.createdAt
       });
       return reply.status(200).send(mapRequirementsBaselineToDto(result));
@@ -124,6 +135,13 @@ export const baselinesRoutes: FastifyPluginAsync<BaselinesRoutesOptions> = async
       }
     },
     async (request, reply) => {
+      if (options.authorizer) {
+        if (!request.actor) {
+          throw new AuthenticationError('Unauthenticated request', { reason: 'NO_ACTOR' });
+        }
+        options.authorizer.authorize(request.actor, 'projection:generate');
+      }
+
       const result = await options.projectBaselineUseCase.project({
         baselineId: request.params.baselineId,
         artifactType: request.body.artifactType,
@@ -218,13 +236,22 @@ export const baselinesRoutes: FastifyPluginAsync<BaselinesRoutesOptions> = async
         }
       },
       async (request, reply) => {
+        if (options.authorizer) {
+          if (!request.actor) {
+            throw new AuthenticationError('Unauthenticated request', { reason: 'NO_ACTOR' });
+          }
+          options.authorizer.authorize(request.actor, 'engineering-decision:author');
+        }
+
         const baselineId = request.params.baselineId;
         if (request.body.baselineId && request.body.baselineId !== baselineId) {
           throw new DomainError('Baseline ID in request body does not match route parameter');
         }
+        const createdBy = request.actor?.id ?? request.body.createdBy ?? 'lead-architect';
         const result = await recordEngineeringDecisionUseCase.execute({
           ...request.body,
-          baselineId
+          baselineId,
+          createdBy
         });
         return reply.status(201).send(mapEngineeringDecisionToDto(result));
       }

@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import type { ApiError } from '../api/client.js';
+import type { ApiError } from '../api/client';
 
 export interface ErrorBannerProps {
   error: ApiError;
@@ -12,6 +12,8 @@ export interface ErrorBannerProps {
 export function ErrorBanner({ error, onDismiss, onReload }: ErrorBannerProps) {
   const isStale = error.code === 'STALE_REVISION_TARGET';
   const isBlocked = error.code === 'BLOCKED_BY_OPEN_FINDINGS';
+  const isForbidden = error.code === 'FORBIDDEN';
+  const isUnauthenticated = error.code === 'UNAUTHENTICATED';
   const details = error.details as Record<string, unknown> | undefined;
 
   return (
@@ -33,7 +35,11 @@ export function ErrorBanner({ error, onDismiss, onReload }: ErrorBannerProps) {
                 ? 'Stale Revision Conflict'
                 : isBlocked
                   ? 'Blocked by Open Findings'
-                  : 'Action Failed'}
+                  : isForbidden
+                    ? 'Access Denied (Insufficient Permissions)'
+                    : isUnauthenticated
+                      ? 'Authentication Required'
+                      : 'Action Failed'}
             </span>
           </div>
 

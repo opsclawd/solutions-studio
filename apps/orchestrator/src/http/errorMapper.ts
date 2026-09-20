@@ -52,6 +52,10 @@ import {
   UnresolvedLocatorError
 } from '../application/use-cases/CompileRequirementsErrors.js';
 import { ImmutableRecordConflictError } from '../application/ports/persistence/IRequirementsRepository.js';
+import {
+  AuthenticationError,
+  ForbiddenError
+} from '../application/ports/identity/IdentityErrors.js';
 
 export interface MappedErrorResponse {
   readonly statusCode: number;
@@ -512,6 +516,31 @@ export function mapErrorToResponse(error: unknown): MappedErrorResponse {
         message: error.message,
         details: {
           violations: error.violations
+        }
+      }
+    };
+  }
+
+  if (error instanceof AuthenticationError) {
+    return {
+      statusCode: 401,
+      body: {
+        code: 'UNAUTHENTICATED',
+        message: error.message,
+        details: error.details
+      }
+    };
+  }
+
+  if (error instanceof ForbiddenError) {
+    return {
+      statusCode: 403,
+      body: {
+        code: 'FORBIDDEN',
+        message: error.message,
+        details: {
+          requiredCapability: error.requiredCapability,
+          actorId: error.actorId
         }
       }
     };

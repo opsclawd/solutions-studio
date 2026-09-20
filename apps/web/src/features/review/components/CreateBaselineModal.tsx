@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { RequirementRevisionDto, CandidateFindingDto } from '@solutions-studio/contracts';
 
 export interface CreateBaselineModalProps {
@@ -36,6 +36,12 @@ export function CreateBaselineModal({
   const [createdBy, setCreatedBy] = useState(actorId || 'lead-reviewer');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (actorId) {
+      setCreatedBy(actorId);
+    }
+  }, [actorId]);
 
   const eligibleRevisions = requirementRevisions.filter(
     (r) => r.reviewState === 'ACCEPTED' && r.resolutionState === 'CLEAR'
@@ -133,14 +139,14 @@ export function CreateBaselineModal({
 
           <div>
             <label className="block text-xs font-semibold text-gray-700 mb-1">
-              Created By (Reviewer ID) <span className="text-red-500">*</span>
+              Created By (Server-Derived Reviewer ID) <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
               data-testid="create-baseline-creator-input"
               value={createdBy}
-              onChange={(e) => setCreatedBy(e.target.value)}
-              className="w-full text-xs p-2.5 border border-gray-300 rounded-lg focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-hidden"
+              readOnly
+              className="w-full text-xs p-2.5 border border-gray-200 bg-gray-50 rounded-lg text-gray-600 outline-hidden cursor-not-allowed"
               placeholder="e.g. lead-reviewer"
               required
             />

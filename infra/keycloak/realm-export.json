@@ -1,0 +1,143 @@
+{
+  "realm": "solutions-studio",
+  "displayName": "Solutions Studio Local Realm",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "roles": {
+    "realm": [
+      {
+        "name": "requirements-reviewer",
+        "description": "Can reconcile requirements and approve candidate findings",
+        "composite": false
+      },
+      {
+        "name": "lead-architect",
+        "description": "Can author and approve decisions, create baselines, and author policy constraints",
+        "composite": false
+      },
+      {
+        "name": "solutions-studio-admin",
+        "description": "Operator admin role with administrative capabilities",
+        "composite": false
+      },
+      {
+        "name": "solutions-studio-viewer",
+        "description": "Read-only access to baselines, discoveries, and decisions",
+        "composite": false
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "solutions-studio-web",
+      "name": "Solutions Studio Web Frontend",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "frontchannelLogout": true,
+      "protocol": "openid-connect",
+      "redirectUris": ["http://localhost:3000/*", "http://localhost:3000"],
+      "webOrigins": ["http://localhost:3000", "+"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:3000/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "audience-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "solutions-studio-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ],
+      "defaultClientScopes": ["web-origins", "acr", "roles", "profile", "email"]
+    },
+    {
+      "clientId": "solutions-studio-api",
+      "name": "Solutions Studio Orchestrator API",
+      "enabled": true,
+      "bearerOnly": true,
+      "publicClient": false,
+      "protocol": "openid-connect"
+    }
+  ],
+  "users": [
+    {
+      "username": "reviewer.alice",
+      "enabled": true,
+      "email": "alice.reviewer@solutions-studio.local",
+      "firstName": "Alice",
+      "lastName": "Reviewer",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "solutions-studio-dev",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["requirements-reviewer"]
+    },
+    {
+      "username": "architect.bob",
+      "enabled": true,
+      "email": "bob.architect@solutions-studio.local",
+      "firstName": "Bob",
+      "lastName": "Architect",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "solutions-studio-dev",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["lead-architect"]
+    },
+    {
+      "username": "admin.carol",
+      "enabled": true,
+      "email": "carol.admin@solutions-studio.local",
+      "firstName": "Carol",
+      "lastName": "Admin",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "solutions-studio-dev",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["solutions-studio-admin"]
+    },
+    {
+      "username": "viewer.dave",
+      "enabled": true,
+      "email": "dave.viewer@solutions-studio.local",
+      "firstName": "Dave",
+      "lastName": "Viewer",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "solutions-studio-dev",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["solutions-studio-viewer"]
+    }
+  ]
+}

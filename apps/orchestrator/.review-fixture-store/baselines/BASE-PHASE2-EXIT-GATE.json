@@ -2,10 +2,10 @@
   "id": "BASE-PHASE2-EXIT-GATE",
   "requirementRevisions": [
     "REQ-002-R1",
-    "REQ-1b327c82-26f4-4c8b-b059-dd57476777a5-R3",
-    "REQ-a866f0cf-fdcf-455e-b933-dee809385c94-R3"
+    "REQ-53504457-39ad-4011-bb58-612c1afee2a4-R3",
+    "REQ-56728ac5-4e78-4a9d-a8eb-895bd1435913-R3"
   ],
   "policyConstraintRevisions": [],
-  "createdAt": "2026-09-20T11:24:18.678Z",
+  "createdAt": "2026-09-20T13:18:19.021Z",
   "createdBy": "lead-reviewer"
 }

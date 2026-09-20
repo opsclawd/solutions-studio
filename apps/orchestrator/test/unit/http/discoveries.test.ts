@@ -133,7 +133,7 @@ describe('HTTP Boundary: Discoveries API', () => {
       expect(parsed.resolutionState).toBe('UNRESOLVED');
       expect(parsed.revision).toBe(1);
       expect(parsed.statement).toBe('Tenant purge must retain audit records for 90 days');
-      expect(parsed.actorId).toBe('reviewer-sme');
+      expect(parsed.actorId).toBe('lead-reviewer');
     });
 
     it('works on aliased route POST /api/discoveries/requirements', async () => {
@@ -321,7 +321,7 @@ describe('HTTP Boundary: Discoveries API', () => {
       expect(parsed.type).toBe('missing-authorization');
       expect(parsed.discoveredBy).toBe('human');
       expect(parsed.disposition).toBe('OPEN');
-      expect(parsed.actorId).toBe('sec-lead');
+      expect(parsed.actorId).toBe('lead-reviewer');
     });
 
     it('returns 200 with CandidateFindingDto on valid artifact-validation finding discovery', async () => {
@@ -463,7 +463,7 @@ describe('HTTP Boundary: Discoveries API', () => {
       // Finding is in inScopeFindings
       const foundFinding = reviewState.findings.find((f) => f.id === findingRes.json().id);
       expect(foundFinding).toBeDefined();
-      expect(foundFinding?.actorId).toBe('reviewer-bob');
+      expect(foundFinding?.actorId).toBe('lead-reviewer');
       expect(foundFinding?.originatingProjectionId).toBe(projection.id);
       expect(foundFinding?.baselineId).toBe(baseline.id);
       expect(foundFinding?.rationale).toBe('Deadlock transition in diagram');
@@ -478,7 +478,7 @@ describe('HTTP Boundary: Discoveries API', () => {
       const workspaceState = RequirementsReviewStateDtoSchema.parse(workspaceRes.json());
       const foundReq = workspaceState.requirementRevisions.find((r) => r.id === reqRes.json().id);
       expect(foundReq).toBeDefined();
-      expect(foundReq?.actorId).toBe('reviewer-alice');
+      expect(foundReq?.actorId).toBe('lead-reviewer');
       expect(foundReq?.originatingProjectionId).toBe(projection.id);
       expect(foundReq?.baselineId).toBe(baseline.id);
       expect(foundReq?.rationale).toBe('Diagram clearly lacks this path');

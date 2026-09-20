@@ -1,0 +1,16 @@
+{
+  "id": "REQ-53504457-39ad-4011-bb58-612c1afee2a4-R3",
+  "requirementId": "REQ-53504457-39ad-4011-bb58-612c1afee2a4",
+  "revision": 3,
+  "statement": "All privileged sessions must terminate automatically after 15 minutes of inactivity.",
+  "category": "business-rule",
+  "origin": "REVIEWER_PROPOSAL",
+  "reviewState": "ACCEPTED",
+  "resolutionState": "CLEAR",
+  "evidence": [],
+  "rationale": "Verified dependencies and scope resolution.",
+  "actorId": "lead-reviewer",
+  "baselineId": "BASE-001",
+  "originatingProjectionId": "PROJ-001",
+  "supersedes": "REQ-53504457-39ad-4011-bb58-612c1afee2a4-R2"
+}

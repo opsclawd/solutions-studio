@@ -1,4 +1,5 @@
 import React from 'react';
+import { AuthProvider } from '@/features/auth';
 
 export const metadata = {
   title: 'Solutions Studio',
@@ -8,7 +9,9 @@ export const metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="bg-gray-100 min-h-screen text-gray-900 antialiased">{children}</body>
+      <body className="bg-gray-100 min-h-screen text-gray-900 antialiased">
+        <AuthProvider>{children}</AuthProvider>
+      </body>
     </html>
   );
 }

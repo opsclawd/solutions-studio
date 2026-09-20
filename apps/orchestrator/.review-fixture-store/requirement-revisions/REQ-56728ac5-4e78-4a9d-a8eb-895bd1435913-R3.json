@@ -1,0 +1,16 @@
+{
+  "id": "REQ-56728ac5-4e78-4a9d-a8eb-895bd1435913-R3",
+  "requirementId": "REQ-56728ac5-4e78-4a9d-a8eb-895bd1435913",
+  "revision": 3,
+  "statement": "Administrative override sessions must be automatically revoked after 20 minutes of user inactivity.",
+  "category": "business-rule",
+  "origin": "REVIEWER_PROPOSAL",
+  "reviewState": "ACCEPTED",
+  "resolutionState": "CLEAR",
+  "evidence": [],
+  "rationale": "Verified 15-minute inactivity boundary is unambiguous.",
+  "actorId": "lead-reviewer",
+  "baselineId": "BASE-001",
+  "originatingProjectionId": "PROJ-002",
+  "supersedes": "REQ-56728ac5-4e78-4a9d-a8eb-895bd1435913-R2"
+}
