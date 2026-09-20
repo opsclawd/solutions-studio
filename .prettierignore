@@ -11,3 +11,4 @@ pnpm-lock.yaml
 .ai-tmp
 # Deliberately malformed/adversarial test payloads, not application code (see eslint.config.js)
 **/test/fixtures/**
+**/.review-fixture-store/**

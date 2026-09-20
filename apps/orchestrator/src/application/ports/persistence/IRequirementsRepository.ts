@@ -32,6 +32,7 @@ import type {
   EvaluationFixtureResultDto,
   EvaluationReportDto
 } from '@solutions-studio/contracts';
+import type { StorageHealthReport } from './IStorageHealthCheck.js';
 
 export interface LocatorIndexEntry {
   readonly locator: EvidenceLocator;
@@ -107,6 +108,7 @@ export interface ProjectionRecord {
   readonly content: string;
   readonly metadata: ProjectionMetadataDto;
   readonly createdAt: Instant;
+  readonly version?: number;
 }
 
 export interface StoryRecord {
@@ -123,6 +125,7 @@ export interface StoryRecord {
   readonly metadata: ProjectionMetadataDto;
   readonly createdAt: Instant;
   readonly dependencies?: readonly StoryId[];
+  readonly version?: number;
 }
 
 export class ImmutableRecordConflictError extends Error {
@@ -208,13 +211,19 @@ export interface IRequirementsRepository {
   getEvaluationRun(id: string): Promise<EvaluationRunRecord | undefined>;
   listEvaluationRuns(): Promise<readonly EvaluationRunRecord[]>;
   saveProjectionRecord(projection: ProjectionRecord): Promise<void>;
-  updateProjectionRecord(projection: ProjectionRecord): Promise<void>;
+  updateProjectionRecord(projection: ProjectionRecord, expectedVersion?: number): Promise<void>;
   getProjectionRecord(id: string): Promise<ProjectionRecord | undefined>;
   listProjectionRecords(baselineId?: RequirementsBaselineId): Promise<readonly ProjectionRecord[]>;
   saveStory(story: StoryRecord): Promise<void>;
-  updateStory(story: StoryRecord): Promise<void>;
-  updateStoryAndProjection(story: StoryRecord, projection: ProjectionRecord): Promise<void>;
+  updateStory(story: StoryRecord, expectedVersion?: number): Promise<void>;
+  updateStoryAndProjection(
+    story: StoryRecord,
+    projection: ProjectionRecord,
+    options?: { expectedStoryVersion?: number; expectedProjectionVersion?: number }
+  ): Promise<void>;
   getStory(id: StoryId): Promise<StoryRecord | undefined>;
   listStories(baselineId?: RequirementsBaselineId): Promise<readonly StoryRecord[]>;
   withBaselineLock<T>(baselineId: RequirementsBaselineId, action: () => Promise<T>): Promise<T>;
+  checkStorageHealth?(): Promise<StorageHealthReport>;
+  checkHealth?(): Promise<StorageHealthReport>;
 }

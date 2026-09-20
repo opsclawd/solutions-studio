@@ -15,7 +15,10 @@ import {
 } from '@solutions-studio/domain';
 import type { EvaluationReportDto } from '@solutions-studio/contracts';
 import { FilesystemRequirementsRepository } from '../../infrastructure/persistence/filesystem/FilesystemRequirementsRepository.js';
-import type { EvaluationRunRecord } from '../ports/persistence/IRequirementsRepository.js';
+import type {
+  IRequirementsRepository,
+  EvaluationRunRecord
+} from '../ports/persistence/IRequirementsRepository.js';
 import type {
   IGenerationGateway,
   GenerationResult
@@ -252,6 +255,7 @@ export interface Phase1ExitGateAdapter {
   createGenerationGateway?(): ScriptableGenerationGateway;
   createMermaidLinterGateway?(): IMermaidLinterGateway;
   loadFixture?(fixtureId: string): LoadedFixture;
+  createRepository?(storeDir: string): IRequirementsRepository | Promise<IRequirementsRepository>;
 }
 
 export interface Phase1ExitGateOptions {
@@ -319,7 +323,9 @@ export async function runPhase1ExitGate(
     // Step 1: Ingest and persist messy discovery package
     // ----------------------------------------------------
     log('[1/8] Ingesting canonical messy discovery package sources...');
-    const repo = new FilesystemRequirementsRepository({ baseDir: storeDir });
+    const repo = adapter?.createRepository
+      ? await adapter.createRepository(storeDir)
+      : new FilesystemRequirementsRepository({ baseDir: storeDir });
     const compileUseCase = new CompileRequirementsUseCase(generationGateway, repo);
     const reconcileUseCase = new ReconcileRequirementsUseCase(repo);
     const baselineUseCase = new CreateRequirementsBaselineUseCase(repo);
@@ -553,7 +559,9 @@ export async function runPhase1ExitGate(
     // Step 6: Process restart / reload durability & isolation probe
     // ----------------------------------------------------
     log('[6/8] Discarding in-memory state and verifying restart reload durability...');
-    const restartedRepo = new FilesystemRequirementsRepository({ baseDir: storeDir });
+    const restartedRepo = adapter?.createRepository
+      ? await adapter.createRepository(storeDir)
+      : new FilesystemRequirementsRepository({ baseDir: storeDir });
     const reloadedBaseline = await restartedRepo.getRequirementsBaseline(baseline.id);
     if (!reloadedBaseline || reloadedBaseline.id !== baseline.id) {
       throw new Error(`Failed to reload baseline '${baseline.id}' from restarted repository`);

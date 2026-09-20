@@ -2,6 +2,8 @@ import path from 'node:path';
 import { existsSync } from 'node:fs';
 import type { FastifyInstance, FastifyServerOptions } from 'fastify';
 import type { IRequirementsRepository } from '../application/ports/persistence/IRequirementsRepository.js';
+import type { ISqlDatabaseClient } from '../application/ports/persistence/ISqlDatabaseClient.js';
+import type { IObjectStore } from '../application/ports/persistence/IObjectStore.js';
 import type { IGenerationGateway } from '../application/ports/generation/IGenerationGateway.js';
 import type { IMermaidLinterGateway } from '../application/ports/validation/IMermaidLinterGateway.js';
 import type { IPrototypeValidatorGateway } from '../application/ports/validation/IPrototypeValidatorGateway.js';
@@ -31,7 +33,12 @@ import { GetEngineeringDecisionsUseCase } from '../application/use-cases/GetEngi
 import { BuildStoryDependencyGraphUseCase } from '../application/use-cases/BuildStoryDependencyGraphUseCase.js';
 import { UpdateStoryDependenciesUseCase } from '../application/use-cases/UpdateStoryDependenciesUseCase.js';
 import { GetEngineeringHandoffBundleUseCase } from '../application/use-cases/GetEngineeringHandoffBundleUseCase.js';
-import { FilesystemRequirementsRepository } from '../infrastructure/persistence/filesystem/FilesystemRequirementsRepository.js';
+import {
+  RepositoryFactory,
+  createRequirementsRepository
+} from '../infrastructure/persistence/RepositoryFactory.js';
+import { PostgresRequirementsRepository } from '../infrastructure/persistence/postgres/PostgresRequirementsRepository.js';
+import { SchemaMigrationRunner } from '../infrastructure/persistence/postgres/SchemaMigrationRunner.js';
 import {
   GatewayFactory,
   type ProviderType,
@@ -47,6 +54,14 @@ import { buildServer } from './server.js';
 
 export interface ComposeHttpServerOptions {
   readonly storeDir?: string;
+  readonly connectionString?: string;
+  readonly dbClient?: ISqlDatabaseClient;
+  readonly objectStore?: IObjectStore;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  readonly pool?: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  readonly clientFactory?: () => Promise<any> | any;
+  readonly autoMigrate?: boolean;
   readonly provider?: ProviderType;
   readonly timeoutMs?: number;
   readonly agyBinPath?: string;
@@ -127,7 +142,16 @@ export function composeOrchestratorHttpServer(
 ): ComposedHttpServer {
   const storeDir = options.storeDir ?? path.resolve(process.cwd(), '.requirements-store');
   const repository =
-    options.repository ?? new FilesystemRequirementsRepository({ baseDir: storeDir });
+    options.repository ??
+    RepositoryFactory.createFromEnvironment({
+      baseDir: storeDir,
+      connectionString: options.connectionString,
+      dbClient: options.dbClient,
+      objectStore: options.objectStore,
+      pool: options.pool,
+      clientFactory: options.clientFactory,
+      autoMigrate: options.autoMigrate
+    });
   const provider = options.provider ?? (process.env.GENERATION_PROVIDER as ProviderType) ?? 'agy';
 
   const gatewayConfig: GatewayConfig = {
@@ -287,6 +311,7 @@ export function composeOrchestratorHttpServer(
 
   const app = buildServer(
     {
+      repository,
       reviewStateUseCase,
       reconcileUseCase,
       baselineUseCase,
@@ -308,6 +333,19 @@ export function composeOrchestratorHttpServer(
     },
     options.fastifyOptions
   );
+
+  if (
+    repository instanceof PostgresRequirementsRepository &&
+    (repository as { db?: unknown }).db &&
+    options.autoMigrate !== false
+  ) {
+    app.addHook('onReady', async () => {
+      const runner = new SchemaMigrationRunner({
+        db: (repository as { db: ISqlDatabaseClient }).db
+      });
+      await runner.migrate();
+    });
+  }
 
   return {
     app,
@@ -344,4 +382,33 @@ export function composeOrchestratorHttpServer(
     transitionEngineeringDecisionUseCase,
     getEngineeringDecisionsUseCase
   };
+}
+
+export async function composeOrchestratorHttpServerAsync(
+  options: ComposeHttpServerOptions = {}
+): Promise<ComposedHttpServer> {
+  let repository = options.repository;
+  if (
+    !repository &&
+    (options.connectionString ||
+      process.env.DATABASE_URL ||
+      process.env.STORAGE_TYPE === 'postgres' ||
+      options.dbClient)
+  ) {
+    repository = await createRequirementsRepository({
+      baseDir: options.storeDir,
+      connectionString: options.connectionString,
+      dbClient: options.dbClient,
+      objectStore: options.objectStore,
+      pool: options.pool,
+      clientFactory: options.clientFactory,
+      autoMigrate: options.autoMigrate
+    });
+  }
+  const composed = composeOrchestratorHttpServer({
+    ...options,
+    repository
+  });
+  await composed.app.ready();
+  return composed;
 }

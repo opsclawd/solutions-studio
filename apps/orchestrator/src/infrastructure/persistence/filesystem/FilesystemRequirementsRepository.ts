@@ -43,7 +43,8 @@ import {
   type EngineeringDecision,
   type EngineeringDecisionState,
   type EvidenceLocator,
-  type SourceType
+  type SourceType,
+  type BaselineMembershipViolation
 } from '@solutions-studio/domain';
 import type {
   IRequirementsRepository,
@@ -57,12 +58,19 @@ import type {
   ProjectionRecord,
   StoryRecord
 } from '../../../application/ports/persistence/IRequirementsRepository.js';
+import type { StorageHealthReport } from '../../../application/ports/persistence/IStorageHealthCheck.js';
 import {
   StaleRevisionTargetError,
   UnknownRequirementRevisionError,
   UnknownPolicyConstraintRevisionError,
   UnknownEngineeringDecisionError,
-  InvalidEngineeringDecisionStateError
+  InvalidEngineeringDecisionStateError,
+  FindingDispositionConflictError,
+  RequirementRevisionConflictError,
+  InvalidBaselineMembershipError,
+  BlockedByOpenFindingsError,
+  OptimisticConcurrencyConflictError,
+  type BlockingFindingMatch
 } from '../../../application/use-cases/ReconciliationErrors.js';
 import { EvaluationRunRecordSchema } from '@solutions-studio/contracts';
 import type { FindingDisposition } from '@solutions-studio/domain';
@@ -731,7 +739,10 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
       }
       const expectedDisp = expectedCurrentDisposition ?? record.previousDisposition;
       if (current.disposition !== expectedDisp) {
-        throw new Error(
+        throw new FindingDispositionConflictError(
+          finding.id,
+          expectedDisp,
+          current.disposition,
           `Concurrency conflict for finding '${finding.id}': current disposition '${current.disposition}' does not match expected '${expectedDisp}'`
         );
       }
@@ -854,7 +865,10 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
       const expectedId = expectedCurrentRevisionId ?? successor.supersedes;
       if (expectedId !== undefined) {
         if (!latest || latest.id !== expectedId) {
-          throw new Error(
+          throw new RequirementRevisionConflictError(
+            successor.requirementId,
+            expectedId,
+            latest?.id,
             `Concurrency conflict for requirement '${successor.requirementId}': latest revision is '${latest?.id}', expected '${expectedId}'`
           );
         }
@@ -982,6 +996,65 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
   ): Promise<void> {
     assertSafeIdentifier(baseline.id, 'baselineId');
 
+    // Manifest equality enforcement: baseline manifest must match expectations exactly
+    const baselineReqSet = new Set(baseline.requirementRevisions);
+    const expectedReqSet = new Set(expectedLatestRevisionIds);
+    if (
+      baselineReqSet.size !== expectedReqSet.size ||
+      baseline.requirementRevisions.length !== expectedLatestRevisionIds.length ||
+      !expectedLatestRevisionIds.every((id) => baselineReqSet.has(id))
+    ) {
+      const violations: BaselineMembershipViolation[] = baseline.requirementRevisions
+        .filter((id) => !expectedReqSet.has(id))
+        .map((id) => ({
+          revisionId: id,
+          requirementId: id,
+          reasons: [
+            'Baseline requirement revision manifest does not match expected latest revisions'
+          ]
+        }));
+      if (violations.length === 0) {
+        violations.push({
+          revisionId: 'manifest-mismatch',
+          requirementId: 'manifest',
+          reasons: [
+            'Baseline requirement revision count or elements mismatch expected latest revisions'
+          ]
+        });
+      }
+      throw new InvalidBaselineMembershipError(violations);
+    }
+
+    const baselinePolList = baseline.policyConstraintRevisions ?? [];
+    const expectedPolList = expectedLatestPolicyConstraintRevisionIds ?? [];
+    const baselinePolSet = new Set(baselinePolList);
+    const expectedPolSet = new Set(expectedPolList);
+    if (
+      baselinePolSet.size !== expectedPolSet.size ||
+      baselinePolList.length !== expectedPolList.length ||
+      !expectedPolList.every((id) => baselinePolSet.has(id))
+    ) {
+      const violations: BaselineMembershipViolation[] = baselinePolList
+        .filter((id) => !expectedPolSet.has(id))
+        .map((id) => ({
+          revisionId: id,
+          requirementId: id,
+          reasons: [
+            'Baseline policy constraint revisions manifest does not match expected latest policy constraint revisions'
+          ]
+        }));
+      if (violations.length === 0) {
+        violations.push({
+          revisionId: 'manifest-mismatch',
+          requirementId: 'manifest',
+          reasons: [
+            'Baseline policy constraint revisions count or elements mismatch expected latest policy constraint revisions'
+          ]
+        });
+      }
+      throw new InvalidBaselineMembershipError(violations);
+    }
+
     const reqMap = new Map<RequirementId, RequirementRevisionId>();
     for (const rawRevId of expectedLatestRevisionIds) {
       const expectedRevId = createRequirementRevisionId(rawRevId);
@@ -1036,6 +1109,45 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
         const latest = allRevisions.length > 0 ? allRevisions[allRevisions.length - 1] : undefined;
         if (!latest || latest.id !== expectedRevId) {
           throw new StaleRevisionTargetError(expectedRevId, latest?.id ?? 'none');
+        }
+      }
+
+      // Check open blocking findings against revision lineage closure
+      const allFindings = await this.listCandidateFindings();
+      const openFindings = allFindings.filter((f) => f.disposition === 'OPEN');
+      if (openFindings.length > 0) {
+        const closure = new Set<string>();
+        for (const revId of expectedLatestRevisionIds) {
+          closure.add(revId);
+          let curr: string | undefined = revId;
+          while (curr) {
+            const rev = await this.getRequirementRevision(createRequirementRevisionId(curr));
+            curr = rev?.supersedes;
+            if (curr) {
+              if (closure.has(curr)) break;
+              closure.add(curr);
+            }
+          }
+        }
+
+        const blockingMatches: BlockingFindingMatch[] = [];
+        for (const f of openFindings) {
+          for (const aff of f.affectedRequirementRevisions) {
+            if (closure.has(aff)) {
+              blockingMatches.push({
+                ...f,
+                finding: f,
+                affectedRevisionId: aff,
+                matchedRevisionId: aff,
+                proposedRevisionId: aff
+              });
+              break;
+            }
+          }
+        }
+
+        if (blockingMatches.length > 0) {
+          throw new BlockedByOpenFindingsError(blockingMatches);
         }
       }
 
@@ -1401,20 +1513,50 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
     assertSafeIdentifier(projection.id, 'projectionId');
     assertSafeIdentifier(projection.baselineId, 'baselineId');
     const filePath = resolveStorePath(this.baseDir, 'projections', `${projection.id}.json`);
-    await writeJsonExclusive(filePath, projection);
+    await writeJsonExclusive(filePath, {
+      ...projection,
+      version: projection.version ?? 1
+    });
   }
 
-  async updateProjectionRecord(projection: ProjectionRecord): Promise<void> {
+  async updateProjectionRecord(
+    projection: ProjectionRecord,
+    expectedVersion?: number
+  ): Promise<void> {
     assertSafeIdentifier(projection.id, 'projectionId');
     assertSafeIdentifier(projection.baselineId, 'baselineId');
     const filePath = resolveStorePath(this.baseDir, 'projections', `${projection.id}.json`);
-    await writeJsonAtomic(filePath, projection);
+
+    const existing = await this.getProjectionRecord(projection.id);
+    if (!existing) {
+      throw new Error(`Projection '${projection.id}' not found`);
+    }
+
+    const expVer = expectedVersion ?? projection.version;
+    if (expVer !== undefined && existing.version !== undefined && existing.version !== expVer) {
+      throw new OptimisticConcurrencyConflictError(
+        `Concurrency conflict updating projection '${projection.id}': expected version ${expVer}, found ${existing.version}`
+      );
+    }
+
+    const nextVersion = (existing.version ?? 1) + 1;
+    await writeJsonAtomic(filePath, {
+      ...projection,
+      version: nextVersion
+    });
   }
 
   async getProjectionRecord(id: string): Promise<ProjectionRecord | undefined> {
     assertSafeIdentifier(id, 'projectionId');
     const filePath = resolveStorePath(this.baseDir, 'projections', `${id}.json`);
-    return readJson<ProjectionRecord>(filePath);
+    const record = await readJson<ProjectionRecord>(filePath);
+    if (!record) {
+      return undefined;
+    }
+    return Object.freeze({
+      ...record,
+      version: record.version ?? 1
+    });
   }
 
   async listProjectionRecords(
@@ -1448,21 +1590,78 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
     assertSafeIdentifier(story.id, 'storyId');
     assertSafeIdentifier(story.baselineId, 'baselineId');
     const filePath = resolveStorePath(this.baseDir, 'stories', `${story.id}.json`);
-    await writeJsonExclusive(filePath, story);
+    await writeJsonExclusive(filePath, {
+      ...story,
+      version: story.version ?? 1
+    });
   }
 
-  async updateStory(story: StoryRecord): Promise<void> {
+  async updateStory(story: StoryRecord, expectedVersion?: number): Promise<void> {
     assertSafeIdentifier(story.id, 'storyId');
     assertSafeIdentifier(story.baselineId, 'baselineId');
     const filePath = resolveStorePath(this.baseDir, 'stories', `${story.id}.json`);
-    await writeJsonAtomic(filePath, story);
+
+    const existing = await this.getStory(story.id);
+    if (!existing) {
+      throw new Error(`Story '${story.id}' not found`);
+    }
+
+    const expVer = expectedVersion ?? story.version;
+    if (expVer !== undefined && existing.version !== undefined && existing.version !== expVer) {
+      throw new OptimisticConcurrencyConflictError(
+        `Concurrency conflict updating story '${story.id}': expected version ${expVer}, found ${existing.version}`
+      );
+    }
+
+    const nextVersion = (existing.version ?? 1) + 1;
+    await writeJsonAtomic(filePath, {
+      ...story,
+      version: nextVersion
+    });
   }
 
-  async updateStoryAndProjection(story: StoryRecord, projection: ProjectionRecord): Promise<void> {
+  async updateStoryAndProjection(
+    story: StoryRecord,
+    projection: ProjectionRecord,
+    options?: { expectedStoryVersion?: number; expectedProjectionVersion?: number }
+  ): Promise<void> {
     assertSafeIdentifier(story.id, 'storyId');
     assertSafeIdentifier(story.baselineId, 'baselineId');
     assertSafeIdentifier(projection.id, 'projectionId');
     assertSafeIdentifier(projection.baselineId, 'baselineId');
+
+    const existingStory = await this.getStory(story.id);
+    if (!existingStory) {
+      throw new Error(`Story '${story.id}' not found`);
+    }
+    const expStoryVer = options?.expectedStoryVersion ?? story.version;
+    if (
+      expStoryVer !== undefined &&
+      existingStory.version !== undefined &&
+      existingStory.version !== expStoryVer
+    ) {
+      throw new OptimisticConcurrencyConflictError(
+        `Concurrency conflict updating story '${story.id}': expected version ${expStoryVer}, found ${existingStory.version}`
+      );
+    }
+
+    const existingProj = await this.getProjectionRecord(projection.id);
+    if (!existingProj) {
+      throw new Error(`Projection '${projection.id}' not found`);
+    }
+    const expProjVer = options?.expectedProjectionVersion ?? projection.version;
+    if (
+      expProjVer !== undefined &&
+      existingProj.version !== undefined &&
+      existingProj.version !== expProjVer
+    ) {
+      throw new OptimisticConcurrencyConflictError(
+        `Concurrency conflict updating projection '${projection.id}': expected version ${expProjVer}, found ${existingProj.version}`
+      );
+    }
+
+    const nextStoryVersion = (existingStory.version ?? 1) + 1;
+    const nextProjVersion = (existingProj.version ?? 1) + 1;
 
     const storyPath = resolveStorePath(this.baseDir, 'stories', `${story.id}.json`);
     const projectionPath = resolveStorePath(this.baseDir, 'projections', `${projection.id}.json`);
@@ -1473,9 +1672,15 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
 
     let storyWritten = false;
     try {
-      await writeJsonAtomic(storyPath, story);
+      await writeJsonAtomic(storyPath, {
+        ...story,
+        version: nextStoryVersion
+      });
       storyWritten = true;
-      await writeJsonAtomic(projectionPath, projection);
+      await writeJsonAtomic(projectionPath, {
+        ...projection,
+        version: nextProjVersion
+      });
     } catch (err) {
       if (storyWritten) {
         if (originalStoryRaw !== null) {
@@ -1500,6 +1705,7 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
     }
     return Object.freeze({
       ...record,
+      version: record.version ?? 1,
       requirementRevisionIds: Object.freeze(record.requirementRevisionIds),
       policyConstraintRevisionIds: record.policyConstraintRevisionIds
         ? Object.freeze(record.policyConstraintRevisionIds)
@@ -1554,5 +1760,37 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
   ): Promise<T> {
     assertSafeIdentifier(baselineId, 'baselineId');
     return this.acquireEntityLock(getBaselineLockKey(baselineId), action);
+  }
+
+  async checkStorageHealth(): Promise<StorageHealthReport> {
+    return this.checkHealth();
+  }
+
+  async checkHealth(): Promise<StorageHealthReport> {
+    const timestamp = new Date().toISOString();
+    const start = Date.now();
+    try {
+      await fs.access(this.baseDir, fs.constants.R_OK | fs.constants.W_OK);
+      return {
+        status: 'healthy',
+        timestamp,
+        database: {
+          status: 'healthy',
+          latencyMs: Date.now() - start,
+          details: { dialect: 'filesystem', baseDir: this.baseDir }
+        }
+      };
+    } catch (err) {
+      return {
+        status: 'unhealthy',
+        timestamp,
+        database: {
+          status: 'unhealthy',
+          latencyMs: Date.now() - start,
+          message: err instanceof Error ? err.message : String(err),
+          details: { dialect: 'filesystem', baseDir: this.baseDir }
+        }
+      };
+    }
   }
 }

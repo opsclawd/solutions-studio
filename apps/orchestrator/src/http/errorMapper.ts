@@ -19,7 +19,10 @@ import {
   UnknownRequirementsBaselineError,
   UnknownPolicyConstraintRevisionError,
   UnknownEngineeringDecisionError,
-  InvalidEngineeringDecisionStateError
+  InvalidEngineeringDecisionStateError,
+  FindingDispositionConflictError,
+  RequirementRevisionConflictError,
+  OptimisticConcurrencyConflictError
 } from '../application/use-cases/ReconciliationErrors.js';
 import { RepairRetryExhaustionError } from '../application/use-cases/RepairErrors.js';
 import { PrototypeProvenanceValidationError } from '../application/use-cases/PrototypeProjectionErrors.js';
@@ -246,6 +249,46 @@ export function mapErrorToResponse(error: unknown): MappedErrorResponse {
           revisionId: error.revisionId,
           latestRevisionId: error.latestRevisionId
         }
+      }
+    };
+  }
+
+  if (error instanceof FindingDispositionConflictError) {
+    return {
+      statusCode: 409,
+      body: {
+        code: 'CONCURRENCY_CONFLICT',
+        message: error.message,
+        details: {
+          entityId: error.findingId,
+          expectedDisposition: error.expectedDisposition,
+          currentDisposition: error.currentDisposition
+        }
+      }
+    };
+  }
+
+  if (error instanceof RequirementRevisionConflictError) {
+    return {
+      statusCode: 409,
+      body: {
+        code: 'CONCURRENCY_CONFLICT',
+        message: error.message,
+        details: {
+          requirementId: error.requirementId,
+          expectedRevisionId: error.expectedRevisionId,
+          currentRevisionId: error.currentRevisionId
+        }
+      }
+    };
+  }
+
+  if (error instanceof OptimisticConcurrencyConflictError) {
+    return {
+      statusCode: 409,
+      body: {
+        code: 'CONCURRENCY_CONFLICT',
+        message: error.message
       }
     };
   }

@@ -5,7 +5,7 @@
     "sourceId": "SRC-001",
     "revision": 1,
     "contentHash": "45a7c7661593ca1dcd7b63ca3281aaa6205d6071c8b295e6daea58831ce7446e",
-    "capturedAt": "2026-09-19T07:17:27.007Z"
+    "capturedAt": "2026-09-20T11:24:08.192Z"
   },
   "rawText": "# Enterprise Security Standard\n\n## Encryption at Rest\n\nAll relational and object databases storing customer data must employ AES-256 encryption at rest.\n\n## Role-Based Access Control\n\nAdministrative roles must require multi-factor authentication and role-based privilege assignment.\n\n## Session Management\n\nUser sessions must expire after 15 minutes of inactivity across all internal web portals.",
   "locatorIndex": [

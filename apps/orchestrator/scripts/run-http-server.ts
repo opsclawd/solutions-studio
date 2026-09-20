@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { composeOrchestratorHttpServer } from '../src/http/composition.js';
+import { composeOrchestratorHttpServerAsync } from '../src/http/composition.js';
 import type { ProviderType } from '../src/infrastructure/generation/GatewayFactory.js';
 
 export interface HttpServerArgs {
@@ -50,7 +50,7 @@ export function parseArgs(args: string[]): HttpServerArgs {
 
 export async function main() {
   const cliArgs = parseArgs(process.argv.slice(2));
-  const server = composeOrchestratorHttpServer({
+  const server = await composeOrchestratorHttpServerAsync({
     storeDir: cliArgs.storeDir,
     provider: cliArgs.provider,
     fastifyOptions: {
