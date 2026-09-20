@@ -75,6 +75,18 @@ export class FakeBacklogExportGateway implements IBacklogExportGateway {
     return this.existingRemoteItems.get(params.payload.story.id);
   }
 
+  async checkHealth(): Promise<{
+    status: 'healthy' | 'degraded' | 'unhealthy';
+    provider: string;
+    reachable: boolean;
+  }> {
+    return {
+      status: 'healthy',
+      provider: this.providerId,
+      reachable: true
+    };
+  }
+
   reset(): void {
     this.createCalls = [];
     this.updateCalls = [];

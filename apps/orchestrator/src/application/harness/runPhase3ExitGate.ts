@@ -1535,20 +1535,39 @@ process.stdout.write(JSON.stringify({
 }));
 `;
 
+      const cleanEnv = { ...process.env };
+      delete cleanEnv.NODE_OPTIONS;
       const childResult = cp.spawnSync(
         process.execPath,
         ['-e', childWorkerCode, storeDir, JSON.stringify(Object.keys(predecessorSnapshots))],
-        { encoding: 'utf8' }
+        { encoding: 'utf8', env: cleanEnv }
       );
 
+      if (childResult.error) {
+        throw new Error(
+          `Child process failed to spawn during reload verification: ${childResult.error.message}`
+        );
+      }
+
       if (childResult.status !== 0) {
-        throw new Error(`Child process failed during reload verification: ${childResult.stderr}`);
+        throw new Error(
+          `Child process failed during reload verification (status ${childResult.status}): ${childResult.stderr || childResult.stdout}`
+        );
+      }
+
+      const trimmedStdout = childResult.stdout?.trim() ?? '';
+      if (!trimmedStdout) {
+        throw new Error(
+          `Child process stdout was empty during reload verification (status: ${childResult.status}, stderr: '${childResult.stderr}')`
+        );
       }
 
       try {
-        parsedChildOutput = JSON.parse(childResult.stdout.trim());
+        parsedChildOutput = JSON.parse(trimmedStdout);
       } catch {
-        throw new Error(`Failed to parse child process output: ${childResult.stdout}`);
+        throw new Error(
+          `Failed to parse child process output: '${childResult.stdout}' (stderr: '${childResult.stderr}')`
+        );
       }
 
       if (!parsedChildOutput) {
