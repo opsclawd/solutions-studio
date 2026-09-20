@@ -3,7 +3,16 @@ import {
   DomainError,
   EmptyBaselineError,
   FindingRationaleRequiredError,
-  InvalidBaselineMembershipError
+  InvalidBaselineMembershipError,
+  HumanActorRequiredForApprovalError,
+  EmptyValidationArtifactsError,
+  ValidationEvidenceMismatchError,
+  CandidateShaMismatchError,
+  UnknownValidationRunError,
+  UnknownGovernanceApprovalError,
+  InvalidGovernanceApprovalStateError,
+  StaleGovernanceApprovalError,
+  InvalidCandidateShaError
 } from '@solutions-studio/domain';
 import type { ApiErrorDto } from '@solutions-studio/contracts';
 import {
@@ -542,6 +551,116 @@ export function mapErrorToResponse(error: unknown): MappedErrorResponse {
           requiredCapability: error.requiredCapability,
           actorId: error.actorId
         }
+      }
+    };
+  }
+
+  if (error instanceof HumanActorRequiredForApprovalError) {
+    return {
+      statusCode: 403,
+      body: {
+        code: 'HUMAN_ACTOR_REQUIRED',
+        message: error.message
+      }
+    };
+  }
+
+  if (error instanceof EmptyValidationArtifactsError) {
+    return {
+      statusCode: 400,
+      body: {
+        code: 'EMPTY_EVIDENCE',
+        message: error.message
+      }
+    };
+  }
+
+  if (error instanceof ValidationEvidenceMismatchError) {
+    return {
+      statusCode: 400,
+      body: {
+        code: 'EVIDENCE_MISMATCH',
+        message: error.message,
+        details: {
+          expectedDigest: error.expectedDigest,
+          actualDigest: error.actualDigest
+        }
+      }
+    };
+  }
+
+  if (error instanceof CandidateShaMismatchError) {
+    return {
+      statusCode: 400,
+      body: {
+        code: 'CANDIDATE_SHA_MISMATCH',
+        message: error.message,
+        details: {
+          expectedSha: error.expectedSha,
+          actualSha: error.actualSha
+        }
+      }
+    };
+  }
+
+  if (error instanceof UnknownValidationRunError) {
+    return {
+      statusCode: 404,
+      body: {
+        code: 'VALIDATION_RUN_NOT_FOUND',
+        message: error.message,
+        details: { runId: error.runId }
+      }
+    };
+  }
+
+  if (error instanceof UnknownGovernanceApprovalError) {
+    return {
+      statusCode: 404,
+      body: {
+        code: 'APPROVAL_NOT_FOUND',
+        message: error.message,
+        details: { approvalId: error.approvalId }
+      }
+    };
+  }
+
+  if (error instanceof InvalidGovernanceApprovalStateError) {
+    return {
+      statusCode: 409,
+      body: {
+        code: 'INVALID_APPROVAL_STATE',
+        message: error.message,
+        details: {
+          approvalId: error.approvalId,
+          currentState: error.currentState,
+          requestedAction: error.requestedAction
+        }
+      }
+    };
+  }
+
+  if (error instanceof StaleGovernanceApprovalError) {
+    return {
+      statusCode: 409,
+      body: {
+        code: 'STALE_APPROVAL',
+        message: error.message,
+        details: {
+          approvalId: error.approvalId,
+          reason: error.reason
+        }
+      }
+    };
+  }
+
+  if (error instanceof InvalidCandidateShaError) {
+    return {
+      statusCode: 400,
+      body: {
+        code: 'INVALID_CANDIDATE_SHA',
+        message: error.message,
+        details: { invalidValue: error.invalidValue }
       }
     };
   }

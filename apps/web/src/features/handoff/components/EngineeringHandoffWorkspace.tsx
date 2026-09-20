@@ -7,12 +7,17 @@ import { AuthorityContractsSection } from './AuthorityContractsSection';
 import { ProjectionsSection } from './ProjectionsSection';
 import { StoryReadinessBacklogSection } from './StoryReadinessBacklogSection';
 import { DependencyGraphSection } from './DependencyGraphSection';
+import { GovernanceAuditSection } from './GovernanceAuditSection';
 
 export interface EngineeringHandoffWorkspaceProps {
   readonly baselineId?: string;
+  readonly candidateSha?: string;
 }
 
-export function EngineeringHandoffWorkspace({ baselineId }: EngineeringHandoffWorkspaceProps) {
+export function EngineeringHandoffWorkspace({
+  baselineId,
+  candidateSha: initialCandidateSha
+}: EngineeringHandoffWorkspaceProps) {
   const {
     status,
     error,
@@ -22,11 +27,22 @@ export function EngineeringHandoffWorkspace({ baselineId }: EngineeringHandoffWo
     activeTab,
     isUpdatingDependencies,
     updateDependenciesError,
+    candidateSha,
+    promotionStatus,
+    validationRuns,
+    governanceApprovals,
+    isLoadingGovernance,
+    governanceError,
+    setCandidateSha,
+    approveCandidate,
+    revokeApproval,
+    exportAudit,
+    refreshGovernance,
     selectBaseline,
     setActiveTab,
     refresh,
     mutateStoryDependencies
-  } = useHandoffState(baselineId);
+  } = useHandoffState(baselineId, initialCandidateSha);
 
   if (status === 'loading' && !bundle) {
     return (
@@ -82,6 +98,9 @@ export function EngineeringHandoffWorkspace({ baselineId }: EngineeringHandoffWo
         bundle={bundle}
         activeBaselineId={activeBaselineId}
         availableBaselines={availableBaselines}
+        candidateSha={candidateSha}
+        onCandidateShaChange={setCandidateSha}
+        promotionStatus={promotionStatus}
         onSelectBaseline={selectBaseline}
         onRefresh={refresh}
       />
@@ -150,7 +169,53 @@ export function EngineeringHandoffWorkspace({ baselineId }: EngineeringHandoffWo
           >
             Dependency DAG
           </button>
+          <button
+            type="button"
+            data-testid="nav-tab-governance"
+            onClick={() => setActiveTab('governance')}
+            className={`px-4 py-2 rounded-lg transition ${
+              activeTab === 'governance'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Governance Audit
+          </button>
         </div>
+
+        {/* Governance Error Alert */}
+        {governanceError && (
+          <div
+            data-testid="governance-error-alert"
+            className="p-4 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center justify-between shadow-2xs"
+          >
+            <div className="flex items-center gap-2">
+              <svg
+                className="w-4 h-4 text-red-600 shrink-0"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                />
+              </svg>
+              <span>
+                <strong>Governance Error:</strong> {governanceError}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={refreshGovernance}
+              className="text-xs underline font-medium hover:text-red-900 ml-4 shrink-0"
+            >
+              Retry
+            </button>
+          </div>
+        )}
 
         {/* Blocker Alert Banner */}
         {bundle && (
@@ -194,6 +259,22 @@ export function EngineeringHandoffWorkspace({ baselineId }: EngineeringHandoffWo
                 sqlProjection={bundle.sqlProjection}
                 openApiProjection={bundle.openApiProjection}
                 stories={bundle.stories}
+              />
+            )}
+
+            {(activeTab === 'overview' || activeTab === 'governance') && (
+              <GovernanceAuditSection
+                candidateSha={candidateSha}
+                promotionStatus={promotionStatus}
+                validationRuns={validationRuns}
+                approvals={governanceApprovals}
+                isLoading={isLoadingGovernance}
+                error={governanceError}
+                onCandidateShaChange={setCandidateSha}
+                onApprove={approveCandidate}
+                onRevoke={revokeApproval}
+                onExportAudit={exportAudit}
+                onRefresh={refreshGovernance}
               />
             )}
           </div>

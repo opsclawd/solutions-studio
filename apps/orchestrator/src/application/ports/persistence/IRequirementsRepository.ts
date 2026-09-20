@@ -25,7 +25,12 @@ import type {
   RequirementReconciliationAction,
   StoryId,
   StoryNarrative,
-  GherkinScenario
+  GherkinScenario,
+  ValidationRunRecord,
+  ValidationRunId,
+  CandidateApprovalRecord,
+  GovernanceApprovalId,
+  GovernanceApprovalStatus
 } from '@solutions-studio/domain';
 import type {
   ProjectionMetadataDto,
@@ -224,6 +229,27 @@ export interface IRequirementsRepository {
   getStory(id: StoryId): Promise<StoryRecord | undefined>;
   listStories(baselineId?: RequirementsBaselineId): Promise<readonly StoryRecord[]>;
   withBaselineLock<T>(baselineId: RequirementsBaselineId, action: () => Promise<T>): Promise<T>;
+  saveValidationRun(run: ValidationRunRecord): Promise<void>;
+  getValidationRun(id: ValidationRunId | string): Promise<ValidationRunRecord | undefined>;
+  listValidationRuns(filter?: { candidateSha?: string }): Promise<readonly ValidationRunRecord[]>;
+  getLatestValidationRun(candidateSha: string): Promise<ValidationRunRecord | undefined>;
+  saveGovernanceApproval(approval: CandidateApprovalRecord): Promise<void>;
+  getGovernanceApproval(
+    id: GovernanceApprovalId | string
+  ): Promise<CandidateApprovalRecord | undefined>;
+  listGovernanceApprovals(filter?: {
+    candidateSha?: string;
+    validationRunId?: string;
+  }): Promise<readonly CandidateApprovalRecord[]>;
+  getActiveGovernanceApproval(candidateSha: string): Promise<CandidateApprovalRecord | undefined>;
+  updateGovernanceApproval(
+    approval: CandidateApprovalRecord,
+    expectedCurrentStatus?: GovernanceApprovalStatus
+  ): Promise<void>;
+  replaceGovernanceApproval(
+    newApproval: CandidateApprovalRecord,
+    expectedActiveApprovalId?: string
+  ): Promise<void>;
   checkStorageHealth?(): Promise<StorageHealthReport>;
   checkHealth?(): Promise<StorageHealthReport>;
 }

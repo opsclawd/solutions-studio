@@ -43,8 +43,18 @@ import {
   type EngineeringDecision,
   type EngineeringDecisionState,
   type EvidenceLocator,
-  type SourceType,
-  type BaselineMembershipViolation
+  type BaselineMembershipViolation,
+  createValidationRunRecord,
+  createCandidateApprovalRecord,
+  revokeCandidateApprovalRecord,
+  supersedeCandidateApprovalRecord,
+  UnknownGovernanceApprovalError,
+  type ValidationRunRecord,
+  type ValidationRunId,
+  type CandidateApprovalRecord,
+  type GovernanceApprovalId,
+  type GovernanceApprovalStatus,
+  type SourceType
 } from '@solutions-studio/domain';
 import type {
   IRequirementsRepository,
@@ -72,7 +82,11 @@ import {
   OptimisticConcurrencyConflictError,
   type BlockingFindingMatch
 } from '../../../application/use-cases/ReconciliationErrors.js';
-import { EvaluationRunRecordSchema } from '@solutions-studio/contracts';
+import {
+  EvaluationRunRecordSchema,
+  ValidationRunRecordDtoSchema,
+  CandidateApprovalRecordDtoSchema
+} from '@solutions-studio/contracts';
 import type { FindingDisposition } from '@solutions-studio/domain';
 import { computeContentHash, deriveLocatorIndex } from '../markdown/deriveLocatorIndex.js';
 import {
@@ -147,6 +161,14 @@ export function getBaselineLockKey(id: string): string {
   return `baseline:${id}`;
 }
 
+export function getApprovalLockKey(id: string): string {
+  return `approval:${id}`;
+}
+
+export function getCandidateApprovalLockKey(candidateSha: string): string {
+  return `candidate-approval:${candidateSha}`;
+}
+
 export class FilesystemRequirementsRepository implements IRequirementsRepository {
   private readonly baseDir: string;
   private readonly entityLocks = new Map<string, Promise<void>>();
@@ -171,6 +193,49 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
         this.entityLocks.delete(entityId);
       }
     }
+  }
+
+  private async acquireFileLock<T>(lockKey: string, action: () => Promise<T>): Promise<T> {
+    return this.acquireEntityLock(lockKey, async () => {
+      const lockDir = path.resolve(this.baseDir, '.locks');
+      await fs.mkdir(lockDir, { recursive: true });
+      const safeName = encodeURIComponent(lockKey).replace(/%/g, '_');
+      const lockPath = path.resolve(lockDir, `${safeName}.lock`);
+      const timeoutMs = 15000;
+      const start = Date.now();
+      let handle: fs.FileHandle | null = null;
+
+      while (!handle) {
+        try {
+          handle = await fs.open(lockPath, 'wx');
+          await handle.writeFile(JSON.stringify({ pid: process.pid, createdAt: Date.now() }));
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+            if (Date.now() - start > timeoutMs) {
+              throw new Error(`Timed out waiting to acquire file lock for '${lockKey}'`);
+            }
+            await new Promise((r) => setTimeout(r, 20 + Math.random() * 20));
+          } else {
+            throw err;
+          }
+        }
+      }
+
+      try {
+        return await action();
+      } finally {
+        try {
+          await handle.close();
+        } catch {
+          // ignore
+        }
+        try {
+          await fs.unlink(lockPath);
+        } catch {
+          // ignore
+        }
+      }
+    });
   }
 
   private async acquireLocks<T>(
@@ -1760,6 +1825,303 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
   ): Promise<T> {
     assertSafeIdentifier(baselineId, 'baselineId');
     return this.acquireEntityLock(getBaselineLockKey(baselineId), action);
+  }
+
+  async saveValidationRun(run: ValidationRunRecord): Promise<void> {
+    assertSafeIdentifier(run.id, 'runId');
+    assertSafeIdentifier(run.candidateSha, 'candidateSha');
+    const validated = ValidationRunRecordDtoSchema.parse(run);
+    const filePath = resolveStorePath(this.baseDir, 'validation-runs', `${run.id}.json`);
+    await writeJsonExclusive(filePath, validated);
+  }
+
+  async getValidationRun(id: ValidationRunId | string): Promise<ValidationRunRecord | undefined> {
+    assertSafeIdentifier(id, 'runId');
+    const filePath = resolveStorePath(this.baseDir, 'validation-runs', `${id}.json`);
+    const raw = await readJson<unknown>(filePath);
+    if (!raw) {
+      return undefined;
+    }
+    const validated = ValidationRunRecordDtoSchema.parse(raw);
+    return createValidationRunRecord({
+      id: validated.id,
+      candidateSha: validated.candidateSha,
+      executedAt: createInstant(validated.executedAt),
+      executedBy: validated.executedBy,
+      phase: validated.phase,
+      executionMode: validated.executionMode,
+      provider: validated.provider,
+      model: validated.model,
+      artifacts: validated.artifacts,
+      evidenceDigest: validated.evidenceDigest,
+      proposedDisposition: validated.proposedDisposition,
+      summary: validated.summary,
+      payloadRef: validated.payloadRef
+    });
+  }
+
+  async listValidationRuns(filter?: {
+    candidateSha?: string;
+  }): Promise<readonly ValidationRunRecord[]> {
+    const dir = path.resolve(this.baseDir, 'validation-runs');
+    try {
+      const files = await fs.readdir(dir);
+      const results: ValidationRunRecord[] = [];
+      for (const file of files) {
+        if (!file.endsWith('.json')) continue;
+        const id = file.replace(/\.json$/, '');
+        const run = await this.getValidationRun(id);
+        if (run) {
+          if (
+            filter?.candidateSha &&
+            run.candidateSha.toLowerCase() !== filter.candidateSha.toLowerCase()
+          ) {
+            continue;
+          }
+          results.push(run);
+        }
+      }
+      results.sort((a, b) => b.executedAt.localeCompare(a.executedAt) || b.id.localeCompare(a.id));
+      return Object.freeze(results);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return Object.freeze([]);
+      }
+      throw err;
+    }
+  }
+
+  async getLatestValidationRun(candidateSha: string): Promise<ValidationRunRecord | undefined> {
+    const runs = await this.listValidationRuns({ candidateSha });
+    return runs.length > 0 ? runs[0] : undefined;
+  }
+
+  async saveGovernanceApproval(approval: CandidateApprovalRecord): Promise<void> {
+    assertSafeIdentifier(approval.id, 'approvalId');
+    assertSafeIdentifier(approval.candidateSha, 'candidateSha');
+
+    return this.acquireFileLock(getCandidateApprovalLockKey(approval.candidateSha), async () => {
+      if (approval.status === 'ACTIVE') {
+        const activeExisting = await this.getActiveGovernanceApproval(approval.candidateSha);
+        if (activeExisting) {
+          throw new OptimisticConcurrencyConflictError(
+            `Candidate '${approval.candidateSha}' already has an active governance approval '${activeExisting.id}'. Concurrent active approvals are forbidden.`
+          );
+        }
+      }
+
+      const validated = CandidateApprovalRecordDtoSchema.parse(approval);
+      const filePath = resolveStorePath(
+        this.baseDir,
+        'governance-approvals',
+        `${approval.id}.json`
+      );
+      await writeJsonExclusive(filePath, validated);
+    });
+  }
+
+  async replaceGovernanceApproval(
+    newApproval: CandidateApprovalRecord,
+    expectedActiveApprovalId?: string
+  ): Promise<void> {
+    assertSafeIdentifier(newApproval.id, 'approvalId');
+    assertSafeIdentifier(newApproval.candidateSha, 'candidateSha');
+
+    return this.acquireFileLock(getCandidateApprovalLockKey(newApproval.candidateSha), async () => {
+      const activeExisting = await this.getActiveGovernanceApproval(newApproval.candidateSha);
+
+      if (expectedActiveApprovalId !== undefined) {
+        if (!activeExisting || activeExisting.id !== expectedActiveApprovalId) {
+          throw new OptimisticConcurrencyConflictError(
+            `Governance approval replacement conflict for candidate '${newApproval.candidateSha}': expected active approval '${expectedActiveApprovalId}', but found '${activeExisting?.id ?? 'none'}'.`
+          );
+        }
+
+        const supersededRecord = supersedeCandidateApprovalRecord(activeExisting);
+        const existingPath = resolveStorePath(
+          this.baseDir,
+          'governance-approvals',
+          `${activeExisting.id}.json`
+        );
+        const newPath = resolveStorePath(
+          this.baseDir,
+          'governance-approvals',
+          `${newApproval.id}.json`
+        );
+
+        // Transition existing to SUPERSEDED atomically
+        await writeJsonAtomic(
+          existingPath,
+          CandidateApprovalRecordDtoSchema.parse(supersededRecord)
+        );
+        try {
+          await writeJsonExclusive(newPath, CandidateApprovalRecordDtoSchema.parse(newApproval));
+        } catch (err) {
+          // Rollback existing record to ACTIVE on failure
+          await writeJsonAtomic(
+            existingPath,
+            CandidateApprovalRecordDtoSchema.parse(activeExisting)
+          );
+          throw err;
+        }
+      } else {
+        if (activeExisting) {
+          throw new OptimisticConcurrencyConflictError(
+            `Candidate '${newApproval.candidateSha}' already has an active governance approval '${activeExisting.id}'. Concurrent active approvals are forbidden.`
+          );
+        }
+        const newPath = resolveStorePath(
+          this.baseDir,
+          'governance-approvals',
+          `${newApproval.id}.json`
+        );
+        await writeJsonExclusive(newPath, CandidateApprovalRecordDtoSchema.parse(newApproval));
+      }
+    });
+  }
+
+  async getGovernanceApproval(
+    id: GovernanceApprovalId | string
+  ): Promise<CandidateApprovalRecord | undefined> {
+    assertSafeIdentifier(id, 'approvalId');
+    const filePath = resolveStorePath(this.baseDir, 'governance-approvals', `${id}.json`);
+    const raw = await readJson<unknown>(filePath);
+    if (!raw) {
+      return undefined;
+    }
+    const validated = CandidateApprovalRecordDtoSchema.parse(raw);
+    if (validated.status === 'REVOKED') {
+      const activeRecord = createCandidateApprovalRecord({
+        id: validated.id,
+        candidateSha: validated.candidateSha,
+        validationRunId: validated.validationRunId,
+        evidenceDigest: validated.evidenceDigest,
+        decision: validated.decision,
+        actor: {
+          id: createActorId(validated.actor.id),
+          name: validated.actor.name,
+          email: validated.actor.email,
+          actorType: 'human'
+        },
+        decidedAt: createInstant(validated.decidedAt),
+        rationale: validated.rationale,
+        supersedes: validated.supersedes
+      });
+      return revokeCandidateApprovalRecord(
+        activeRecord,
+        {
+          id: createActorId(validated.revocation.revokedBy.id),
+          name: validated.revocation.revokedBy.name,
+          email: validated.revocation.revokedBy.email,
+          actorType: 'human'
+        },
+        validated.revocation.rationale,
+        createInstant(validated.revocation.revokedAt)
+      );
+    } else if (validated.status === 'SUPERSEDED') {
+      const activeRecord = createCandidateApprovalRecord({
+        id: validated.id,
+        candidateSha: validated.candidateSha,
+        validationRunId: validated.validationRunId,
+        evidenceDigest: validated.evidenceDigest,
+        decision: validated.decision,
+        actor: {
+          id: createActorId(validated.actor.id),
+          name: validated.actor.name,
+          email: validated.actor.email,
+          actorType: 'human'
+        },
+        decidedAt: createInstant(validated.decidedAt),
+        rationale: validated.rationale,
+        supersedes: validated.supersedes
+      });
+      return supersedeCandidateApprovalRecord(activeRecord);
+    } else {
+      return createCandidateApprovalRecord({
+        id: validated.id,
+        candidateSha: validated.candidateSha,
+        validationRunId: validated.validationRunId,
+        evidenceDigest: validated.evidenceDigest,
+        decision: validated.decision,
+        actor: {
+          id: createActorId(validated.actor.id),
+          name: validated.actor.name,
+          email: validated.actor.email,
+          actorType: 'human'
+        },
+        decidedAt: createInstant(validated.decidedAt),
+        rationale: validated.rationale,
+        supersedes: validated.supersedes
+      });
+    }
+  }
+
+  async listGovernanceApprovals(filter?: {
+    candidateSha?: string;
+    validationRunId?: string;
+  }): Promise<readonly CandidateApprovalRecord[]> {
+    const dir = path.resolve(this.baseDir, 'governance-approvals');
+    try {
+      const files = await fs.readdir(dir);
+      const results: CandidateApprovalRecord[] = [];
+      for (const file of files) {
+        if (!file.endsWith('.json')) continue;
+        const id = file.replace(/\.json$/, '');
+        const approval = await this.getGovernanceApproval(id);
+        if (approval) {
+          if (
+            filter?.candidateSha &&
+            approval.candidateSha.toLowerCase() !== filter.candidateSha.toLowerCase()
+          ) {
+            continue;
+          }
+          if (filter?.validationRunId && approval.validationRunId !== filter.validationRunId) {
+            continue;
+          }
+          results.push(approval);
+        }
+      }
+      results.sort((a, b) => b.decidedAt.localeCompare(a.decidedAt));
+      return Object.freeze(results);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return Object.freeze([]);
+      }
+      throw err;
+    }
+  }
+
+  async getActiveGovernanceApproval(
+    candidateSha: string
+  ): Promise<CandidateApprovalRecord | undefined> {
+    const approvals = await this.listGovernanceApprovals({ candidateSha });
+    return approvals.find((a) => a.status === 'ACTIVE');
+  }
+
+  async updateGovernanceApproval(
+    approval: CandidateApprovalRecord,
+    expectedCurrentStatus?: GovernanceApprovalStatus
+  ): Promise<void> {
+    assertSafeIdentifier(approval.id, 'approvalId');
+    return this.acquireFileLock(getApprovalLockKey(approval.id), async () => {
+      const filePath = resolveStorePath(
+        this.baseDir,
+        'governance-approvals',
+        `${approval.id}.json`
+      );
+      const raw = await readJson<unknown>(filePath);
+      if (!raw) {
+        throw new UnknownGovernanceApprovalError(approval.id);
+      }
+      const existing = CandidateApprovalRecordDtoSchema.parse(raw);
+      if (expectedCurrentStatus && existing.status !== expectedCurrentStatus) {
+        throw new OptimisticConcurrencyConflictError(
+          `Governance approval '${approval.id}' status conflict: expected '${expectedCurrentStatus}', but found '${existing.status}'.`
+        );
+      }
+      const validated = CandidateApprovalRecordDtoSchema.parse(approval);
+      await writeJsonAtomic(filePath, validated);
+    });
   }
 
   async checkStorageHealth(): Promise<StorageHealthReport> {

@@ -51,8 +51,19 @@ import {
   type DiscoveredBy,
   type PolicyConstraintState,
   type RequirementReconciliationAction,
+  type BaselineMembershipViolation,
   type GherkinScenario,
-  type BaselineMembershipViolation
+  type GherkinStep,
+  createValidationRunRecord,
+  createCandidateApprovalRecord,
+  revokeCandidateApprovalRecord,
+  supersedeCandidateApprovalRecord,
+  UnknownGovernanceApprovalError,
+  type ValidationRunRecord,
+  type ValidationRunId,
+  type CandidateApprovalRecord,
+  type GovernanceApprovalId,
+  type GovernanceApprovalStatus
 } from '@solutions-studio/domain';
 import {
   ImmutableRecordConflictError,
@@ -87,7 +98,11 @@ import {
   InvalidBaselineMembershipError,
   type BlockingFindingMatch
 } from '../../../application/use-cases/ReconciliationErrors.js';
-import { EvaluationRunRecordSchema } from '@solutions-studio/contracts';
+import {
+  EvaluationRunRecordSchema,
+  ValidationRunRecordDtoSchema,
+  CandidateApprovalRecordDtoSchema
+} from '@solutions-studio/contracts';
 import { computeContentHash, deriveLocatorIndex } from '../markdown/deriveLocatorIndex.js';
 import { SchemaMigrationRunner } from './SchemaMigrationRunner.js';
 
@@ -2472,9 +2487,10 @@ export class PostgresRequirementsRepository
         ? Object.freeze((rawPols as string[]).map((p) => createPolicyConstraintRevisionId(p)))
         : undefined,
       scenarios: Object.freeze(
-        (rawScenarios as GherkinScenario[]).map((s) =>
+        ((rawScenarios ?? []) as GherkinScenario[]).map((s) =>
           Object.freeze({
             ...s,
+            title: s.title ?? '',
             requirementRevisionIds: Object.freeze(
               (s.requirementRevisionIds ?? []).map((r: string) => createRequirementRevisionId(r))
             ),
@@ -2485,7 +2501,7 @@ export class PostgresRequirementsRepository
                   )
                 )
               : undefined,
-            steps: Object.freeze((s.steps ?? []).map((st) => Object.freeze(st)))
+            steps: Object.freeze((s.steps ?? []).map((st: GherkinStep) => Object.freeze(st)))
           })
         )
       ),
@@ -2560,6 +2576,409 @@ export class PostgresRequirementsRepository
   }
 
   // --- HEALTH CHECK ---
+
+  // --- GOVERNANCE AUDIT & PROMOTION INTEGRITY ---
+
+  async saveValidationRun(
+    run: ValidationRunRecord,
+    executor: ISqlDatabaseClient = this.activeDb
+  ): Promise<void> {
+    assertSafeIdentifier(run.id, 'runId');
+    assertSafeIdentifier(run.candidateSha, 'candidateSha');
+    const validated = ValidationRunRecordDtoSchema.parse(run);
+
+    try {
+      await executor.query(
+        `INSERT INTO validation_runs (
+           id, candidate_sha, executed_at, executed_by, phase, execution_mode,
+           provider, model, artifacts, evidence_digest, proposed_disposition,
+           summary, payload_ref
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13);`,
+        [
+          validated.id,
+          validated.candidateSha,
+          validated.executedAt,
+          validated.executedBy,
+          validated.phase,
+          validated.executionMode,
+          validated.provider,
+          validated.model ?? null,
+          JSON.stringify(validated.artifacts),
+          validated.evidenceDigest,
+          validated.proposedDisposition ?? null,
+          JSON.stringify(validated.summary),
+          validated.payloadRef ?? null
+        ]
+      );
+    } catch (err) {
+      if (isDuplicateKeyError(err)) {
+        throw new ImmutableRecordConflictError(
+          `validation-runs/${run.id}`,
+          `Validation run '${run.id}' already exists`
+        );
+      }
+      throw err;
+    }
+  }
+
+  async getValidationRun(
+    id: ValidationRunId | string,
+    executor: ISqlDatabaseClient = this.activeDb
+  ): Promise<ValidationRunRecord | undefined> {
+    assertSafeIdentifier(id, 'runId');
+    const result = await executor.query<{
+      id: string;
+      candidate_sha: string;
+      executed_at: string | Date;
+      executed_by: string;
+      phase: string;
+      execution_mode: 'deterministic-ci' | 'real-provider';
+      provider: string;
+      model?: string | null;
+      artifacts: string | unknown[];
+      evidence_digest: string;
+      proposed_disposition?: string | null;
+      summary: string | Record<string, unknown>;
+      payload_ref?: string | null;
+    }>(`SELECT * FROM validation_runs WHERE id = $1;`, [id]);
+
+    if (result.rows.length === 0) {
+      return undefined;
+    }
+
+    const row = result.rows[0];
+    const artifacts = typeof row.artifacts === 'string' ? JSON.parse(row.artifacts) : row.artifacts;
+    const summary = typeof row.summary === 'string' ? JSON.parse(row.summary) : row.summary;
+
+    return createValidationRunRecord({
+      id: row.id,
+      candidateSha: row.candidate_sha,
+      executedAt: createInstant(
+        row.executed_at instanceof Date ? row.executed_at.toISOString() : String(row.executed_at)
+      ),
+      executedBy: row.executed_by,
+      phase: row.phase,
+      executionMode: row.execution_mode,
+      provider: row.provider,
+      model: row.model ?? undefined,
+      artifacts,
+      evidenceDigest: row.evidence_digest,
+      proposedDisposition: (row.proposed_disposition as 'GO' | 'DESIGN_CHANGE') ?? undefined,
+      summary,
+      payloadRef: row.payload_ref ?? undefined
+    });
+  }
+
+  async listValidationRuns(
+    filter?: { candidateSha?: string },
+    executor: ISqlDatabaseClient = this.activeDb
+  ): Promise<readonly ValidationRunRecord[]> {
+    let query = `SELECT * FROM validation_runs`;
+    const params: unknown[] = [];
+    if (filter?.candidateSha) {
+      query += ` WHERE LOWER(candidate_sha) = LOWER($1)`;
+      params.push(filter.candidateSha);
+    }
+    query += ` ORDER BY executed_at DESC, id DESC;`;
+
+    const result = await executor.query<{
+      id: string;
+      candidate_sha: string;
+      executed_at: string | Date;
+      executed_by: string;
+      phase: string;
+      execution_mode: 'deterministic-ci' | 'real-provider';
+      provider: string;
+      model?: string | null;
+      artifacts: string | unknown[];
+      evidence_digest: string;
+      proposed_disposition?: string | null;
+      summary: string | Record<string, unknown>;
+      payload_ref?: string | null;
+    }>(query, params);
+
+    const records: ValidationRunRecord[] = [];
+    for (const row of result.rows) {
+      const artifacts =
+        typeof row.artifacts === 'string' ? JSON.parse(row.artifacts) : row.artifacts;
+      const summary = typeof row.summary === 'string' ? JSON.parse(row.summary) : row.summary;
+
+      records.push(
+        createValidationRunRecord({
+          id: row.id,
+          candidateSha: row.candidate_sha,
+          executedAt: createInstant(
+            row.executed_at instanceof Date
+              ? row.executed_at.toISOString()
+              : String(row.executed_at)
+          ),
+          executedBy: row.executed_by,
+          phase: row.phase,
+          executionMode: row.execution_mode,
+          provider: row.provider,
+          model: row.model ?? undefined,
+          artifacts,
+          evidenceDigest: row.evidence_digest,
+          proposedDisposition: (row.proposed_disposition as 'GO' | 'DESIGN_CHANGE') ?? undefined,
+          summary,
+          payloadRef: row.payload_ref ?? undefined
+        })
+      );
+    }
+    return Object.freeze(records);
+  }
+
+  async getLatestValidationRun(
+    candidateSha: string,
+    executor: ISqlDatabaseClient = this.activeDb
+  ): Promise<ValidationRunRecord | undefined> {
+    const runs = await this.listValidationRuns({ candidateSha }, executor);
+    return runs.length > 0 ? runs[0] : undefined;
+  }
+
+  async saveGovernanceApproval(
+    approval: CandidateApprovalRecord,
+    executor: ISqlDatabaseClient = this.activeDb
+  ): Promise<void> {
+    assertSafeIdentifier(approval.id, 'approvalId');
+    assertSafeIdentifier(approval.candidateSha, 'candidateSha');
+    const validated = CandidateApprovalRecordDtoSchema.parse(approval);
+
+    try {
+      await executor.query(
+        `INSERT INTO governance_approvals (
+           id, candidate_sha, validation_run_id, evidence_digest, decision,
+           actor_id, actor_name, actor_email, actor_type, decided_at,
+           rationale, supersedes, status, revocation
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14);`,
+        [
+          validated.id,
+          validated.candidateSha,
+          validated.validationRunId,
+          validated.evidenceDigest,
+          validated.decision,
+          validated.actor.id,
+          validated.actor.name,
+          validated.actor.email ?? null,
+          validated.actor.actorType,
+          validated.decidedAt,
+          validated.rationale,
+          validated.supersedes ?? null,
+          validated.status,
+          validated.status === 'REVOKED' ? JSON.stringify(validated.revocation) : null
+        ]
+      );
+    } catch (err) {
+      if (isDuplicateKeyError(err)) {
+        const message = (err as { message?: string }).message ?? '';
+        if (
+          message.includes('idx_governance_approvals_active_candidate') ||
+          message.includes('active_candidate')
+        ) {
+          throw new OptimisticConcurrencyConflictError(
+            `Candidate '${approval.candidateSha}' already has an active governance approval. Concurrent active approvals are forbidden.`
+          );
+        }
+        throw new ImmutableRecordConflictError(
+          `governance-approvals/${approval.id}`,
+          `Governance approval '${approval.id}' already exists`
+        );
+      }
+      throw err;
+    }
+  }
+
+  async replaceGovernanceApproval(
+    newApproval: CandidateApprovalRecord,
+    expectedActiveApprovalId?: string,
+    executor: ISqlDatabaseClient = this.activeDb
+  ): Promise<void> {
+    assertSafeIdentifier(newApproval.id, 'approvalId');
+    assertSafeIdentifier(newApproval.candidateSha, 'candidateSha');
+
+    return executor.transaction(async (tx) => {
+      const activeResult = await tx.query<{ id: string }>(
+        `SELECT id FROM governance_approvals WHERE LOWER(candidate_sha) = LOWER($1) AND status = 'ACTIVE' FOR UPDATE;`,
+        [newApproval.candidateSha]
+      );
+      const activeExisting = activeResult.rows[0];
+
+      if (expectedActiveApprovalId !== undefined) {
+        if (!activeExisting || activeExisting.id !== expectedActiveApprovalId) {
+          throw new OptimisticConcurrencyConflictError(
+            `Governance approval replacement conflict for candidate '${newApproval.candidateSha}': expected active approval '${expectedActiveApprovalId}', but found '${activeExisting?.id ?? 'none'}'.`
+          );
+        }
+
+        const updateResult = await tx.query(
+          `UPDATE governance_approvals
+           SET status = 'SUPERSEDED', updated_at = NOW()
+           WHERE id = $1 AND status = 'ACTIVE';`,
+          [expectedActiveApprovalId]
+        );
+        if (updateResult.rowCount === 0) {
+          throw new OptimisticConcurrencyConflictError(
+            `Governance approval replacement conflict: failed to supersede '${expectedActiveApprovalId}'.`
+          );
+        }
+      } else {
+        if (activeExisting) {
+          throw new OptimisticConcurrencyConflictError(
+            `Candidate '${newApproval.candidateSha}' already has an active governance approval '${activeExisting.id}'. Concurrent active approvals are forbidden.`
+          );
+        }
+      }
+
+      await this.saveGovernanceApproval(newApproval, tx);
+    });
+  }
+
+  async getGovernanceApproval(
+    id: GovernanceApprovalId | string,
+    executor: ISqlDatabaseClient = this.activeDb
+  ): Promise<CandidateApprovalRecord | undefined> {
+    assertSafeIdentifier(id, 'approvalId');
+    const result = await executor.query<{
+      id: string;
+      candidate_sha: string;
+      validation_run_id: string;
+      evidence_digest: string;
+      decision: 'GO' | 'DESIGN_CHANGE';
+      actor_id: string;
+      actor_name: string;
+      actor_email?: string | null;
+      actor_type: 'human';
+      decided_at: string | Date;
+      rationale: string;
+      supersedes?: string | null;
+      status: 'ACTIVE' | 'SUPERSEDED' | 'REVOKED';
+      revocation?:
+        | string
+        | {
+            revokedAt: string;
+            revokedBy: { id: string; name: string; email?: string; actorType: 'human' };
+            rationale: string;
+          }
+        | null;
+    }>(`SELECT * FROM governance_approvals WHERE id = $1;`, [id]);
+
+    if (result.rows.length === 0) {
+      return undefined;
+    }
+
+    const row = result.rows[0];
+    const decidedAt = createInstant(
+      row.decided_at instanceof Date ? row.decided_at.toISOString() : String(row.decided_at)
+    );
+
+    const activeRecord = createCandidateApprovalRecord({
+      id: row.id,
+      candidateSha: row.candidate_sha,
+      validationRunId: row.validation_run_id,
+      evidenceDigest: row.evidence_digest,
+      decision: row.decision,
+      actor: {
+        id: createActorId(row.actor_id),
+        name: row.actor_name,
+        email: row.actor_email ?? undefined,
+        actorType: 'human'
+      },
+      decidedAt,
+      rationale: row.rationale,
+      supersedes: row.supersedes ?? undefined
+    });
+
+    if (row.status === 'REVOKED') {
+      const revocation =
+        typeof row.revocation === 'string' ? JSON.parse(row.revocation) : row.revocation!;
+      return revokeCandidateApprovalRecord(
+        activeRecord,
+        {
+          id: createActorId(revocation.revokedBy.id),
+          name: revocation.revokedBy.name,
+          email: revocation.revokedBy.email,
+          actorType: 'human'
+        },
+        revocation.rationale,
+        createInstant(revocation.revokedAt)
+      );
+    } else if (row.status === 'SUPERSEDED') {
+      return supersedeCandidateApprovalRecord(activeRecord);
+    } else {
+      return activeRecord;
+    }
+  }
+
+  async listGovernanceApprovals(
+    filter?: { candidateSha?: string; validationRunId?: string },
+    executor: ISqlDatabaseClient = this.activeDb
+  ): Promise<readonly CandidateApprovalRecord[]> {
+    let query = `SELECT * FROM governance_approvals WHERE 1=1`;
+    const params: unknown[] = [];
+    if (filter?.candidateSha) {
+      params.push(filter.candidateSha);
+      query += ` AND LOWER(candidate_sha) = LOWER($${params.length})`;
+    }
+    if (filter?.validationRunId) {
+      params.push(filter.validationRunId);
+      query += ` AND validation_run_id = $${params.length}`;
+    }
+    query += ` ORDER BY decided_at DESC;`;
+
+    const result = await executor.query<{ id: string }>(query, params);
+    const records: CandidateApprovalRecord[] = [];
+    for (const row of result.rows) {
+      const approval = await this.getGovernanceApproval(row.id, executor);
+      if (approval) {
+        records.push(approval);
+      }
+    }
+    return Object.freeze(records);
+  }
+
+  async getActiveGovernanceApproval(
+    candidateSha: string,
+    executor: ISqlDatabaseClient = this.activeDb
+  ): Promise<CandidateApprovalRecord | undefined> {
+    const result = await executor.query<{ id: string }>(
+      `SELECT id FROM governance_approvals WHERE LOWER(candidate_sha) = LOWER($1) AND status = 'ACTIVE' LIMIT 1;`,
+      [candidateSha]
+    );
+    if (result.rows.length === 0) {
+      return undefined;
+    }
+    return this.getGovernanceApproval(result.rows[0].id, executor);
+  }
+
+  async updateGovernanceApproval(
+    approval: CandidateApprovalRecord,
+    expectedCurrentStatus?: GovernanceApprovalStatus,
+    executor: ISqlDatabaseClient = this.activeDb
+  ): Promise<void> {
+    assertSafeIdentifier(approval.id, 'approvalId');
+    const revocationJson =
+      approval.status === 'REVOKED' ? JSON.stringify(approval.revocation) : null;
+
+    const result = await executor.query(
+      `UPDATE governance_approvals
+       SET status = $1, revocation = $2, updated_at = NOW()
+       WHERE id = $3 AND ($4::text IS NULL OR status = $4);`,
+      [approval.status, revocationJson, approval.id, expectedCurrentStatus ?? null]
+    );
+
+    if (result.rowCount === 0) {
+      const existing = await executor.query<{ status: string }>(
+        `SELECT status FROM governance_approvals WHERE id = $1;`,
+        [approval.id]
+      );
+      if (existing.rows.length === 0) {
+        throw new UnknownGovernanceApprovalError(approval.id);
+      }
+      throw new OptimisticConcurrencyConflictError(
+        `Governance approval '${approval.id}' status conflict: expected '${expectedCurrentStatus}', but found '${existing.rows[0].status}'.`
+      );
+    }
+  }
 
   async checkStorageHealth(): Promise<StorageHealthReport> {
     return this.checkHealth();

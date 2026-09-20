@@ -2,12 +2,22 @@ import type {
   EngineeringHandoffBundleDto,
   StoryDependencyGraphDto,
   StoryDto,
-  UpdateStoryDependenciesRequestDto
+  UpdateStoryDependenciesRequestDto,
+  CandidatePromotionStatusDto,
+  ValidationRunRecordDto,
+  CandidateApprovalRecordDto,
+  CreateApprovalRequestDto,
+  RevokeApprovalRequestDto,
+  GovernanceAuditExportDto
 } from '@solutions-studio/contracts';
 import {
   EngineeringHandoffBundleDtoSchema,
   StoryDependencyGraphDtoSchema,
-  StoryDtoSchema
+  StoryDtoSchema,
+  CandidatePromotionStatusDtoSchema,
+  ValidationRunRecordDtoSchema,
+  CandidateApprovalRecordDtoSchema,
+  GovernanceAuditExportDtoSchema
 } from '@solutions-studio/contracts';
 import { apiClient } from '@/features/review/api/client';
 import { listBaselines as listBaselinesFromApi } from '@/features/review/api/baselinesApi';
@@ -70,4 +80,88 @@ export async function listAvailableBaselines(): Promise<string[]> {
   } catch {
     return [];
   }
+}
+
+export async function getCurrentCandidateSha(): Promise<string | undefined> {
+  try {
+    const data = await apiClient<{ candidateSha: string }>(`/api/governance/current-candidate`, {
+      method: 'GET'
+    });
+    return data?.candidateSha;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function getCandidatePromotionStatus(
+  candidateSha: string
+): Promise<CandidatePromotionStatusDto> {
+  const data = await apiClient<CandidatePromotionStatusDto>(
+    `/api/governance/candidates/${encodeURIComponent(candidateSha)}/status`,
+    {
+      method: 'GET'
+    }
+  );
+  return CandidatePromotionStatusDtoSchema.parse(data);
+}
+
+export async function listValidationRuns(candidateSha: string): Promise<ValidationRunRecordDto[]> {
+  const data = await apiClient<ValidationRunRecordDto[]>(
+    `/api/governance/candidates/${encodeURIComponent(candidateSha)}/validation-runs`,
+    {
+      method: 'GET'
+    }
+  );
+  return (data ?? []).map((item) => ValidationRunRecordDtoSchema.parse(item));
+}
+
+export async function listGovernanceApprovals(
+  candidateSha: string
+): Promise<CandidateApprovalRecordDto[]> {
+  const data = await apiClient<CandidateApprovalRecordDto[]>(
+    `/api/governance/candidates/${encodeURIComponent(candidateSha)}/approvals`,
+    {
+      method: 'GET'
+    }
+  );
+  return (data ?? []).map((item) => CandidateApprovalRecordDtoSchema.parse(item));
+}
+
+export async function createGovernanceApproval(
+  input: CreateApprovalRequestDto
+): Promise<CandidateApprovalRecordDto> {
+  const data = await apiClient<CandidateApprovalRecordDto>(`/api/governance/approvals`, {
+    method: 'POST',
+    body: JSON.stringify(input)
+  });
+  return CandidateApprovalRecordDtoSchema.parse(data);
+}
+
+export async function revokeGovernanceApproval(
+  approvalId: string,
+  rationale: string
+): Promise<CandidateApprovalRecordDto> {
+  const payload: RevokeApprovalRequestDto = {
+    rationale
+  };
+  const data = await apiClient<CandidateApprovalRecordDto>(
+    `/api/governance/approvals/${encodeURIComponent(approvalId)}/revoke`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }
+  );
+  return CandidateApprovalRecordDtoSchema.parse(data);
+}
+
+export async function exportGovernanceAudit(
+  candidateSha: string
+): Promise<GovernanceAuditExportDto> {
+  const data = await apiClient<GovernanceAuditExportDto>(
+    `/api/governance/audit/export?candidateSha=${encodeURIComponent(candidateSha)}`,
+    {
+      method: 'GET'
+    }
+  );
+  return GovernanceAuditExportDtoSchema.parse(data);
 }

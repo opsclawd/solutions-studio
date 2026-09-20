@@ -18,6 +18,10 @@ import {
   createRequirementRevision,
   createCandidateFinding,
   createEngineeringDecision,
+  createValidationRunRecord,
+  createCandidateApprovalRecord,
+  revokeCandidateApprovalRecord,
+  createInstant,
   now
 } from '@solutions-studio/domain';
 import { PGliteDatabaseClient } from '../../../src/infrastructure/persistence/postgres/PGliteDatabaseClient.js';
@@ -187,6 +191,116 @@ describe('Disaster Recovery: BackupService & RestoreService', () => {
       dependencies: []
     });
 
+    const runId = 'RUN-DR-001';
+    const candidateSha = 'd5adf81ac2ba5acd7b7cd22c830f03e2258a63b4';
+    const evidenceDigest = 'e'.repeat(64);
+    const valRun = createValidationRunRecord({
+      id: runId,
+      candidateSha,
+      executedAt: createInstant('2026-09-20T10:00:00Z'),
+      executedBy: createActorId('RUNNER-DR'),
+      phase: 'phase-4',
+      executionMode: 'deterministic-ci',
+      provider: 'fake',
+      artifacts: [
+        {
+          name: 'schema-ddl.sql',
+          artifactType: 'sql-ddl',
+          contentHash: 'a'.repeat(64)
+        }
+      ],
+      evidenceDigest
+    });
+    await repo.saveValidationRun(valRun);
+
+    const approvalId = 'APPR-DR-001';
+    const approval = createCandidateApprovalRecord({
+      id: approvalId,
+      candidateSha,
+      validationRunId: runId,
+      evidenceDigest,
+      decision: 'GO',
+      actor: {
+        id: createActorId('LEAD-REVIEWER'),
+        name: 'Lead Reviewer',
+        email: 'reviewer@solutions-studio.test',
+        actorType: 'human'
+      },
+      decidedAt: createInstant('2026-09-20T10:05:00Z'),
+      rationale: 'DR sign-off'
+    });
+    await repo.saveGovernanceApproval(approval);
+
+    // Supersede APPR-DR-001 with APPR-DR-002
+    const approvalId2 = 'APPR-DR-002';
+    const approval2 = createCandidateApprovalRecord({
+      id: approvalId2,
+      candidateSha,
+      validationRunId: runId,
+      evidenceDigest,
+      decision: 'GO',
+      actor: {
+        id: createActorId('SEC-REVIEWER'),
+        name: 'Security Reviewer',
+        email: 'sec@solutions-studio.test',
+        actorType: 'human'
+      },
+      decidedAt: createInstant('2026-09-20T10:10:00Z'),
+      rationale: 'Updated DR sign-off with security audit',
+      supersedes: approvalId
+    });
+    await repo.replaceGovernanceApproval(approval2, approvalId);
+
+    // Add a second candidate with a revoked approval
+    const candidateSha2 = 'e6bcf92bd3cb6bde8c8de33d941f14f3369b74c5';
+    const runId2 = 'RUN-DR-002';
+    const valRun2 = createValidationRunRecord({
+      id: runId2,
+      candidateSha: candidateSha2,
+      executedAt: createInstant('2026-09-20T10:15:00Z'),
+      executedBy: createActorId('RUNNER-DR'),
+      phase: 'phase-4',
+      executionMode: 'deterministic-ci',
+      provider: 'fake',
+      artifacts: [
+        {
+          name: 'schema-ddl.sql',
+          artifactType: 'sql-ddl',
+          contentHash: 'b'.repeat(64)
+        }
+      ],
+      evidenceDigest: 'f'.repeat(64)
+    });
+    await repo.saveValidationRun(valRun2);
+
+    const approvalId3 = 'APPR-DR-003';
+    const approval3 = createCandidateApprovalRecord({
+      id: approvalId3,
+      candidateSha: candidateSha2,
+      validationRunId: runId2,
+      evidenceDigest: 'f'.repeat(64),
+      decision: 'GO',
+      actor: {
+        id: createActorId('LEAD-REVIEWER'),
+        name: 'Lead Reviewer',
+        email: 'reviewer@solutions-studio.test',
+        actorType: 'human'
+      },
+      decidedAt: createInstant('2026-09-20T10:20:00Z'),
+      rationale: 'Initial sign-off for candidate 2'
+    });
+    await repo.saveGovernanceApproval(approval3);
+    const revoked3 = revokeCandidateApprovalRecord(
+      approval3,
+      {
+        id: createActorId('LEAD-REVIEWER'),
+        name: 'Lead Reviewer',
+        actorType: 'human'
+      },
+      'Found critical defect during drill'
+    );
+    await repo.updateGovernanceApproval(revoked3, 'ACTIVE');
+
     // 2. Perform backup
     const backupDir = path.join(tempDir, 'backup-1');
     const backupService = new BackupService({
@@ -199,6 +313,8 @@ describe('Disaster Recovery: BackupService & RestoreService', () => {
     expect(manifest.tables.baselines.count).toBe(1);
     expect(manifest.tables.requirement_revisions.count).toBe(1);
     expect(manifest.tables.stories.count).toBe(1);
+    expect(manifest.tables.validation_runs.count).toBe(2);
+    expect(manifest.tables.governance_approvals.count).toBe(3);
     expect(manifest.blobs.length).toBeGreaterThan(0);
     expect(manifest.sha256Attestation).toBeDefined();
 
@@ -261,6 +377,39 @@ describe('Disaster Recovery: BackupService & RestoreService', () => {
     const restoredProj = await freshRepo.getProjectionRecord(projId);
     expect(restoredProj).toBeDefined();
     expect(restoredProj?.content).toBe('Stories for DR verification');
+
+    const restoredRun = await freshRepo.getValidationRun(runId);
+    expect(restoredRun).toBeDefined();
+    expect(restoredRun?.evidenceDigest).toBe(evidenceDigest);
+
+    const restoredRun2 = await freshRepo.getValidationRun(runId2);
+    expect(restoredRun2).toBeDefined();
+    expect(restoredRun2?.evidenceDigest).toBe('f'.repeat(64));
+
+    // Superseded approval
+    const restoredApproval1 = await freshRepo.getGovernanceApproval(approvalId);
+    expect(restoredApproval1).toBeDefined();
+    expect(restoredApproval1?.status).toBe('SUPERSEDED');
+    expect(restoredApproval1?.rationale).toBe('DR sign-off');
+
+    // Active replacement approval with supersedes linkage
+    const restoredApproval2 = await freshRepo.getGovernanceApproval(approvalId2);
+    expect(restoredApproval2).toBeDefined();
+    expect(restoredApproval2?.status).toBe('ACTIVE');
+    expect(restoredApproval2?.supersedes).toBe(approvalId);
+    expect(restoredApproval2?.rationale).toBe('Updated DR sign-off with security audit');
+    expect(restoredApproval2?.actor.email).toBe('sec@solutions-studio.test');
+
+    // Revoked approval with revocation details
+    const restoredApproval3 = await freshRepo.getGovernanceApproval(approvalId3);
+    expect(restoredApproval3).toBeDefined();
+    expect(restoredApproval3?.status).toBe('REVOKED');
+    expect(restoredApproval3?.revocation).toBeDefined();
+    expect(restoredApproval3?.revocation?.rationale).toBe('Found critical defect during drill');
+    expect(restoredApproval3?.revocation?.revokedBy.id).toBe(createActorId('LEAD-REVIEWER'));
+
+    expect(restoreResult.verifiedValidationRuns).toHaveLength(2);
+    expect(restoreResult.verifiedGovernanceApprovals).toHaveLength(3);
 
     await freshDbClient.close().catch(() => {});
     await freshPglite.close().catch(() => {});

@@ -44,7 +44,9 @@ export const BACKUP_TABLES = [
   'engineering_decisions',
   'projections',
   'stories',
-  'evaluation_runs'
+  'evaluation_runs',
+  'validation_runs',
+  'governance_approvals'
 ] as const;
 
 export function resolveSafeBlobPath(baseDir: string, key: string): string {

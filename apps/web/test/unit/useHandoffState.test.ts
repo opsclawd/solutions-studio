@@ -65,19 +65,19 @@ interface HookHarness {
   readonly unmount: () => void;
 }
 
-function renderHandoffHook(initialBaselineId?: string): HookHarness {
+function renderHandoffHook(initialBaselineId?: string, initialCandidateSha?: string): HookHarness {
   const result = {} as { current: UseHandoffStateReturn };
   const container = new FakeElement('div');
   (container as any).ownerDocument = doc;
   const root = ReactDOM.createRoot(container as unknown as Element);
 
-  function Wrapper({ id }: { id?: string }) {
-    result.current = useHandoffState(id);
+  function Wrapper({ id, sha }: { id?: string; sha?: string }) {
+    result.current = useHandoffState(id, sha);
     return null;
   }
 
   act(() => {
-    root.render(React.createElement(Wrapper, { id: initialBaselineId }));
+    root.render(React.createElement(Wrapper, { id: initialBaselineId, sha: initialCandidateSha }));
   });
 
   return {
@@ -356,6 +356,136 @@ describe('useHandoffState', () => {
     // Must still remain on BASE-002 and not refresh or regress to BASE-001
     expect(harness.result.current.activeBaselineId).toBe('BASE-002');
     expect(harness.result.current.bundle?.baseline.id).toBe('BASE-002');
+
+    harness.unmount();
+  });
+
+  it('defaults candidateSha to empty string and fetches nothing when no SHA provided', async () => {
+    const getStatusSpy = vi.spyOn(handoffApi, 'getCandidatePromotionStatus');
+    let harness!: HookHarness;
+    await act(async () => {
+      harness = renderHandoffHook('BASE-001');
+    });
+
+    expect(harness.result.current.candidateSha).toBe('');
+    expect(harness.result.current.promotionStatus).toBeNull();
+    expect(harness.result.current.validationRuns).toEqual([]);
+    expect(harness.result.current.governanceApprovals).toEqual([]);
+    expect(getStatusSpy).not.toHaveBeenCalled();
+
+    harness.unmount();
+  });
+
+  it('updates governance state and re-fetches status, runs, and approvals when candidate SHA changes', async () => {
+    const shaA = '1111111111111111111111111111111111111111';
+    const shaB = '2222222222222222222222222222222222222222';
+
+    const getStatusSpy = vi
+      .spyOn(handoffApi, 'getCandidatePromotionStatus')
+      .mockImplementation(async (sha) => ({
+        candidateSha: sha,
+        isApproved: false,
+        disposition: 'UNAPPROVED',
+        diagnosticCode: 'AWAITING_APPROVAL',
+        message: `Status for ${sha}`,
+        evaluatedAt: createInstant('2026-09-20T08:00:00.000Z')
+      }));
+
+    const listRunsSpy = vi
+      .spyOn(handoffApi, 'listValidationRuns')
+      .mockImplementation(async (sha) => [
+        {
+          id: `RUN-${sha.slice(0, 4)}`,
+          candidateSha: sha,
+          phase: 'phase-3',
+          executionMode: 'deterministic-ci',
+          provider: 'fake',
+          artifacts: [],
+          evidenceDigest: 'd'.repeat(64),
+          proposedDisposition: 'GO',
+          executedBy: 'runner',
+          executedAt: createInstant('2026-09-20T08:00:00.000Z'),
+          summary: {}
+        }
+      ]);
+
+    const listApprovalsSpy = vi
+      .spyOn(handoffApi, 'listGovernanceApprovals')
+      .mockImplementation(async (sha) => [
+        {
+          id: `APPR-${sha.slice(0, 4)}`,
+          candidateSha: sha,
+          validationRunId: `RUN-${sha.slice(0, 4)}`,
+          evidenceDigest: 'd'.repeat(64),
+          decision: 'GO',
+          status: 'ACTIVE',
+          rationale: `Approved ${sha}`,
+          actor: { id: 'u1', name: 'User 1', actorType: 'human' },
+          decidedAt: createInstant('2026-09-20T08:00:00.000Z')
+        }
+      ]);
+
+    let harness!: HookHarness;
+    await act(async () => {
+      harness = renderHandoffHook('BASE-001', shaA);
+    });
+
+    expect(harness.result.current.candidateSha).toBe(shaA);
+    expect(harness.result.current.promotionStatus?.candidateSha).toBe(shaA);
+    expect(harness.result.current.validationRuns[0]?.candidateSha).toBe(shaA);
+    expect(harness.result.current.governanceApprovals[0]?.candidateSha).toBe(shaA);
+    expect(getStatusSpy).toHaveBeenCalledWith(shaA);
+    expect(listRunsSpy).toHaveBeenCalledWith(shaA);
+    expect(listApprovalsSpy).toHaveBeenCalledWith(shaA);
+
+    // Now change candidate SHA to shaB
+    await act(async () => {
+      harness.result.current.setCandidateSha(shaB);
+    });
+
+    expect(harness.result.current.candidateSha).toBe(shaB);
+    expect(harness.result.current.promotionStatus?.candidateSha).toBe(shaB);
+    expect(harness.result.current.validationRuns[0]?.candidateSha).toBe(shaB);
+    expect(harness.result.current.governanceApprovals[0]?.candidateSha).toBe(shaB);
+    expect(getStatusSpy).toHaveBeenCalledWith(shaB);
+    expect(listRunsSpy).toHaveBeenCalledWith(shaB);
+    expect(listApprovalsSpy).toHaveBeenCalledWith(shaB);
+
+    harness.unmount();
+  });
+
+  it('surfaces governance API error in governanceError without swallowing it', async () => {
+    const sha = '3333333333333333333333333333333333333333';
+    vi.spyOn(handoffApi, 'getCandidatePromotionStatus').mockRejectedValue(
+      new Error('Governance backend service unavailable')
+    );
+    vi.spyOn(handoffApi, 'listValidationRuns').mockResolvedValue([]);
+    vi.spyOn(handoffApi, 'listGovernanceApprovals').mockResolvedValue([]);
+
+    let harness!: HookHarness;
+    await act(async () => {
+      harness = renderHandoffHook('BASE-001', sha);
+    });
+
+    expect(harness.result.current.governanceError).toBe('Governance backend service unavailable');
+
+    harness.unmount();
+  });
+
+  it('fails closed when approveCandidate or exportAudit is invoked without a candidate SHA', async () => {
+    let harness!: HookHarness;
+    await act(async () => {
+      harness = renderHandoffHook('BASE-001');
+    });
+
+    expect(harness.result.current.candidateSha).toBe('');
+    await expect(harness.result.current.approveCandidate('GO', 'Rationale')).rejects.toThrow(
+      /Candidate commit SHA is required/
+    );
+
+    await expect(harness.result.current.exportAudit()).rejects.toThrow(
+      /Candidate commit SHA is required/
+    );
 
     harness.unmount();
   });

@@ -12,12 +12,18 @@ import {
   createEngineeringDecisionId,
   createEngineeringDecision,
   createStoryId,
+  createValidationRunRecord,
+  createCandidateApprovalRecord,
+  revokeCandidateApprovalRecord,
+  createActorId,
+  createInstant,
   now
 } from '@solutions-studio/domain';
-import type {
-  IRequirementsRepository,
-  StoryRecord,
-  ProjectionRecord
+import {
+  ImmutableRecordConflictError,
+  type IRequirementsRepository,
+  type StoryRecord,
+  type ProjectionRecord
 } from '../../../src/application/ports/persistence/IRequirementsRepository.js';
 import {
   StaleRevisionTargetError,
@@ -843,6 +849,305 @@ export function runRequirementsRepositoryContractTests(
         expect(results).toEqual(['done1', 'done2']);
         // Verify mutual exclusion: [1, 2, 3, 4] rather than interleaved [1, 3, ...]
         expect(order).toEqual([1, 2, 3, 4]);
+      });
+    });
+
+    describe('Governance Audit & Promotion Integrity', () => {
+      const candidateSha = 'd5adf81ac2ba5acd7b7cd22c830f03e2258a63b4';
+      const evidenceDigest = 'a'.repeat(64);
+      const artifactHash = 'b'.repeat(64);
+
+      const humanActor = {
+        id: createActorId('ACTOR-HUMAN-01'),
+        name: 'Jane Reviewer',
+        email: 'jane@example.com',
+        actorType: 'human' as const
+      };
+
+      it('saves and retrieves validation run with verified artifacts', async () => {
+        const run = createValidationRunRecord({
+          id: 'RUN-P4-001',
+          candidateSha,
+          executedAt: createInstant('2026-09-20T09:00:00Z'),
+          executedBy: createActorId('RUNNER-01'),
+          phase: 'phase-4',
+          executionMode: 'deterministic-ci',
+          provider: 'fake',
+          artifacts: [
+            {
+              name: 'schema.sql',
+              artifactType: 'sql-ddl',
+              contentHash: artifactHash
+            }
+          ],
+          evidenceDigest,
+          proposedDisposition: 'GO',
+          summary: { tests: 10 }
+        });
+
+        await repo.saveValidationRun(run);
+
+        const fetched = await repo.getValidationRun('RUN-P4-001');
+        expect(fetched).toBeDefined();
+        expect(fetched?.id).toBe('RUN-P4-001');
+        expect(fetched?.candidateSha).toBe(candidateSha);
+        expect(fetched?.artifacts).toHaveLength(1);
+        expect(fetched?.artifacts[0].contentHash).toBe(artifactHash);
+        expect(fetched?.evidenceDigest).toBe(evidenceDigest);
+
+        const latest = await repo.getLatestValidationRun(candidateSha);
+        expect(latest?.id).toBe('RUN-P4-001');
+      });
+
+      it('rejects duplicate validation run ID with ImmutableRecordConflictError', async () => {
+        const run = createValidationRunRecord({
+          id: 'RUN-DUP-001',
+          candidateSha,
+          executedAt: createInstant('2026-09-20T09:00:00Z'),
+          executedBy: createActorId('RUNNER-01'),
+          phase: 'phase-4',
+          executionMode: 'deterministic-ci',
+          provider: 'fake',
+          artifacts: [
+            {
+              name: 'schema.sql',
+              artifactType: 'sql-ddl',
+              contentHash: artifactHash
+            }
+          ],
+          evidenceDigest
+        });
+
+        await repo.saveValidationRun(run);
+        await expect(repo.saveValidationRun(run)).rejects.toThrow(ImmutableRecordConflictError);
+      });
+
+      it('saves and retrieves active governance approval record', async () => {
+        const run = createValidationRunRecord({
+          id: 'RUN-APPR-TEST-001',
+          candidateSha,
+          executedAt: createInstant('2026-09-20T09:00:00Z'),
+          executedBy: createActorId('RUNNER-01'),
+          phase: 'phase-4',
+          executionMode: 'deterministic-ci',
+          provider: 'fake',
+          artifacts: [
+            {
+              name: 'schema.sql',
+              artifactType: 'sql-ddl',
+              contentHash: artifactHash
+            }
+          ],
+          evidenceDigest
+        });
+        await repo.saveValidationRun(run);
+
+        const approval = createCandidateApprovalRecord({
+          id: 'APPR-001',
+          candidateSha,
+          validationRunId: run.id,
+          evidenceDigest,
+          decision: 'GO',
+          actor: humanActor,
+          decidedAt: createInstant('2026-09-20T10:00:00Z'),
+          rationale: 'Verified all checks passed'
+        });
+
+        await repo.saveGovernanceApproval(approval);
+
+        const fetched = await repo.getGovernanceApproval('APPR-001');
+        expect(fetched).toBeDefined();
+        expect(fetched?.id).toBe('APPR-001');
+        expect(fetched?.status).toBe('ACTIVE');
+        expect(fetched?.decision).toBe('GO');
+        expect(fetched?.actor.name).toBe('Jane Reviewer');
+
+        const active = await repo.getActiveGovernanceApproval(candidateSha);
+        expect(active).toBeDefined();
+        expect(active?.id).toBe('APPR-001');
+      });
+
+      it('enforces single active approval invariant: second active approval throws OptimisticConcurrencyConflictError', async () => {
+        const run = createValidationRunRecord({
+          id: 'RUN-ACTIVE-TEST-001',
+          candidateSha,
+          executedAt: createInstant('2026-09-20T09:00:00Z'),
+          executedBy: createActorId('RUNNER-01'),
+          phase: 'phase-4',
+          executionMode: 'deterministic-ci',
+          provider: 'fake',
+          artifacts: [
+            {
+              name: 'schema.sql',
+              artifactType: 'sql-ddl',
+              contentHash: artifactHash
+            }
+          ],
+          evidenceDigest
+        });
+        await repo.saveValidationRun(run);
+
+        const approval1 = createCandidateApprovalRecord({
+          id: 'APPR-FIRST-001',
+          candidateSha,
+          validationRunId: run.id,
+          evidenceDigest,
+          decision: 'GO',
+          actor: humanActor,
+          decidedAt: createInstant('2026-09-20T10:00:00Z'),
+          rationale: 'First approval'
+        });
+        await repo.saveGovernanceApproval(approval1);
+
+        const approval2 = createCandidateApprovalRecord({
+          id: 'APPR-SECOND-002',
+          candidateSha,
+          validationRunId: run.id,
+          evidenceDigest,
+          decision: 'GO',
+          actor: humanActor,
+          decidedAt: createInstant('2026-09-20T10:05:00Z'),
+          rationale: 'Second concurrent approval attempt'
+        });
+
+        await expect(repo.saveGovernanceApproval(approval2)).rejects.toThrow(
+          OptimisticConcurrencyConflictError
+        );
+      });
+
+      it('updates governance approval status under OCC checks', async () => {
+        const run = createValidationRunRecord({
+          id: 'RUN-OCC-TEST-001',
+          candidateSha,
+          executedAt: createInstant('2026-09-20T09:00:00Z'),
+          executedBy: createActorId('RUNNER-01'),
+          phase: 'phase-4',
+          executionMode: 'deterministic-ci',
+          provider: 'fake',
+          artifacts: [
+            {
+              name: 'schema.sql',
+              artifactType: 'sql-ddl',
+              contentHash: artifactHash
+            }
+          ],
+          evidenceDigest
+        });
+        await repo.saveValidationRun(run);
+
+        const approval = createCandidateApprovalRecord({
+          id: 'APPR-OCC-001',
+          candidateSha,
+          validationRunId: run.id,
+          evidenceDigest,
+          decision: 'GO',
+          actor: humanActor,
+          decidedAt: createInstant('2026-09-20T10:00:00Z'),
+          rationale: 'Initial approval'
+        });
+        await repo.saveGovernanceApproval(approval);
+
+        // Revoke approval
+        const revoked = revokeCandidateApprovalRecord(
+          approval,
+          humanActor,
+          'Security vulnerability reported'
+        );
+
+        // Attempt update with wrong expected status
+        await expect(repo.updateGovernanceApproval(revoked, 'REVOKED')).rejects.toThrow(
+          OptimisticConcurrencyConflictError
+        );
+
+        // Successful update with correct expected status
+        await repo.updateGovernanceApproval(revoked, 'ACTIVE');
+
+        const reloaded = await repo.getGovernanceApproval('APPR-OCC-001');
+        expect(reloaded?.status).toBe('REVOKED');
+        if (reloaded?.status === 'REVOKED') {
+          expect(reloaded.revocation.rationale).toBe('Security vulnerability reported');
+        }
+
+        // Active approval for candidate should now be undefined
+        const active = await repo.getActiveGovernanceApproval(candidateSha);
+        expect(active).toBeUndefined();
+      });
+
+      it('replaces active governance approval atomically with OCC verification', async () => {
+        const run = createValidationRunRecord({
+          id: 'RUN-REPLACE-001',
+          candidateSha,
+          executedAt: createInstant('2026-09-20T09:00:00Z'),
+          executedBy: createActorId('RUNNER-01'),
+          phase: 'phase-4',
+          executionMode: 'deterministic-ci',
+          provider: 'fake',
+          artifacts: [
+            {
+              name: 'schema.sql',
+              artifactType: 'sql-ddl',
+              contentHash: artifactHash
+            }
+          ],
+          evidenceDigest
+        });
+        await repo.saveValidationRun(run);
+
+        const initialApproval = createCandidateApprovalRecord({
+          id: 'APPR-REP-001',
+          candidateSha,
+          validationRunId: run.id,
+          evidenceDigest,
+          decision: 'GO',
+          actor: humanActor,
+          decidedAt: createInstant('2026-09-20T10:00:00Z'),
+          rationale: 'Initial approval'
+        });
+
+        // 1. Initial replacement with expectedActiveApprovalId = undefined succeeds
+        await repo.replaceGovernanceApproval(initialApproval);
+        const active1 = await repo.getActiveGovernanceApproval(candidateSha);
+        expect(active1?.id).toBe('APPR-REP-001');
+
+        // 2. Replacement without expectedActiveApprovalId when active exists fails with OCC
+        const conflictingApproval = createCandidateApprovalRecord({
+          id: 'APPR-REP-CONFLICT',
+          candidateSha,
+          validationRunId: run.id,
+          evidenceDigest,
+          decision: 'GO',
+          actor: humanActor,
+          decidedAt: createInstant('2026-09-20T10:05:00Z'),
+          rationale: 'Conflicting approval attempt'
+        });
+        await expect(repo.replaceGovernanceApproval(conflictingApproval)).rejects.toThrow(
+          OptimisticConcurrencyConflictError
+        );
+
+        // 3. Replacement with wrong expectedActiveApprovalId fails with OCC
+        await expect(
+          repo.replaceGovernanceApproval(conflictingApproval, 'APPR-WRONG-ID')
+        ).rejects.toThrow(OptimisticConcurrencyConflictError);
+
+        // 4. Superseding replacement with matching expectedActiveApprovalId succeeds atomically
+        const supersedingApproval = createCandidateApprovalRecord({
+          id: 'APPR-REP-002',
+          candidateSha,
+          validationRunId: run.id,
+          evidenceDigest,
+          decision: 'GO',
+          actor: humanActor,
+          decidedAt: createInstant('2026-09-20T10:10:00Z'),
+          rationale: 'Superseding approval with matching ID',
+          supersedes: 'APPR-REP-001'
+        });
+        await repo.replaceGovernanceApproval(supersedingApproval, 'APPR-REP-001');
+
+        const active2 = await repo.getActiveGovernanceApproval(candidateSha);
+        expect(active2?.id).toBe('APPR-REP-002');
+
+        const previousReloaded = await repo.getGovernanceApproval('APPR-REP-001');
+        expect(previousReloaded?.status).toBe('SUPERSEDED');
       });
     });
 
