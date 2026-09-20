@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
 import {
   computeStoryContentHash,
+  computeStoryContentHashV1,
+  computeStoryContentHashV2,
+  matchesStoryContentHash,
   type StoryExportProjectionParams
 } from '../../src/application/ports/backlog/computeStoryContentHash.js';
 import {
@@ -114,12 +117,12 @@ describe('computeStoryContentHash', () => {
       expect(computeStoryContentHash(modified)).not.toBe(computeStoryContentHash(baseParams));
     });
 
-    it('mutating baseline ID produces distinct hash', () => {
+    it('mutating baseline ID leaves computed content hash identical', () => {
       const modified: StoryExportProjectionParams = {
         ...baseParams,
         baselineId: createRequirementsBaselineId('BASE-002')
       };
-      expect(computeStoryContentHash(modified)).not.toBe(computeStoryContentHash(baseParams));
+      expect(computeStoryContentHash(modified)).toBe(computeStoryContentHash(baseParams));
     });
 
     it('mutating requirement revision IDs produces distinct hash', () => {
@@ -147,7 +150,7 @@ describe('computeStoryContentHash', () => {
       expect(computeStoryContentHash(modified)).not.toBe(computeStoryContentHash(baseParams));
     });
 
-    it('mutating engineering decision IDs produces distinct hash', () => {
+    it('mutating engineering decision IDs leaves computed content hash identical', () => {
       const modified: StoryExportProjectionParams = {
         ...baseParams,
         engineeringDecisionIds: [
@@ -155,7 +158,7 @@ describe('computeStoryContentHash', () => {
           createEngineeringDecisionId('DEC-002')
         ]
       };
-      expect(computeStoryContentHash(modified)).not.toBe(computeStoryContentHash(baseParams));
+      expect(computeStoryContentHash(modified)).toBe(computeStoryContentHash(baseParams));
     });
 
     it('mutating resolved prerequisite work item numbers produces distinct hash', () => {
@@ -166,6 +169,76 @@ describe('computeStoryContentHash', () => {
         ]
       };
       expect(computeStoryContentHash(modified)).not.toBe(computeStoryContentHash(baseParams));
+    });
+  });
+
+  describe('Phase 4 v1 Backward Compatibility and Hash Version Migration', () => {
+    const v1Params: StoryExportProjectionParams = {
+      story: {
+        id: createStoryId('STORY-PHASE4'),
+        title: 'Legacy Phase 4 Story',
+        narrative: { role: 'analyst', feature: 'export', benefit: 'handoff' },
+        acceptanceCriteria: ['Must export cleanly'],
+        scenarios: [
+          {
+            title: 'Phase 4 Scenario',
+            requirementRevisionIds: [createRequirementRevisionId('REQ-P4-R1')],
+            steps: [{ keyword: 'Given', text: 'phase 4 state' }]
+          }
+        ],
+        gherkinText: 'Feature: P4\nScenario: Phase 4 Scenario\nGiven phase 4 state',
+        requirementRevisionIds: [createRequirementRevisionId('REQ-P4-R1')],
+        policyConstraintRevisionIds: [createPolicyConstraintRevisionId('POL-P4-R1')]
+      },
+      baselineId: createRequirementsBaselineId('BASE-PHASE4-001'),
+      engineeringDecisionIds: [createEngineeringDecisionId('DEC-P4-001')],
+      prerequisites: [
+        { storyId: createStoryId('STORY-P4-PRE'), externalWorkItemId: '100', title: 'Pre' }
+      ]
+    };
+
+    it('v1 hash incorporates baselineId and engineeringDecisionIds', () => {
+      const v1Hash = computeStoryContentHashV1(v1Params);
+      const v2Hash = computeStoryContentHashV2(v1Params);
+
+      expect(v1Hash).not.toBe(v2Hash);
+
+      const modifiedBaseline = {
+        ...v1Params,
+        baselineId: createRequirementsBaselineId('BASE-PHASE4-002')
+      };
+      expect(computeStoryContentHashV1(modifiedBaseline)).not.toBe(v1Hash);
+      expect(computeStoryContentHashV2(modifiedBaseline)).toBe(v2Hash);
+    });
+
+    it('matchesStoryContentHash correctly matches Phase 4 v1 mapping when exportContentHashVersion is 1', () => {
+      const phase4V1Hash = computeStoryContentHashV1(v1Params);
+
+      const isMatch = matchesStoryContentHash({
+        mappingHash: phase4V1Hash,
+        mappingHashVersion: 1,
+        currentStory: v1Params.story,
+        mappingBaselineId: v1Params.baselineId!,
+        currentBaselineId: v1Params.baselineId!,
+        engineeringDecisionIds: v1Params.engineeringDecisionIds,
+        prerequisites: v1Params.prerequisites
+      });
+      expect(isMatch).toBe(true);
+    });
+
+    it('matchesStoryContentHash correctly matches v2 mapping even if baseline changes', () => {
+      const v2Hash = computeStoryContentHashV2(v1Params);
+
+      const isMatch = matchesStoryContentHash({
+        mappingHash: v2Hash,
+        mappingHashVersion: 2,
+        currentStory: v1Params.story,
+        mappingBaselineId: v1Params.baselineId!,
+        currentBaselineId: createRequirementsBaselineId('BASE-NEW-999'),
+        engineeringDecisionIds: [createEngineeringDecisionId('DEC-DIFF')],
+        prerequisites: v1Params.prerequisites
+      });
+      expect(isMatch).toBe(true);
     });
   });
 });

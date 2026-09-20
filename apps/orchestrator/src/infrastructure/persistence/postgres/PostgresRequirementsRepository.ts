@@ -66,6 +66,7 @@ import {
   type GovernanceApprovalStatus,
   type BacklogExportMapping,
   type BacklogExportMappingId,
+  type BacklogExportHistoryEntry,
   createBacklogExportMapping
 } from '@solutions-studio/domain';
 import {
@@ -135,6 +136,7 @@ export class PostgresRequirementsRepository
   readonly objectStore: IObjectStore;
   private readonly baselineLocks = new Map<string, Promise<void>>();
   private readonly sessionContext = new AsyncLocalStorage<ISqlDatabaseClient>();
+  private readonly heldLocks = new AsyncLocalStorage<Set<string>>();
 
   get activeDb(): ISqlDatabaseClient {
     return this.sessionContext.getStore() ?? this.db;
@@ -2550,32 +2552,42 @@ export class PostgresRequirementsRepository
     assertSafeIdentifier(baselineId, 'baselineId');
     const lockKey = `baseline:${baselineId}`;
 
-    // Process-level serialization queue
-    const currentLock = this.baselineLocks.get(lockKey) ?? Promise.resolve();
-    let release: () => void;
-    const nextLock = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    this.baselineLocks.set(lockKey, nextLock);
-
-    try {
-      await currentLock;
-      return await this.db.withSession(async (sessionClient) => {
-        return this.sessionContext.run(sessionClient, async () => {
-          await sessionClient.query('SELECT pg_advisory_lock(hashtext($1));', [lockKey]);
-          try {
-            return await action();
-          } finally {
-            await sessionClient.query('SELECT pg_advisory_unlock(hashtext($1));', [lockKey]);
-          }
-        });
-      });
-    } finally {
-      release!();
-      if (this.baselineLocks.get(lockKey) === nextLock) {
-        this.baselineLocks.delete(lockKey);
-      }
+    const currentHeld = this.heldLocks.getStore();
+    if (currentHeld?.has(lockKey)) {
+      return action();
     }
+
+    const nextHeld = new Set<string>(currentHeld);
+    nextHeld.add(lockKey);
+
+    return this.heldLocks.run(nextHeld, async () => {
+      // Process-level serialization queue
+      const currentLock = this.baselineLocks.get(lockKey) ?? Promise.resolve();
+      let release: () => void;
+      const nextLock = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      this.baselineLocks.set(lockKey, nextLock);
+
+      try {
+        await currentLock;
+        return await this.db.withSession(async (sessionClient) => {
+          return this.sessionContext.run(sessionClient, async () => {
+            await sessionClient.query('SELECT pg_advisory_lock(hashtext($1));', [lockKey]);
+            try {
+              return await action();
+            } finally {
+              await sessionClient.query('SELECT pg_advisory_unlock(hashtext($1));', [lockKey]);
+            }
+          });
+        });
+      } finally {
+        release!();
+        if (this.baselineLocks.get(lockKey) === nextLock) {
+          this.baselineLocks.delete(lockKey);
+        }
+      }
+    });
   }
 
   async withBacklogExportLock<T>(
@@ -3012,8 +3024,11 @@ export class PostgresRequirementsRepository
       `INSERT INTO backlog_export_mappings (
          id, story_id, baseline_id, provider, external_container,
          external_work_item_id, external_url, export_content_hash,
-         exported_at, exported_by, metadata, created_at, updated_at
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW());`,
+         exported_at, exported_by, metadata, export_version, story_version,
+         requirement_revision_ids, policy_constraint_revision_ids, history,
+         export_content_hash_version, prerequisite_export_versions,
+         created_at, updated_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW(), NOW());`,
       [
         mapping.id,
         mapping.storyId,
@@ -3025,7 +3040,16 @@ export class PostgresRequirementsRepository
         mapping.exportContentHash,
         mapping.exportedAt,
         mapping.exportedBy,
-        JSON.stringify(mapping.metadata ?? {})
+        JSON.stringify(mapping.metadata ?? {}),
+        mapping.exportVersion ?? 1,
+        mapping.storyVersion ?? 1,
+        JSON.stringify(mapping.requirementRevisionIds ?? []),
+        mapping.policyConstraintRevisionIds
+          ? JSON.stringify(mapping.policyConstraintRevisionIds)
+          : null,
+        JSON.stringify(mapping.history ?? []),
+        mapping.exportContentHashVersion ?? 1,
+        JSON.stringify(mapping.prerequisiteExportVersions ?? {})
       ]
     );
   }
@@ -3047,10 +3071,19 @@ export class PostgresRequirementsRepository
       exported_at: string | Date;
       exported_by: string;
       metadata: Record<string, unknown>;
+      export_version?: number;
+      story_version?: number;
+      requirement_revision_ids?: string[];
+      policy_constraint_revision_ids?: string[] | null;
+      history?: BacklogExportHistoryEntry[];
+      export_content_hash_version?: number;
+      prerequisite_export_versions?: Record<string, number> | null;
     }>(
       `SELECT id, story_id, baseline_id, provider, external_container,
               external_work_item_id, external_url, export_content_hash,
-              exported_at, exported_by, metadata
+              exported_at, exported_by, metadata, export_version, story_version,
+              requirement_revision_ids, policy_constraint_revision_ids, history,
+              export_content_hash_version, prerequisite_export_versions
        FROM backlog_export_mappings WHERE id = $1;`,
       [id]
     );
@@ -3061,7 +3094,15 @@ export class PostgresRequirementsRepository
     return createBacklogExportMapping({
       id: row.id,
       storyId: row.story_id,
+      storyVersion: row.story_version ?? 1,
+      exportVersion: row.export_version ?? 1,
       baselineId: row.baseline_id,
+      requirementRevisionIds: Array.isArray(row.requirement_revision_ids)
+        ? row.requirement_revision_ids
+        : [],
+      policyConstraintRevisionIds: Array.isArray(row.policy_constraint_revision_ids)
+        ? row.policy_constraint_revision_ids
+        : undefined,
       provider: row.provider,
       externalContainer: row.external_container,
       externalWorkItemId: row.external_work_item_id,
@@ -3070,7 +3111,15 @@ export class PostgresRequirementsRepository
       exportedAt:
         row.exported_at instanceof Date ? row.exported_at.toISOString() : String(row.exported_at),
       exportedBy: row.exported_by,
-      metadata: typeof row.metadata === 'object' && row.metadata !== null ? row.metadata : {}
+      metadata: typeof row.metadata === 'object' && row.metadata !== null ? row.metadata : {},
+      history: Array.isArray(row.history) ? row.history : undefined,
+      exportContentHashVersion: row.export_content_hash_version ?? 1,
+      prerequisiteExportVersions:
+        row.prerequisite_export_versions &&
+        typeof row.prerequisite_export_versions === 'object' &&
+        Object.keys(row.prerequisite_export_versions).length > 0
+          ? (row.prerequisite_export_versions as Record<string, number>)
+          : undefined
     });
   }
 
@@ -3095,10 +3144,19 @@ export class PostgresRequirementsRepository
       exported_at: string | Date;
       exported_by: string;
       metadata: Record<string, unknown>;
+      export_version?: number;
+      story_version?: number;
+      requirement_revision_ids?: string[];
+      policy_constraint_revision_ids?: string[] | null;
+      history?: BacklogExportHistoryEntry[];
+      export_content_hash_version?: number;
+      prerequisite_export_versions?: Record<string, number> | null;
     }>(
       `SELECT id, story_id, baseline_id, provider, external_container,
               external_work_item_id, external_url, export_content_hash,
-              exported_at, exported_by, metadata
+              exported_at, exported_by, metadata, export_version, story_version,
+              requirement_revision_ids, policy_constraint_revision_ids, history,
+              export_content_hash_version, prerequisite_export_versions
        FROM backlog_export_mappings
        WHERE provider = $1 AND external_container = $2 AND story_id = $3;`,
       [filter.provider, filter.externalContainer, filter.storyId]
@@ -3110,7 +3168,15 @@ export class PostgresRequirementsRepository
     return createBacklogExportMapping({
       id: row.id,
       storyId: row.story_id,
+      storyVersion: row.story_version ?? 1,
+      exportVersion: row.export_version ?? 1,
       baselineId: row.baseline_id,
+      requirementRevisionIds: Array.isArray(row.requirement_revision_ids)
+        ? row.requirement_revision_ids
+        : [],
+      policyConstraintRevisionIds: Array.isArray(row.policy_constraint_revision_ids)
+        ? row.policy_constraint_revision_ids
+        : undefined,
       provider: row.provider,
       externalContainer: row.external_container,
       externalWorkItemId: row.external_work_item_id,
@@ -3119,7 +3185,15 @@ export class PostgresRequirementsRepository
       exportedAt:
         row.exported_at instanceof Date ? row.exported_at.toISOString() : String(row.exported_at),
       exportedBy: row.exported_by,
-      metadata: typeof row.metadata === 'object' && row.metadata !== null ? row.metadata : {}
+      metadata: typeof row.metadata === 'object' && row.metadata !== null ? row.metadata : {},
+      history: Array.isArray(row.history) ? row.history : undefined,
+      exportContentHashVersion: row.export_content_hash_version ?? 1,
+      prerequisiteExportVersions:
+        row.prerequisite_export_versions &&
+        typeof row.prerequisite_export_versions === 'object' &&
+        Object.keys(row.prerequisite_export_versions).length > 0
+          ? (row.prerequisite_export_versions as Record<string, number>)
+          : undefined
     });
   }
 
@@ -3166,10 +3240,19 @@ export class PostgresRequirementsRepository
       exported_at: string | Date;
       exported_by: string;
       metadata: Record<string, unknown>;
+      export_version?: number;
+      story_version?: number;
+      requirement_revision_ids?: string[];
+      policy_constraint_revision_ids?: string[] | null;
+      history?: BacklogExportHistoryEntry[];
+      export_content_hash_version?: number;
+      prerequisite_export_versions?: Record<string, number> | null;
     }>(
       `SELECT id, story_id, baseline_id, provider, external_container,
               external_work_item_id, external_url, export_content_hash,
-              exported_at, exported_by, metadata
+              exported_at, exported_by, metadata, export_version, story_version,
+              requirement_revision_ids, policy_constraint_revision_ids, history,
+              export_content_hash_version, prerequisite_export_versions
        FROM backlog_export_mappings
        ${whereClause}
        ORDER BY exported_at ASC, id ASC;`,
@@ -3181,7 +3264,15 @@ export class PostgresRequirementsRepository
         createBacklogExportMapping({
           id: row.id,
           storyId: row.story_id,
+          storyVersion: row.story_version ?? 1,
+          exportVersion: row.export_version ?? 1,
           baselineId: row.baseline_id,
+          requirementRevisionIds: Array.isArray(row.requirement_revision_ids)
+            ? row.requirement_revision_ids
+            : [],
+          policyConstraintRevisionIds: Array.isArray(row.policy_constraint_revision_ids)
+            ? row.policy_constraint_revision_ids
+            : undefined,
           provider: row.provider,
           externalContainer: row.external_container,
           externalWorkItemId: row.external_work_item_id,
@@ -3192,7 +3283,15 @@ export class PostgresRequirementsRepository
               ? row.exported_at.toISOString()
               : String(row.exported_at),
           exportedBy: row.exported_by,
-          metadata: typeof row.metadata === 'object' && row.metadata !== null ? row.metadata : {}
+          metadata: typeof row.metadata === 'object' && row.metadata !== null ? row.metadata : {},
+          history: Array.isArray(row.history) ? row.history : undefined,
+          exportContentHashVersion: row.export_content_hash_version ?? 1,
+          prerequisiteExportVersions:
+            row.prerequisite_export_versions &&
+            typeof row.prerequisite_export_versions === 'object' &&
+            Object.keys(row.prerequisite_export_versions).length > 0
+              ? (row.prerequisite_export_versions as Record<string, number>)
+              : undefined
         })
       )
     );
@@ -3203,29 +3302,172 @@ export class PostgresRequirementsRepository
     executor: ISqlDatabaseClient = this.activeDb
   ): Promise<void> {
     assertSafeIdentifier(mapping.id, 'mappingId');
-    const result = await executor.query(
-      `UPDATE backlog_export_mappings
-       SET external_work_item_id = $1,
-           external_url = $2,
-           export_content_hash = $3,
-           exported_at = $4,
-           exported_by = $5,
-           metadata = $6,
-           updated_at = NOW()
-       WHERE id = $7;`,
-      [
-        mapping.externalWorkItemId,
-        mapping.externalUrl ?? null,
-        mapping.exportContentHash,
-        mapping.exportedAt,
-        mapping.exportedBy,
-        JSON.stringify(mapping.metadata ?? {}),
-        mapping.id
-      ]
+    assertSafeIdentifier(mapping.storyId, 'storyId');
+    assertSafeIdentifier(mapping.baselineId, 'baselineId');
+
+    await executor.transaction(async (tx) => {
+      if (mapping.history && mapping.history.length > 0) {
+        const snapshot = mapping.history[mapping.history.length - 1];
+        const existing = await tx.query<{ export_content_hash: string }>(
+          `SELECT export_content_hash FROM backlog_export_history WHERE mapping_id = $1 AND export_version = $2;`,
+          [mapping.id, snapshot.exportVersion]
+        );
+
+        if (existing.rows.length > 0) {
+          if (existing.rows[0].export_content_hash !== snapshot.exportContentHash) {
+            throw new Error(
+              `Immutable backlog export history conflict: mapping '${mapping.id}' export version ${snapshot.exportVersion} already recorded with different content hash`
+            );
+          }
+        } else {
+          await tx.query(
+            `INSERT INTO backlog_export_history (
+               id, mapping_id, export_version, baseline_id, story_id,
+               story_version, requirement_revision_ids, policy_constraint_revision_ids,
+               export_content_hash, exported_at, exported_by, external_work_item_id,
+               external_url, update_rationale, export_content_hash_version,
+               prerequisite_export_versions, created_at
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW());`,
+            [
+              `${mapping.id}-v${snapshot.exportVersion}`,
+              mapping.id,
+              snapshot.exportVersion,
+              snapshot.baselineId,
+              mapping.storyId,
+              snapshot.storyVersion,
+              JSON.stringify(snapshot.requirementRevisionIds ?? []),
+              snapshot.policyConstraintRevisionIds
+                ? JSON.stringify(snapshot.policyConstraintRevisionIds)
+                : null,
+              snapshot.exportContentHash,
+              snapshot.exportedAt,
+              snapshot.exportedBy,
+              snapshot.externalWorkItemId,
+              snapshot.externalUrl ?? null,
+              snapshot.updateRationale ?? null,
+              snapshot.exportContentHashVersion ?? 1,
+              JSON.stringify(snapshot.prerequisiteExportVersions ?? {})
+            ]
+          );
+        }
+      }
+
+      const result = await tx.query(
+        `UPDATE backlog_export_mappings
+         SET baseline_id = $1,
+             external_work_item_id = $2,
+             external_url = $3,
+             export_content_hash = $4,
+             exported_at = $5,
+             exported_by = $6,
+             metadata = $7,
+             export_version = $8,
+             story_version = $9,
+             requirement_revision_ids = $10,
+             policy_constraint_revision_ids = $11,
+             history = $12,
+             export_content_hash_version = $13,
+             prerequisite_export_versions = $14,
+             updated_at = NOW()
+         WHERE id = $15;`,
+        [
+          mapping.baselineId,
+          mapping.externalWorkItemId,
+          mapping.externalUrl ?? null,
+          mapping.exportContentHash,
+          mapping.exportedAt,
+          mapping.exportedBy,
+          JSON.stringify(mapping.metadata ?? {}),
+          mapping.exportVersion ?? 1,
+          mapping.storyVersion ?? 1,
+          JSON.stringify(mapping.requirementRevisionIds ?? []),
+          mapping.policyConstraintRevisionIds
+            ? JSON.stringify(mapping.policyConstraintRevisionIds)
+            : null,
+          JSON.stringify(mapping.history ?? []),
+          mapping.exportContentHashVersion ?? 1,
+          JSON.stringify(mapping.prerequisiteExportVersions ?? {}),
+          mapping.id
+        ]
+      );
+      if (result.rowCount === 0) {
+        throw new Error(`Backlog export mapping '${mapping.id}' not found`);
+      }
+    });
+  }
+
+  async listBacklogExportHistory(
+    mappingId: BacklogExportMappingId | string,
+    executor: ISqlDatabaseClient = this.activeDb
+  ): Promise<readonly BacklogExportHistoryEntry[]> {
+    assertSafeIdentifier(mappingId, 'mappingId');
+    const result = await executor.query<{
+      export_version: number;
+      baseline_id: string;
+      story_version: number;
+      requirement_revision_ids: unknown;
+      policy_constraint_revision_ids: unknown;
+      export_content_hash: string;
+      exported_at: string | Date;
+      exported_by: string;
+      external_work_item_id: string;
+      external_url: string | null;
+      update_rationale: string | null;
+      export_content_hash_version?: number;
+      prerequisite_export_versions?: Record<string, number> | null;
+    }>(
+      `SELECT export_version, baseline_id, story_version,
+              requirement_revision_ids, policy_constraint_revision_ids,
+              export_content_hash, exported_at, exported_by,
+              external_work_item_id, external_url, update_rationale,
+              export_content_hash_version, prerequisite_export_versions
+       FROM backlog_export_history
+       WHERE mapping_id = $1
+       ORDER BY export_version ASC;`,
+      [mappingId]
     );
-    if (result.rowCount === 0) {
-      throw new Error(`Backlog export mapping '${mapping.id}' not found`);
+
+    if (result.rows.length === 0) {
+      const mapping = await this.getBacklogExportMapping(mappingId, executor);
+      return mapping?.history ?? Object.freeze([]);
     }
+
+    return Object.freeze(
+      result.rows.map((row) => {
+        const reqRevs = Array.isArray(row.requirement_revision_ids)
+          ? row.requirement_revision_ids.map((r) => createRequirementRevisionId(String(r)))
+          : [];
+        const polRevs = Array.isArray(row.policy_constraint_revision_ids)
+          ? row.policy_constraint_revision_ids.map((p) =>
+              createPolicyConstraintRevisionId(String(p))
+            )
+          : undefined;
+
+        return {
+          exportVersion: row.export_version,
+          baselineId: createRequirementsBaselineId(row.baseline_id),
+          storyVersion: row.story_version,
+          requirementRevisionIds: Object.freeze(reqRevs),
+          policyConstraintRevisionIds: polRevs ? Object.freeze(polRevs) : undefined,
+          exportContentHash: row.export_content_hash,
+          exportContentHashVersion: row.export_content_hash_version ?? 1,
+          prerequisiteExportVersions:
+            row.prerequisite_export_versions &&
+            typeof row.prerequisite_export_versions === 'object' &&
+            Object.keys(row.prerequisite_export_versions).length > 0
+              ? Object.freeze({ ...row.prerequisite_export_versions })
+              : undefined,
+          exportedAt:
+            row.exported_at instanceof Date
+              ? createInstant(row.exported_at.toISOString())
+              : createInstant(String(row.exported_at)),
+          exportedBy: createActorId(row.exported_by),
+          externalWorkItemId: row.external_work_item_id,
+          externalUrl: row.external_url ?? undefined,
+          updateRationale: row.update_rationale ?? undefined
+        };
+      })
+    );
   }
 
   async checkStorageHealth(): Promise<StorageHealthReport> {

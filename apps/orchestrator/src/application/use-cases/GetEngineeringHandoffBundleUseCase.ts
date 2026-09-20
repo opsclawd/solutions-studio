@@ -8,8 +8,10 @@ import {
   type BaselineRequirementCoverage,
   type StoryDependencyGraph,
   type CandidateFinding,
-  type RequirementRevision
+  type RequirementRevision,
+  type BacklogExportMapping
 } from '@solutions-studio/domain';
+import type { BaselineExportStalenessReportDto } from '@solutions-studio/contracts';
 import type {
   IRequirementsRepository,
   ProjectionRecord,
@@ -19,6 +21,7 @@ import type { GetAuthorityBundleUseCase } from './GetAuthorityBundleUseCase.js';
 import type { EvaluateStoryReadinessUseCase } from './EvaluateStoryReadinessUseCase.js';
 import type { ComputeRequirementCoverageUseCase } from './ComputeRequirementCoverageUseCase.js';
 import type { BuildStoryDependencyGraphUseCase } from './BuildStoryDependencyGraphUseCase.js';
+import type { EvaluateExportStalenessUseCase } from './EvaluateExportStalenessUseCase.js';
 import { UnknownRequirementsBaselineError } from './ReconciliationErrors.js';
 
 export interface EngineeringHandoffSummary {
@@ -44,6 +47,8 @@ export interface EngineeringHandoffBundle {
   readonly blockingFindings: readonly CandidateFinding[];
   readonly unresolvedRequirements: readonly RequirementRevision[];
   readonly summary: EngineeringHandoffSummary;
+  readonly exportMappings?: readonly BacklogExportMapping[];
+  readonly stalenessSummary?: BaselineExportStalenessReportDto;
 }
 
 export interface GetEngineeringHandoffBundleInput {
@@ -56,7 +61,8 @@ export class GetEngineeringHandoffBundleUseCase {
     private readonly getAuthorityBundleUseCase: GetAuthorityBundleUseCase,
     private readonly evaluateStoryReadinessUseCase: EvaluateStoryReadinessUseCase,
     private readonly computeRequirementCoverageUseCase: ComputeRequirementCoverageUseCase,
-    private readonly buildStoryDependencyGraphUseCase: BuildStoryDependencyGraphUseCase
+    private readonly buildStoryDependencyGraphUseCase: BuildStoryDependencyGraphUseCase,
+    private readonly evaluateExportStalenessUseCase?: EvaluateExportStalenessUseCase
   ) {}
 
   async execute(input: GetEngineeringHandoffBundleInput): Promise<EngineeringHandoffBundle> {
@@ -199,6 +205,18 @@ export class GetEngineeringHandoffBundleUseCase {
         isHandoffReady
       });
 
+      const exportMappings =
+        (await this.repository.listBacklogExportMappings?.({
+          baselineId
+        })) ?? [];
+
+      let stalenessSummary: BaselineExportStalenessReportDto | undefined = undefined;
+      if (this.evaluateExportStalenessUseCase) {
+        stalenessSummary = await this.evaluateExportStalenessUseCase.execute({
+          baselineId: input.baselineId
+        });
+      }
+
       return Object.freeze({
         baseline,
         authorityBundle,
@@ -211,7 +229,9 @@ export class GetEngineeringHandoffBundleUseCase {
         dependencyGraph,
         blockingFindings,
         unresolvedRequirements,
-        summary
+        summary,
+        exportMappings,
+        stalenessSummary
       });
     });
   }

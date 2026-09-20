@@ -32,7 +32,8 @@ import type {
   GovernanceApprovalId,
   GovernanceApprovalStatus,
   BacklogExportMapping,
-  BacklogExportMappingId
+  BacklogExportMappingId,
+  BacklogExportHistoryEntry
 } from '@solutions-studio/domain';
 import type {
   ProjectionMetadataDto,
@@ -268,6 +269,9 @@ export interface IRequirementsRepository {
     externalContainer?: string;
   }): Promise<readonly BacklogExportMapping[]>;
   updateBacklogExportMapping(mapping: BacklogExportMapping): Promise<void>;
+  listBacklogExportHistory?(
+    mappingId: BacklogExportMappingId | string
+  ): Promise<readonly BacklogExportHistoryEntry[]>;
   withBacklogExportLock?<T>(
     key: { provider: string; externalContainer: string; storyId: StoryId | string },
     action: () => Promise<T>

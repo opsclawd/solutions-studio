@@ -229,9 +229,24 @@ describe('ExportBacklogUseCase Application Tests', () => {
       createdAt: now()
     });
 
+    // Without allowUpdateExisting: true, re-export of modified story fails closed
+    const resSkipped = await useCase.execute({
+      baselineId,
+      targetContainer: 'acme/repo',
+      actor: validActor
+    });
+
+    expect(resSkipped.summary.total).toBe(1);
+    expect(resSkipped.summary.skippedStale).toBe(1);
+    expect(resSkipped.items[0].status).toBe('skipped-stale');
+    expect(fakeGateway.updateCalls).toHaveLength(0);
+
+    // With allowUpdateExisting: true, update succeeds, increments exportVersion and records history
     const res3 = await useCase.execute({
       baselineId,
       targetContainer: 'acme/repo',
+      allowUpdateExisting: true,
+      updateRationale: 'Step update',
       actor: validActor
     });
 
@@ -246,6 +261,10 @@ describe('ExportBacklogUseCase Application Tests', () => {
       storyId
     });
     expect(updatedMapping?.exportContentHash).not.toBe(mapping?.exportContentHash);
+    expect(updatedMapping?.exportVersion).toBe(2);
+    expect(updatedMapping?.history).toHaveLength(1);
+    expect(updatedMapping?.history?.[0].exportVersion).toBe(1);
+    expect(updatedMapping?.history?.[0].updateRationale).toBe('Step update');
   });
 
   it('rejects stories failing readiness gates and records rejection reasons', async () => {
@@ -605,5 +624,396 @@ describe('ExportBacklogUseCase Application Tests', () => {
 
     const statuses = [res1.items[0].status, res2.items[0].status].sort();
     expect(statuses).toEqual(['created', 'unchanged']);
+  });
+
+  it('filters export to only stale or impacted stories when propagateStaleOnly is true', async () => {
+    const baselineId = createRequirementsBaselineId('BASE-STALE-FILTER');
+    const reqRev1 = createRequirementRevisionId('REQ-F-1');
+    const reqRev2 = createRequirementRevisionId('REQ-F-2');
+
+    await repository.saveRequirementRevision({
+      id: reqRev1,
+      requirementId: createRequirementId('REQ-1'),
+      revision: 1,
+      statement: 'Req 1',
+      category: 'business-rule',
+      origin: 'EXPLICIT',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR',
+      evidence: [],
+      rationale: 'R1'
+    });
+
+    await repository.saveRequirementRevision({
+      id: reqRev2,
+      requirementId: createRequirementId('REQ-2'),
+      revision: 1,
+      statement: 'Req 2',
+      category: 'business-rule',
+      origin: 'EXPLICIT',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR',
+      evidence: [],
+      rationale: 'R2'
+    });
+
+    await repository.saveRequirementsBaseline({
+      id: baselineId,
+      requirementRevisions: [reqRev1, reqRev2],
+      policyConstraintRevisions: [],
+      createdAt: now(),
+      createdBy: createReviewerId('REV-1')
+    });
+
+    const s1Id = createStoryId('STORY-F-1');
+    const s2Id = createStoryId('STORY-F-2');
+
+    await repository.saveStory({
+      id: s1Id,
+      baselineId,
+      projectionId: 'proj-f1',
+      title: 'Story 1',
+      narrative: { role: 'user', feature: 'f1', benefit: 'b1' },
+      acceptanceCriteria: ['AC1'],
+      scenarios: [
+        {
+          id: 'sc1',
+          title: 'S1',
+          requirementRevisionIds: [reqRev1],
+          steps: [{ keyword: 'Given', text: 'x' }]
+        }
+      ],
+      gherkinText: 'Feature: F1\nScenario: S1\nGiven x',
+      requirementRevisionIds: [reqRev1],
+      metadata: {
+        baselineId,
+        requirementRevisionIds: [reqRev1],
+        artifactType: 'stories',
+        declaredProvenance: { baselineId, requirementRevisionIds: [reqRev1] },
+        configuredExecution: { provider: 'fake', artifactType: 'stories' },
+        measuredVerification: {
+          repairsNeeded: 0,
+          attemptCount: 1,
+          contentHash: 'h1',
+          verifiedAt: now()
+        }
+      },
+      createdAt: now()
+    });
+
+    await repository.saveStory({
+      id: s2Id,
+      baselineId,
+      projectionId: 'proj-f2',
+      title: 'Story 2',
+      narrative: { role: 'user', feature: 'f2', benefit: 'b2' },
+      acceptanceCriteria: ['AC2'],
+      scenarios: [
+        {
+          id: 'sc2',
+          title: 'S2',
+          requirementRevisionIds: [reqRev2],
+          steps: [{ keyword: 'Given', text: 'y' }]
+        }
+      ],
+      gherkinText: 'Feature: F2\nScenario: S2\nGiven y',
+      requirementRevisionIds: [reqRev2],
+      metadata: {
+        baselineId,
+        requirementRevisionIds: [reqRev2],
+        artifactType: 'stories',
+        declaredProvenance: { baselineId, requirementRevisionIds: [reqRev2] },
+        configuredExecution: { provider: 'fake', artifactType: 'stories' },
+        measuredVerification: {
+          repairsNeeded: 0,
+          attemptCount: 1,
+          contentHash: 'h2',
+          verifiedAt: now()
+        }
+      },
+      createdAt: now()
+    });
+
+    // First export: both stories created
+    const firstExport = await useCase.execute({
+      baselineId,
+      targetContainer: 'acme/filter-repo',
+      actor: validActor
+    });
+    expect(firstExport.summary.created).toBe(2);
+
+    // Modify only Story 1
+    await repository.updateStory({
+      id: s1Id,
+      baselineId,
+      projectionId: 'proj-f1',
+      title: 'Story 1 Updated',
+      narrative: { role: 'user', feature: 'f1 updated', benefit: 'b1' },
+      acceptanceCriteria: ['AC1'],
+      scenarios: [
+        {
+          id: 'sc1',
+          title: 'S1',
+          requirementRevisionIds: [reqRev1],
+          steps: [{ keyword: 'Given', text: 'x modified' }]
+        }
+      ],
+      gherkinText: 'Feature: F1\nScenario: S1\nGiven x modified',
+      requirementRevisionIds: [reqRev1],
+      metadata: {
+        baselineId,
+        requirementRevisionIds: [reqRev1],
+        artifactType: 'stories',
+        declaredProvenance: { baselineId, requirementRevisionIds: [reqRev1] },
+        configuredExecution: { provider: 'fake', artifactType: 'stories' },
+        measuredVerification: {
+          repairsNeeded: 0,
+          attemptCount: 1,
+          contentHash: 'h3',
+          verifiedAt: now()
+        }
+      },
+      createdAt: now()
+    });
+
+    // Export with propagateStaleOnly: true and allowUpdateExisting: true
+    const staleExport = await useCase.execute({
+      baselineId,
+      targetContainer: 'acme/filter-repo',
+      propagateStaleOnly: true,
+      allowUpdateExisting: true,
+      actor: validActor
+    });
+
+    // Only Story 1 should be exported (updated); Story 2 is untouched
+    expect(staleExport.summary.total).toBe(1);
+    expect(staleExport.items).toHaveLength(1);
+    expect(staleExport.items[0].storyId).toBe(s1Id);
+    expect(staleExport.items[0].status).toBe('updated');
+  });
+
+  it('fails closed when upstream prerequisite export version increases even if dependent story hash is unchanged, and updates with bumped version and recorded prerequisite versions upon explicit confirmation', async () => {
+    const baselineId = createRequirementsBaselineId('BASE-PREREQ-TEST');
+    const reqRev = createRequirementRevisionId('REQ-PREREQ-R1');
+
+    await repository.saveRequirementRevision({
+      id: reqRev,
+      requirementId: createRequirementId('REQ-PREREQ'),
+      revision: 1,
+      statement: 'Prerequisite requirement statement.',
+      category: 'business-rule',
+      origin: 'EXPLICIT',
+      reviewState: 'ACCEPTED',
+      resolutionState: 'CLEAR',
+      evidence: []
+    });
+
+    await repository.saveRequirementsBaseline({
+      id: baselineId,
+      requirementRevisions: [reqRev],
+      policyConstraintRevisions: [],
+      createdAt: now(),
+      createdBy: createReviewerId('REV-1')
+    });
+
+    const s1Id = createStoryId('STORY-UPSTREAM');
+    const s2Id = createStoryId('STORY-DEPENDENT');
+
+    // Upstream story 1
+    await repository.saveStory({
+      id: s1Id,
+      baselineId,
+      projectionId: 'proj-u1',
+      title: 'Upstream Story',
+      narrative: { role: 'user', feature: 'u1', benefit: 'b1' },
+      acceptanceCriteria: ['AC1'],
+      scenarios: [
+        {
+          id: 'sc1',
+          title: 'U1',
+          requirementRevisionIds: [reqRev],
+          steps: [{ keyword: 'Given', text: 'u1 step' }]
+        }
+      ],
+      gherkinText: 'Feature: U1\nScenario: U1\nGiven u1 step',
+      requirementRevisionIds: [reqRev],
+      metadata: {
+        baselineId,
+        requirementRevisionIds: [reqRev],
+        artifactType: 'stories',
+        declaredProvenance: { baselineId, requirementRevisionIds: [reqRev] },
+        configuredExecution: { provider: 'fake', artifactType: 'stories' },
+        measuredVerification: {
+          repairsNeeded: 0,
+          attemptCount: 1,
+          contentHash: 'hu1',
+          verifiedAt: now()
+        }
+      },
+      createdAt: now()
+    });
+
+    // Dependent story 2 (depends on upstream story 1)
+    await repository.saveStory({
+      id: s2Id,
+      baselineId,
+      projectionId: 'proj-d2',
+      title: 'Dependent Story',
+      narrative: { role: 'user', feature: 'd2', benefit: 'b2' },
+      acceptanceCriteria: ['AC2'],
+      dependencies: [s1Id],
+      scenarios: [
+        {
+          id: 'sc2',
+          title: 'D2',
+          requirementRevisionIds: [reqRev],
+          steps: [{ keyword: 'Given', text: 'd2 step' }]
+        }
+      ],
+      gherkinText: 'Feature: D2\nScenario: D2\nGiven d2 step',
+      requirementRevisionIds: [reqRev],
+      metadata: {
+        baselineId,
+        requirementRevisionIds: [reqRev],
+        artifactType: 'stories',
+        declaredProvenance: { baselineId, requirementRevisionIds: [reqRev] },
+        configuredExecution: { provider: 'fake', artifactType: 'stories' },
+        measuredVerification: {
+          repairsNeeded: 0,
+          attemptCount: 1,
+          contentHash: 'hd2',
+          verifiedAt: now()
+        }
+      },
+      createdAt: now()
+    });
+
+    // 1. Initial export of both stories
+    const initialExport = await useCase.execute({
+      baselineId,
+      targetContainer: 'acme/prereq-repo',
+      actor: validActor
+    });
+    expect(initialExport.summary.created).toBe(2);
+
+    const s1MappingV1 = await repository.findBacklogExportMapping({
+      storyId: s1Id,
+      provider: 'fake',
+      externalContainer: 'acme/prereq-repo'
+    });
+    expect(s1MappingV1?.exportVersion).toBe(1);
+
+    const s2MappingV1 = await repository.findBacklogExportMapping({
+      storyId: s2Id,
+      provider: 'fake',
+      externalContainer: 'acme/prereq-repo'
+    });
+    expect(s2MappingV1?.exportVersion).toBe(1);
+    expect(s2MappingV1?.prerequisiteExportVersions?.[s1Id]).toBe(1);
+
+    // 2. Modify and re-export upstream story 1 with allowUpdateExisting: true -> exportVersion bumps to 2
+    await repository.updateStory({
+      id: s1Id,
+      baselineId,
+      projectionId: 'proj-u1',
+      title: 'Upstream Story Bumped',
+      narrative: { role: 'user', feature: 'u1 bumped', benefit: 'b1' },
+      acceptanceCriteria: ['AC1 bumped'],
+      scenarios: [
+        {
+          id: 'sc1',
+          title: 'U1',
+          requirementRevisionIds: [reqRev],
+          steps: [{ keyword: 'Given', text: 'u1 bumped step' }]
+        }
+      ],
+      gherkinText: 'Feature: U1\nScenario: U1\nGiven u1 bumped step',
+      requirementRevisionIds: [reqRev],
+      metadata: {
+        baselineId,
+        requirementRevisionIds: [reqRev],
+        artifactType: 'stories',
+        declaredProvenance: { baselineId, requirementRevisionIds: [reqRev] },
+        configuredExecution: { provider: 'fake', artifactType: 'stories' },
+        measuredVerification: {
+          repairsNeeded: 0,
+          attemptCount: 1,
+          contentHash: 'hu1-bumped',
+          verifiedAt: now()
+        }
+      },
+      createdAt: now()
+    });
+
+    const upstreamUpdateExport = await useCase.execute({
+      baselineId,
+      targetContainer: 'acme/prereq-repo',
+      storyIds: [s1Id],
+      allowUpdateExisting: true,
+      updateRationale: 'Upstream requirements changed',
+      actor: validActor
+    });
+    expect(upstreamUpdateExport.items[0].status).toBe('updated');
+
+    const s1MappingV2 = await repository.findBacklogExportMapping({
+      storyId: s1Id,
+      provider: 'fake',
+      externalContainer: 'acme/prereq-repo'
+    });
+    expect(s1MappingV2?.exportVersion).toBe(2);
+
+    // 3. Attempt export of dependent story 2 without allowUpdateExisting:
+    // Even though story 2's own content hash is identical to its existing mapping,
+    // its upstream prerequisite version superseded from 1 to 2 -> classification is IMPACTED!
+    // It MUST fail closed as 'skipped-stale' with 0 provider calls!
+    const gatewayUpdateCallsBefore = fakeGateway.updateCalls.length;
+    const gatewayCreateCallsBefore = fakeGateway.createCalls.length;
+
+    const dependentBlockedExport = await useCase.execute({
+      baselineId,
+      targetContainer: 'acme/prereq-repo',
+      storyIds: [s2Id],
+      allowUpdateExisting: false,
+      actor: validActor
+    });
+
+    expect(dependentBlockedExport.summary.skippedStale).toBe(1);
+    expect(dependentBlockedExport.items[0].status).toBe('skipped-stale');
+    expect(fakeGateway.updateCalls.length).toBe(gatewayUpdateCallsBefore);
+    expect(fakeGateway.createCalls.length).toBe(gatewayCreateCallsBefore);
+
+    // 4. Export dependent story 2 with explicit allowUpdateExisting: true
+    const dependentUpdateExport = await useCase.execute({
+      baselineId,
+      targetContainer: 'acme/prereq-repo',
+      storyIds: [s2Id],
+      allowUpdateExisting: true,
+      updateRationale: 'Aligning with upstream v2 export',
+      actor: validActor
+    });
+
+    expect(dependentUpdateExport.summary.updated).toBe(1);
+    expect(dependentUpdateExport.items[0].status).toBe('updated');
+
+    const s2MappingV2 = await repository.findBacklogExportMapping({
+      storyId: s2Id,
+      provider: 'fake',
+      externalContainer: 'acme/prereq-repo'
+    });
+    expect(s2MappingV2?.exportVersion).toBe(2);
+    expect(s2MappingV2?.prerequisiteExportVersions?.[s1Id]).toBe(2);
+    expect(s2MappingV2?.history).toHaveLength(1);
+    expect(s2MappingV2?.history?.[0].exportVersion).toBe(1);
+    expect(s2MappingV2?.history?.[0].updateRationale).toBe('Aligning with upstream v2 export');
+
+    // 5. Subsequent export of dependent story 2 without forceUpdate is now idempotent (status: 'unchanged')
+    const idempotentExport = await useCase.execute({
+      baselineId,
+      targetContainer: 'acme/prereq-repo',
+      storyIds: [s2Id],
+      actor: validActor
+    });
+    expect(idempotentExport.summary.unchanged).toBe(1);
+    expect(idempotentExport.items[0].status).toBe('unchanged');
   });
 });

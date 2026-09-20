@@ -4,7 +4,8 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import type {
   EngineeringHandoffBundleDto,
-  CandidatePromotionStatusDto
+  CandidatePromotionStatusDto,
+  BaselineExportStalenessReportDto
 } from '@solutions-studio/contracts';
 
 export interface HandoffHeaderProps {
@@ -14,6 +15,7 @@ export interface HandoffHeaderProps {
   readonly candidateSha?: string;
   readonly onCandidateShaChange?: (sha: string) => void;
   readonly promotionStatus?: CandidatePromotionStatusDto | null;
+  readonly stalenessReport?: BaselineExportStalenessReportDto | null;
   readonly onSelectBaseline: (baselineId: string) => void;
   readonly onRefresh: () => void;
 }
@@ -25,6 +27,7 @@ export function HandoffHeader({
   candidateSha,
   onCandidateShaChange,
   promotionStatus,
+  stalenessReport,
   onSelectBaseline,
   onRefresh
 }: HandoffHeaderProps) {
@@ -263,6 +266,31 @@ export function HandoffHeader({
               {hasCycles ? '⚠ Cycle Detected' : '✔ Acyclic (DAG)'}
             </span>
           </div>
+
+          {stalenessReport && (
+            <div
+              data-testid="metric-staleness"
+              className="px-2.5 py-1 bg-gray-50 border border-gray-200 rounded-md font-medium text-gray-700 flex items-center gap-1.5"
+            >
+              <span className="text-gray-500">Staleness:</span>
+              <span
+                className={
+                  stalenessReport.staleCount === 0 && stalenessReport.impactedCount === 0
+                    ? 'text-emerald-700 font-bold'
+                    : 'text-amber-700 font-bold'
+                }
+              >
+                {stalenessReport.currentCount} Current
+                {stalenessReport.staleCount > 0 ? ` / ${stalenessReport.staleCount} Stale` : ''}
+                {stalenessReport.impactedCount > 0
+                  ? ` / ${stalenessReport.impactedCount} Impacted`
+                  : ''}
+                {stalenessReport.unexportedCount > 0
+                  ? ` / ${stalenessReport.unexportedCount} Unexported`
+                  : ''}
+              </span>
+            </div>
+          )}
         </div>
       )}
     </header>

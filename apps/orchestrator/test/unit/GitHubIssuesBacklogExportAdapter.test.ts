@@ -466,4 +466,35 @@ describe('GitHubIssuesBacklogExportAdapter Contract & Protocol Tests', () => {
       });
     }).not.toThrow();
   });
+
+  it('renders storyVersion, exportVersion, and export history table when present', () => {
+    const payloadWithHistory: BacklogExportPayload = {
+      ...samplePayload,
+      exportVersion: 2,
+      history: [
+        {
+          exportVersion: 1,
+          storyVersion: 1,
+          baselineId: createRequirementsBaselineId('BASE-000'),
+          exportContentHash: 'a'.repeat(64),
+          requirementRevisionIds: [createRequirementRevisionId('REQ-001-R1')],
+          policyConstraintRevisionIds: [],
+          exportedAt: createInstant('2026-09-19T10:00:00Z'),
+          exportedBy: createActorId('operator-1'),
+          externalWorkItemId: '43',
+          updateRationale: 'Initial release'
+        }
+      ]
+    };
+
+    const body = formatGitHubIssueBody(payloadWithHistory, 'acme/security-app');
+    expect(body).toContain('| **Story Version** | `v1` |');
+    expect(body).toContain('| **Export Version** | `v2` |');
+    expect(body).toContain('### Export History');
+    expect(body).toContain(
+      '| v1 | v1 | `BASE-000` | `aaaaaaaa...` | 2026-09-19T10:00:00Z | Initial release |'
+    );
+    expect(body).toContain('"storyVersion": 1');
+    expect(body).toContain('"exportVersion": 2');
+  });
 });

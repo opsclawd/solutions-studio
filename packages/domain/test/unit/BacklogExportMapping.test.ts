@@ -34,6 +34,10 @@ describe('BacklogExportMapping Domain Entity', () => {
     expect(mapping.exportContentHash).toBe('a'.repeat(64));
     expect(mapping.exportedAt).toBe('2026-09-20T12:00:00.000Z');
     expect(mapping.exportedBy).toBe('actor-001');
+    expect(mapping.exportVersion).toBe(1);
+    expect(mapping.storyVersion).toBe(1);
+    expect(mapping.exportContentHashVersion).toBe(1);
+    expect(mapping.history).toEqual([]);
     expect(mapping.metadata).toEqual({ testKey: 'testValue' });
   });
 

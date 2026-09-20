@@ -33,6 +33,11 @@ describe('CLI: run-backlog-export', () => {
         '--story',
         'STORY-1,STORY-2',
         '--force-update',
+        '--allow-update',
+        '--rationale',
+        'Updated after revision',
+        '--propagate-stale-only',
+        '--check-staleness-only',
         '--token',
         'ghp_secret',
         '--base-url',
@@ -47,6 +52,10 @@ describe('CLI: run-backlog-export', () => {
       expect(parsed.provider).toBe('github-issues');
       expect(parsed.storyIds).toEqual(['STORY-1', 'STORY-2']);
       expect(parsed.forceUpdate).toBe(true);
+      expect(parsed.allowUpdate).toBe(true);
+      expect(parsed.rationale).toBe('Updated after revision');
+      expect(parsed.propagateStaleOnly).toBe(true);
+      expect(parsed.checkStalenessOnly).toBe(true);
       expect(parsed.token).toBe('ghp_secret');
       expect(parsed.baseUrl).toBe('http://127.0.0.1:9999');
       expect(parsed.allowRealMutation).toBe(true);
@@ -316,6 +325,9 @@ describe('CLI: run-backlog-export', () => {
           targetContainer: 'acme/repo',
           provider: 'jira',
           forceUpdate: false,
+          allowUpdate: false,
+          propagateStaleOnly: false,
+          checkStalenessOnly: false,
           allowRealMutation: false,
           repository,
           gateway: fakeGateway,
@@ -323,6 +335,97 @@ describe('CLI: run-backlog-export', () => {
           format: 'text'
         })
       ).rejects.toThrow("Provider mismatch: CLI specified 'jira' but injected gateway is 'fake'");
+    });
+
+    it('evaluates staleness without mutating external backlog when checkStalenessOnly is true', async () => {
+      const baselineId = createRequirementsBaselineId('BASE-CLI-STALENESS');
+      const reqRevId = createRequirementRevisionId('REQ-CLI-R2');
+
+      await repository.saveRequirementRevision({
+        id: reqRevId,
+        requirementId: createRequirementId('REQ-CLI-2'),
+        revision: 1,
+        statement: 'CLI check staleness statement',
+        category: 'business-rule',
+        origin: 'EXPLICIT',
+        reviewState: 'ACCEPTED',
+        resolutionState: 'CLEAR',
+        evidence: [],
+        rationale: 'CLI test'
+      });
+
+      await repository.saveRequirementsBaseline({
+        id: baselineId,
+        requirementRevisions: [reqRevId],
+        policyConstraintRevisions: [],
+        createdAt: now(),
+        createdBy: createReviewerId('REVIEWER-1')
+      });
+
+      const storyId = createStoryId('STORY-CLI-CHECK');
+      await repository.saveStory({
+        id: storyId,
+        baselineId,
+        projectionId: 'proj-cli-check',
+        title: 'Story Check',
+        narrative: { role: 'user', feature: 'check', benefit: 'staleness' },
+        requirementRevisionIds: [reqRevId],
+        scenarios: [
+          {
+            title: 'Check scenario',
+            requirementRevisionIds: [reqRevId],
+            steps: [{ keyword: 'Given' as const, text: 'CLI is checking' }]
+          }
+        ],
+        acceptanceCriteria: ['AC1'],
+        gherkinText: 'Feature: Story Check\nScenario: Check scenario\nGiven CLI is checking',
+        metadata: {
+          baselineId,
+          requirementRevisionIds: [reqRevId],
+          artifactType: 'stories',
+          declaredProvenance: { baselineId, requirementRevisionIds: [reqRevId] },
+          configuredExecution: { provider: 'fake', artifactType: 'stories' },
+          measuredVerification: {
+            repairsNeeded: 0,
+            attemptCount: 1,
+            contentHash: 'h-check',
+            verifiedAt: now()
+          }
+        },
+        createdAt: now()
+      });
+
+      const logs: string[] = [];
+      const actor = createAuthenticatedActor({
+        id: 'operator-1',
+        name: 'CLI Operator',
+        actorType: 'human',
+        capabilities: ['backlog:export']
+      });
+
+      const result = await runBacklogExport({
+        baselineId,
+        targetContainer: 'acme/repo',
+        provider: 'fake',
+        forceUpdate: false,
+        allowUpdate: false,
+        propagateStaleOnly: false,
+        checkStalenessOnly: true,
+        allowRealMutation: false,
+        repository,
+        gateway: fakeGateway,
+        actor,
+        format: 'text',
+        log: (msg) => logs.push(msg)
+      });
+
+      expect(fakeGateway.createCalls).toHaveLength(0);
+      expect(fakeGateway.updateCalls).toHaveLength(0);
+      expect(result.summary.total).toBe(1);
+      expect(logs).toHaveLength(1);
+      expect(logs[0]).toContain('Export Staleness Report');
+      expect(logs[0]).toContain('STORY-CLI-CHECK');
+      expect(logs[0]).toContain('UNEXPORTED');
     });
   });
 });

@@ -55,6 +55,7 @@ export interface Story {
   readonly gherkinText: string;
   readonly createdAt: Instant;
   readonly dependencies?: readonly StoryId[];
+  readonly version?: number;
 }
 
 export interface CreateStoryParams {
@@ -84,6 +85,7 @@ export interface CreateStoryParams {
   readonly gherkinText: string;
   readonly dependencies?: readonly (StoryId | string)[];
   readonly createdAt?: Instant;
+  readonly version?: number;
 }
 
 export function createStory(params: CreateStoryParams): Story {
@@ -276,6 +278,18 @@ export function createStory(params: CreateStoryParams): Story {
     dependencies = Object.freeze(depIds);
   }
 
+  let version: number | undefined;
+  if (params.version !== undefined) {
+    if (
+      typeof params.version !== 'number' ||
+      !Number.isInteger(params.version) ||
+      params.version < 1
+    ) {
+      throw new StoryInvariantViolationError('Story version must be an integer >= 1');
+    }
+    version = params.version;
+  }
+
   return Object.freeze({
     id: storyId,
     baselineId,
@@ -287,6 +301,7 @@ export function createStory(params: CreateStoryParams): Story {
     acceptanceCriteria,
     gherkinText: params.gherkinText.trim(),
     createdAt,
-    dependencies
+    dependencies,
+    version
   });
 }

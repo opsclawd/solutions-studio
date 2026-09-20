@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import {
+  BacklogExportMappingDtoSchema,
+  BaselineExportStalenessReportDtoSchema
+} from '../backlog/schemas.js';
+import {
   REQUIREMENT_CATEGORIES,
   REQUIREMENT_ORIGINS,
   CANDIDATE_REQUIREMENT_ORIGINS,
@@ -505,6 +509,7 @@ export const StoryDtoSchema = z.object({
   acceptanceCriteria: z.array(z.string().min(1)),
   gherkinText: z.string().min(1),
   dependencies: z.array(z.string().min(1)).optional(),
+  version: z.number().int().positive().optional(),
   metadata: ProjectionMetadataDtoSchema.optional(),
   createdAt: InstantDtoSchema
 });
@@ -626,5 +631,7 @@ export const EngineeringHandoffBundleDtoSchema = z.object({
   dependencyGraph: StoryDependencyGraphDtoSchema,
   blockingFindings: z.array(CandidateFindingDtoSchema),
   unresolvedRequirements: z.array(RequirementRevisionDtoSchema),
-  summary: EngineeringHandoffSummaryDtoSchema
+  summary: EngineeringHandoffSummaryDtoSchema,
+  exportMappings: z.array(BacklogExportMappingDtoSchema).optional(),
+  stalenessSummary: BaselineExportStalenessReportDtoSchema.optional()
 });

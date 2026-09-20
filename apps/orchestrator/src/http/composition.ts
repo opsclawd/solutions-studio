@@ -39,6 +39,7 @@ import { EvaluateCandidatePromotionStatusUseCase } from '../application/use-case
 import { RevokeGovernanceApprovalUseCase } from '../application/use-cases/governance/RevokeGovernanceApprovalUseCase.js';
 import { ExportGovernanceAuditUseCase } from '../application/use-cases/governance/ExportGovernanceAuditUseCase.js';
 import { ExportBacklogUseCase } from '../application/use-cases/ExportBacklogUseCase.js';
+import { EvaluateExportStalenessUseCase } from '../application/use-cases/EvaluateExportStalenessUseCase.js';
 import { GetBacklogExportMappingsUseCase } from '../application/use-cases/GetBacklogExportMappingsUseCase.js';
 import { BacklogExportGatewayFactory } from '../infrastructure/backlog/BacklogExportGatewayFactory.js';
 import {
@@ -121,6 +122,7 @@ export interface ComposeHttpServerOptions {
   readonly exportGovernanceAuditUseCase?: ExportGovernanceAuditUseCase;
   readonly backlogGatewayFactory?: BacklogExportGatewayFactory;
   readonly exportBacklogUseCase?: ExportBacklogUseCase;
+  readonly evaluateExportStalenessUseCase?: EvaluateExportStalenessUseCase;
   readonly getBacklogExportMappingsUseCase?: GetBacklogExportMappingsUseCase;
 }
 
@@ -331,6 +333,17 @@ export function composeOrchestratorHttpServer(
   const updateStoryDependenciesUseCase =
     options.updateStoryDependenciesUseCase ?? new UpdateStoryDependenciesUseCase(repository);
 
+  const authorizer = options.authorizer ?? new DefaultAuthorizationPolicy();
+
+  const evaluateExportStalenessUseCase =
+    options.evaluateExportStalenessUseCase ??
+    new EvaluateExportStalenessUseCase(
+      repository,
+      getAuthorityBundleUseCase,
+      buildStoryDependencyGraphUseCase,
+      authorizer
+    );
+
   const getEngineeringHandoffBundleUseCase =
     options.getEngineeringHandoffBundleUseCase ??
     new GetEngineeringHandoffBundleUseCase(
@@ -338,7 +351,8 @@ export function composeOrchestratorHttpServer(
       getAuthorityBundleUseCase,
       evaluateStoryReadinessUseCase,
       computeRequirementCoverageUseCase,
-      buildStoryDependencyGraphUseCase
+      buildStoryDependencyGraphUseCase,
+      evaluateExportStalenessUseCase
     );
 
   const resolveAuthenticator = (): IAuthenticator => {
@@ -404,8 +418,6 @@ export function composeOrchestratorHttpServer(
 
   const authenticator = resolveAuthenticator();
 
-  const authorizer = options.authorizer ?? new DefaultAuthorizationPolicy();
-
   const recordValidationRunUseCase =
     options.recordValidationRunUseCase ?? new RecordValidationRunUseCase(repository);
   const approveCandidateUseCase =
@@ -429,7 +441,8 @@ export function composeOrchestratorHttpServer(
       authorizer,
       getAuthorityBundleUseCase,
       evaluateStoryReadinessUseCase,
-      buildStoryDependencyGraphUseCase
+      buildStoryDependencyGraphUseCase,
+      evaluateExportStalenessUseCase
     );
 
   const getBacklogExportMappingsUseCase =
@@ -464,6 +477,7 @@ export function composeOrchestratorHttpServer(
       revokeGovernanceApprovalUseCase,
       exportGovernanceAuditUseCase,
       exportBacklogUseCase,
+      evaluateExportStalenessUseCase,
       getBacklogExportMappingsUseCase
     },
     options.fastifyOptions
