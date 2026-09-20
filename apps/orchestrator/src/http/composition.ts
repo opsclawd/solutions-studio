@@ -64,6 +64,16 @@ import type { IAuthorizationPolicy } from '../application/ports/identity/IAuthor
 import { GenericOidcAuthenticator } from '../infrastructure/identity/GenericOidcAuthenticator.js';
 import { TestAuthenticator } from '../infrastructure/identity/TestAuthenticator.js';
 import { DefaultAuthorizationPolicy } from '../infrastructure/identity/DefaultAuthorizationPolicy.js';
+import type {
+  ITelemetryRegistry,
+  IOperationalLogger
+} from '../application/ports/observability/index.js';
+import {
+  TelemetryRegistry,
+  StructuredOperationalLogger
+} from '../infrastructure/observability/index.js';
+import { PruneRetentionUseCase } from '../application/use-cases/PruneRetentionUseCase.js';
+import { RetentionLifecyclePrunerAdapter } from '../infrastructure/persistence/lifecycle/RetentionLifecyclePrunerAdapter.js';
 import { buildServer } from './server.js';
 
 export interface ComposeHttpServerOptions {
@@ -73,6 +83,9 @@ export interface ComposeHttpServerOptions {
   readonly objectStore?: IObjectStore;
   readonly authenticator?: IAuthenticator;
   readonly authorizer?: IAuthorizationPolicy;
+  readonly telemetryRegistry?: ITelemetryRegistry;
+  readonly operationalLogger?: IOperationalLogger;
+  readonly pruneRetentionUseCase?: PruneRetentionUseCase;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   readonly pool?: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -169,6 +182,9 @@ export interface ComposedHttpServer {
   readonly getEngineeringDecisionsUseCase: GetEngineeringDecisionsUseCase;
   readonly authenticator: IAuthenticator;
   readonly authorizer: IAuthorizationPolicy;
+  readonly telemetryRegistry: ITelemetryRegistry;
+  readonly operationalLogger: IOperationalLogger;
+  readonly pruneRetentionUseCase?: PruneRetentionUseCase;
 }
 
 export function composeOrchestratorHttpServer(
@@ -186,6 +202,10 @@ export function composeOrchestratorHttpServer(
       clientFactory: options.clientFactory,
       autoMigrate: options.autoMigrate
     });
+
+  const telemetryRegistry = options.telemetryRegistry ?? TelemetryRegistry.default;
+  const operationalLogger = options.operationalLogger ?? new StructuredOperationalLogger();
+
   const provider = options.provider ?? (process.env.GENERATION_PROVIDER as ProviderType) ?? 'agy';
 
   const gatewayConfig: GatewayConfig = {
@@ -333,7 +353,7 @@ export function composeOrchestratorHttpServer(
   const updateStoryDependenciesUseCase =
     options.updateStoryDependenciesUseCase ?? new UpdateStoryDependenciesUseCase(repository);
 
-  const authorizer = options.authorizer ?? new DefaultAuthorizationPolicy();
+  const authorizer = options.authorizer ?? new DefaultAuthorizationPolicy(telemetryRegistry);
 
   const evaluateExportStalenessUseCase =
     options.evaluateExportStalenessUseCase ??
@@ -341,7 +361,9 @@ export function composeOrchestratorHttpServer(
       repository,
       getAuthorityBundleUseCase,
       buildStoryDependencyGraphUseCase,
-      authorizer
+      authorizer,
+      undefined,
+      telemetryRegistry
     );
 
   const getEngineeringHandoffBundleUseCase =
@@ -421,13 +443,14 @@ export function composeOrchestratorHttpServer(
   const recordValidationRunUseCase =
     options.recordValidationRunUseCase ?? new RecordValidationRunUseCase(repository);
   const approveCandidateUseCase =
-    options.approveCandidateUseCase ?? new ApproveCandidateUseCase(repository, authorizer);
+    options.approveCandidateUseCase ??
+    new ApproveCandidateUseCase(repository, authorizer, telemetryRegistry);
   const evaluateCandidatePromotionStatusUseCase =
     options.evaluateCandidatePromotionStatusUseCase ??
     new EvaluateCandidatePromotionStatusUseCase(repository);
   const revokeGovernanceApprovalUseCase =
     options.revokeGovernanceApprovalUseCase ??
-    new RevokeGovernanceApprovalUseCase(repository, authorizer);
+    new RevokeGovernanceApprovalUseCase(repository, authorizer, telemetryRegistry);
   const exportGovernanceAuditUseCase =
     options.exportGovernanceAuditUseCase ??
     new ExportGovernanceAuditUseCase(repository, evaluateCandidatePromotionStatusUseCase);
@@ -442,17 +465,43 @@ export function composeOrchestratorHttpServer(
       getAuthorityBundleUseCase,
       evaluateStoryReadinessUseCase,
       buildStoryDependencyGraphUseCase,
-      evaluateExportStalenessUseCase
+      evaluateExportStalenessUseCase,
+      telemetryRegistry
     );
 
   const getBacklogExportMappingsUseCase =
     options.getBacklogExportMappingsUseCase ?? new GetBacklogExportMappingsUseCase(repository);
+
+  const dbClient: ISqlDatabaseClient | undefined =
+    options.dbClient ??
+    ('db' in repository && repository.db ? (repository.db as ISqlDatabaseClient) : undefined);
+  const objectStore: IObjectStore | undefined =
+    options.objectStore ??
+    ('objectStore' in repository && repository.objectStore
+      ? (repository.objectStore as IObjectStore)
+      : undefined);
+
+  const pruneRetentionUseCase =
+    options.pruneRetentionUseCase ??
+    (dbClient && objectStore
+      ? new PruneRetentionUseCase(
+          new RetentionLifecyclePrunerAdapter(dbClient, objectStore),
+          authorizer
+        )
+      : undefined);
+
+  const defaultBacklogGateway = backlogGatewayFactory.getGateway('github-issues');
 
   const app = buildServer(
     {
       repository,
       authenticator,
       authorizer,
+      telemetryRegistry,
+      operationalLogger,
+      generationGateway,
+      backlogExportGateway: defaultBacklogGateway,
+      pruneRetentionUseCase,
       reviewStateUseCase,
       reconcileUseCase,
       baselineUseCase,
@@ -538,7 +587,10 @@ export function composeOrchestratorHttpServer(
     transitionEngineeringDecisionUseCase,
     getEngineeringDecisionsUseCase,
     authenticator,
-    authorizer
+    authorizer,
+    telemetryRegistry,
+    operationalLogger,
+    pruneRetentionUseCase
   };
 }
 

@@ -228,4 +228,29 @@ export class JwksCache {
       );
     }
   }
+
+  async checkJwksReachability(
+    timeoutMs?: number
+  ): Promise<{ reachable: boolean; latencyMs: number; error?: string }> {
+    const start = Date.now();
+    try {
+      const signal = AbortSignal.timeout(timeoutMs ?? 3000);
+      const res = await this.fetchFn(this.jwksUri, { signal });
+      const latencyMs = Date.now() - start;
+      if (!res.ok) {
+        return {
+          reachable: false,
+          latencyMs,
+          error: `HTTP ${(res as { status?: number }).status ?? 'not ok'}`
+        };
+      }
+      return { reachable: true, latencyMs };
+    } catch (err) {
+      return {
+        reachable: false,
+        latencyMs: Date.now() - start,
+        error: err instanceof Error ? err.message : String(err)
+      };
+    }
+  }
 }

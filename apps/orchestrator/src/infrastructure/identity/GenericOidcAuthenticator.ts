@@ -3,6 +3,7 @@ import type { AuthenticatedActor } from '@solutions-studio/domain';
 import {
   AuthenticationError,
   type IAuthenticator,
+  type IdentityHealthReport,
   type IClaimMapper,
   type ValidatedTokenClaims
 } from '../../application/ports/identity/index.js';
@@ -162,5 +163,17 @@ export class GenericOidcAuthenticator implements IAuthenticator {
 
     // 7. Derive AuthenticatedActor through provider-neutral claim mapper
     return this.claimMapper.mapClaimsToActor(payload);
+  }
+
+  async checkHealth(): Promise<IdentityHealthReport> {
+    const probe = await this.jwksCache.checkJwksReachability();
+    return {
+      status: probe.reachable ? 'healthy' : 'unhealthy',
+      provider: 'oidc',
+      issuer: this.issuer,
+      reachable: probe.reachable,
+      latencyMs: probe.latencyMs,
+      error: probe.error
+    };
   }
 }

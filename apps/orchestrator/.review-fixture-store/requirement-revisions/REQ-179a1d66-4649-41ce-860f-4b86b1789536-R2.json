@@ -1,0 +1,16 @@
+{
+  "id": "REQ-179a1d66-4649-41ce-860f-4b86b1789536-R2",
+  "requirementId": "REQ-179a1d66-4649-41ce-860f-4b86b1789536",
+  "revision": 2,
+  "statement": "Administrative override sessions must be automatically revoked after 20 minutes of user inactivity.",
+  "category": "business-rule",
+  "origin": "REVIEWER_PROPOSAL",
+  "reviewState": "ACCEPTED",
+  "resolutionState": "UNRESOLVED",
+  "evidence": [],
+  "rationale": "Accepted into scope following SME prototype evaluation.",
+  "actorId": "lead-reviewer",
+  "baselineId": "BASE-001",
+  "originatingProjectionId": "PROJ-002",
+  "supersedes": "REQ-179a1d66-4649-41ce-860f-4b86b1789536-R1"
+}

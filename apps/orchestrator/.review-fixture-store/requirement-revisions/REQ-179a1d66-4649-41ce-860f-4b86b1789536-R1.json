@@ -1,0 +1,15 @@
+{
+  "id": "REQ-179a1d66-4649-41ce-860f-4b86b1789536-R1",
+  "requirementId": "REQ-179a1d66-4649-41ce-860f-4b86b1789536",
+  "revision": 1,
+  "statement": "Administrative override sessions must be automatically revoked after 20 minutes of user inactivity.",
+  "category": "business-rule",
+  "origin": "REVIEWER_PROPOSAL",
+  "reviewState": "PENDING",
+  "resolutionState": "UNRESOLVED",
+  "evidence": [],
+  "rationale": "Discovered unhandled session inactivity timeout during prototype review walkthrough.",
+  "actorId": "lead-reviewer",
+  "baselineId": "BASE-001",
+  "originatingProjectionId": "PROJ-002"
+}

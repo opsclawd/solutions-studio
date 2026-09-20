@@ -26,6 +26,7 @@ import {
   UnknownRequirementRevisionError,
   UnknownRequirementsBaselineError
 } from './ReconciliationErrors.js';
+import { OperationalLogger } from '../ports/observability/index.js';
 
 export interface ProjectBaselineInput {
   readonly baselineId: RequirementsBaselineId | string;
@@ -171,6 +172,13 @@ export class ProjectBaselineUseCase {
     };
 
     await this.repository.saveProjectionRecord(record);
+
+    OperationalLogger.log('command.executed', {
+      command: 'project_baseline',
+      baselineId: baseline.id,
+      entityId: projectionId,
+      artifactType: input.artifactType
+    });
 
     return {
       projectionId,

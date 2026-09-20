@@ -42,6 +42,14 @@ export interface ExportWorkItemResult {
   readonly metadata?: Readonly<Record<string, unknown>>;
 }
 
+export interface BacklogHealthReport {
+  readonly status: 'healthy' | 'unhealthy' | 'degraded' | 'unconfigured';
+  readonly provider?: string;
+  readonly reachable?: boolean;
+  readonly latencyMs?: number;
+  readonly error?: string;
+}
+
 export interface IBacklogExportGateway {
   readonly providerId: string;
   createWorkItem(params: ExportWorkItemParams): Promise<ExportWorkItemResult>;
@@ -49,4 +57,5 @@ export interface IBacklogExportGateway {
     params: ExportWorkItemParams & { readonly existingMapping: BacklogExportMapping }
   ): Promise<ExportWorkItemResult>;
   findWorkItem?(params: ExportWorkItemParams): Promise<ExportWorkItemResult | undefined>;
+  checkHealth?(): Promise<BacklogHealthReport>;
 }

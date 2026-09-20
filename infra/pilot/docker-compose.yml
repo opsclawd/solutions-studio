@@ -1,0 +1,159 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: solutions-studio-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-solutions_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-solutions_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-solutions_studio}
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - solutions_studio_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'pg_isready -U $${POSTGRES_USER:-solutions_user} -d $${POSTGRES_DB:-solutions_studio}'
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    networks:
+      - pilot-network
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: solutions-studio-keycloak
+    restart: unless-stopped
+    command: start-dev --import-realm
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HEALTH_ENABLED: 'true'
+      KC_METRICS_ENABLED: 'false'
+    ports:
+      - '${KEYCLOAK_PORT:-8080}:8080'
+    volumes:
+      - ../keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          "exec 3<>/dev/tcp/127.0.0.1/8080 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK'"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    networks:
+      - pilot-network
+
+  orchestrator:
+    image: ${ORCHESTRATOR_IMAGE:-solutions-studio-orchestrator:${IMAGE_TAG:-latest}}
+    build:
+      context: ../..
+      dockerfile: apps/orchestrator/Dockerfile
+    container_name: solutions-studio-orchestrator
+    restart: unless-stopped
+    environment:
+      PORT: 4000
+      HOST: 0.0.0.0
+      NODE_ENV: production
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      STORAGE_TYPE: postgres
+      DATABASE_URL: postgresql://${POSTGRES_USER:-solutions_user}:${POSTGRES_PASSWORD:-solutions_pass}@postgres:5432/${POSTGRES_DB:-solutions_studio}
+      STORAGE_BACKEND: filesystem
+      REQUIREMENTS_STORE_DIR: /data/blobs
+      AUTH_PROVIDER: oidc
+      OIDC_ISSUER: http://keycloak:8080/realms/solutions-studio
+      OIDC_AUDIENCE: solutions-studio-api
+      OIDC_JWKS_URI: http://keycloak:8080/realms/solutions-studio/protocol/openid-connect/certs
+      GENERATION_PROVIDER: ${GENERATION_PROVIDER:-fake}
+      ALLOW_REAL_BACKLOG_MUTATION: ${ALLOW_REAL_BACKLOG_MUTATION:-false}
+    ports:
+      - '${ORCHESTRATOR_PORT:-4000}:4000'
+    volumes:
+      - solutions_studio_blobs:/data/blobs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:4000/api/health/live || exit 1']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - pilot-network
+
+  web:
+    image: ${WEB_IMAGE:-solutions-studio-web:${IMAGE_TAG:-latest}}
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_ORCHESTRATOR_URL: ${NEXT_PUBLIC_ORCHESTRATOR_URL:-http://localhost:4000}
+        NEXT_PUBLIC_OIDC_ISSUER: ${NEXT_PUBLIC_OIDC_ISSUER:-http://localhost:8080/realms/solutions-studio}
+        NEXT_PUBLIC_OIDC_CLIENT_ID: ${NEXT_PUBLIC_OIDC_CLIENT_ID:-solutions-studio-web}
+    container_name: solutions-studio-web
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      NODE_ENV: production
+      NEXT_PUBLIC_ORCHESTRATOR_URL: ${NEXT_PUBLIC_ORCHESTRATOR_URL:-http://localhost:4000}
+      NEXT_PUBLIC_OIDC_ISSUER: ${NEXT_PUBLIC_OIDC_ISSUER:-http://localhost:8080/realms/solutions-studio}
+      NEXT_PUBLIC_OIDC_CLIENT_ID: ${NEXT_PUBLIC_OIDC_CLIENT_ID:-solutions-studio-web}
+    ports:
+      - '${WEB_PORT:-3000}:3000'
+    depends_on:
+      orchestrator:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3000/api/health || exit 1']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - pilot-network
+
+  maintenance-scheduler:
+    image: ${ORCHESTRATOR_IMAGE:-solutions-studio-orchestrator:${IMAGE_TAG:-latest}}
+    container_name: solutions-studio-maintenance-scheduler
+    restart: unless-stopped
+    command:
+      [
+        'sh',
+        '-c',
+        "echo '0 3 * * * node /app/apps/orchestrator/dist/scripts/run-retention-cleanup.js' > /etc/crontabs/root && crond -f -l 8"
+      ]
+    environment:
+      STORAGE_TYPE: postgres
+      DATABASE_URL: postgresql://${POSTGRES_USER:-solutions_user}:${POSTGRES_PASSWORD:-solutions_pass}@postgres:5432/${POSTGRES_DB:-solutions_studio}
+      REQUIREMENTS_STORE_DIR: /data/blobs
+      STORAGE_BACKEND: filesystem
+    volumes:
+      - solutions_studio_blobs:/data/blobs
+      - ./crontab:/etc/crontabs/root:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      orchestrator:
+        condition: service_healthy
+    networks:
+      - pilot-network
+
+volumes:
+  solutions_studio_pgdata:
+    name: solutions_studio_pgdata
+  solutions_studio_blobs:
+    name: solutions_studio_blobs
+
+networks:
+  pilot-network:
+    name: solutions_studio_pilot_net

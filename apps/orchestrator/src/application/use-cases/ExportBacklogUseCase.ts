@@ -35,6 +35,11 @@ import {
   ProviderServerUnavailableError,
   ProviderNetworkError
 } from '../ports/backlog/index.js';
+import {
+  type ITelemetryRegistry,
+  TelemetryProvider,
+  OperationalLogger
+} from '../ports/observability/index.js';
 
 export interface ExportBacklogInput {
   readonly baselineId: string;
@@ -71,7 +76,8 @@ export class ExportBacklogUseCase {
     private readonly getAuthorityBundleUseCase: GetAuthorityBundleUseCase,
     private readonly evaluateStoryReadinessUseCase: EvaluateStoryReadinessUseCase,
     private readonly buildStoryDependencyGraphUseCase: BuildStoryDependencyGraphUseCase,
-    evaluateExportStalenessUseCase?: EvaluateExportStalenessUseCase
+    evaluateExportStalenessUseCase?: EvaluateExportStalenessUseCase,
+    private readonly telemetryRegistry: ITelemetryRegistry = TelemetryProvider.default
   ) {
     this.evaluateExportStalenessUseCase =
       evaluateExportStalenessUseCase ??
@@ -565,6 +571,33 @@ export class ExportBacklogUseCase {
         rejected: items.filter((i) => i.status === 'rejected').length,
         failed: items.filter((i) => i.status === 'failed').length
       };
+
+      for (const item of items) {
+        this.telemetryRegistry.incrementCounter('solutions_studio_backlog_exports_total', {
+          provider: providerId,
+          outcome: item.status
+        });
+      }
+
+      OperationalLogger.log('backlog.export.completed', {
+        provider: providerId,
+        targetContainer: input.targetContainer,
+        baselineId: baseline.id,
+        total: summary.total,
+        created: summary.created,
+        updated: summary.updated,
+        unchanged: summary.unchanged,
+        skippedStale: summary.skippedStale,
+        rejected: summary.rejected,
+        failed: summary.failed
+      });
+
+      OperationalLogger.log('command.executed', {
+        command: 'export_backlog',
+        baselineId: baseline.id,
+        provider: providerId,
+        targetContainer: input.targetContainer
+      });
 
       return {
         baselineId: baseline.id,

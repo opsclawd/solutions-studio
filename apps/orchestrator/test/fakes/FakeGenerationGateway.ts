@@ -1,7 +1,8 @@
 import type {
   IGenerationGateway,
   GenerationRequest,
-  GenerationResult
+  GenerationResult,
+  GenerationHealthReport
 } from '../../src/application/ports/generation/IGenerationGateway.js';
 
 export type ScriptedResponse =
@@ -59,8 +60,27 @@ export class FakeGenerationGateway implements IGenerationGateway {
     };
   }
 
+  private healthReport: GenerationHealthReport = {
+    status: 'healthy',
+    provider: 'fake',
+    available: true
+  };
+
+  setHealthReport(report: GenerationHealthReport): void {
+    this.healthReport = report;
+  }
+
+  async checkHealth(): Promise<GenerationHealthReport> {
+    return this.healthReport;
+  }
+
   reset(): void {
     this.recordedRequests = [];
     this.responseQueue = [];
+    this.healthReport = {
+      status: 'healthy',
+      provider: 'fake',
+      available: true
+    };
   }
 }
