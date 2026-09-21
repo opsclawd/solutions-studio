@@ -27,6 +27,7 @@ import {
   UnknownPolicyConstraintRevisionError
 } from './ReconciliationErrors.js';
 import { resolveRevisionLineage, selectBlockingFindings } from './resolveRevisionLineage.js';
+import { OperationalLogger } from '../ports/observability/index.js';
 
 export interface CreateRequirementsBaselineInput {
   readonly id?: RequirementsBaselineId | string;
@@ -166,6 +167,12 @@ export class CreateRequirementsBaselineUseCase {
       proposedIds,
       proposedPolicyIds
     );
+
+    OperationalLogger.log('command.executed', {
+      command: 'create_baseline',
+      baselineId: baseline.id,
+      requirementRevisionCount: baseline.requirementRevisions.length
+    });
 
     return baseline;
   }

@@ -15,7 +15,10 @@ import {
   now
 } from '@solutions-studio/domain';
 import { FilesystemRequirementsRepository } from '../../infrastructure/persistence/filesystem/FilesystemRequirementsRepository.js';
-import { ImmutableRecordConflictError } from '../ports/persistence/IRequirementsRepository.js';
+import {
+  ImmutableRecordConflictError,
+  type IRequirementsRepository
+} from '../ports/persistence/IRequirementsRepository.js';
 import type {
   IGenerationGateway,
   GenerationResult
@@ -45,6 +48,7 @@ export interface Phase2ExitGateAdapter {
   createGenerationGateway?(): ScriptableGenerationGateway | IGenerationGateway;
   createMermaidLinterGateway?(): IMermaidLinterGateway;
   createPrototypeValidatorGateway?(): IPrototypeValidatorGateway;
+  createRepository?(storeDir: string): IRequirementsRepository | Promise<IRequirementsRepository>;
 }
 
 export interface Phase2ExitGateOptions {
@@ -248,7 +252,9 @@ export async function runPhase2ExitGate(
     log(`Mode: ${executionMode} | Provider: ${provider} | Model: ${options.model ?? 'default'}`);
     log('========================================================================\n');
 
-    const repo = new FilesystemRequirementsRepository({ baseDir: storeDir });
+    const repo = options.adapter?.createRepository
+      ? await options.adapter.createRepository(storeDir)
+      : new FilesystemRequirementsRepository({ baseDir: storeDir });
     const reconcileUseCase = new ReconcileRequirementsUseCase(repo);
     const baselineUseCase = new CreateRequirementsBaselineUseCase(repo);
     const reviewStateUseCase = new GetRequirementsReviewStateUseCase(repo);
@@ -690,7 +696,9 @@ export async function runPhase2ExitGate(
     // ------------------------------------------------------------------------
     log('[10/10] Verifying historical immutability, isolation, and process-restart durability...');
     // Discard in-memory repository and reload state from disk
-    const restartedRepo = new FilesystemRequirementsRepository({ baseDir: storeDir });
+    const restartedRepo = options.adapter?.createRepository
+      ? await options.adapter.createRepository(storeDir)
+      : new FilesystemRequirementsRepository({ baseDir: storeDir });
     const restartedReviewStateUseCase = new GetRequirementsReviewStateUseCase(restartedRepo);
 
     // 1. Verify BASE-001 remains completely untouched

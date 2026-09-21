@@ -2,12 +2,27 @@ import type {
   EngineeringHandoffBundleDto,
   StoryDependencyGraphDto,
   StoryDto,
-  UpdateStoryDependenciesRequestDto
+  UpdateStoryDependenciesRequestDto,
+  CandidatePromotionStatusDto,
+  ValidationRunRecordDto,
+  CandidateApprovalRecordDto,
+  CreateApprovalRequestDto,
+  RevokeApprovalRequestDto,
+  GovernanceAuditExportDto,
+  BaselineExportStalenessReportDto,
+  ExportBacklogRequestDto,
+  ExportBacklogResponseDto
 } from '@solutions-studio/contracts';
 import {
   EngineeringHandoffBundleDtoSchema,
   StoryDependencyGraphDtoSchema,
-  StoryDtoSchema
+  StoryDtoSchema,
+  CandidatePromotionStatusDtoSchema,
+  ValidationRunRecordDtoSchema,
+  CandidateApprovalRecordDtoSchema,
+  GovernanceAuditExportDtoSchema,
+  BaselineExportStalenessReportDtoSchema,
+  ExportBacklogResponseDtoSchema
 } from '@solutions-studio/contracts';
 import { apiClient } from '@/features/review/api/client';
 import { listBaselines as listBaselinesFromApi } from '@/features/review/api/baselinesApi';
@@ -70,4 +85,130 @@ export async function listAvailableBaselines(): Promise<string[]> {
   } catch {
     return [];
   }
+}
+
+export async function getCurrentCandidateSha(): Promise<string | undefined> {
+  try {
+    const data = await apiClient<{ candidateSha: string }>(`/api/governance/current-candidate`, {
+      method: 'GET'
+    });
+    return data?.candidateSha;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function getCandidatePromotionStatus(
+  candidateSha: string
+): Promise<CandidatePromotionStatusDto> {
+  const data = await apiClient<CandidatePromotionStatusDto>(
+    `/api/governance/candidates/${encodeURIComponent(candidateSha)}/status`,
+    {
+      method: 'GET'
+    }
+  );
+  return CandidatePromotionStatusDtoSchema.parse(data);
+}
+
+export async function listValidationRuns(candidateSha: string): Promise<ValidationRunRecordDto[]> {
+  const data = await apiClient<ValidationRunRecordDto[]>(
+    `/api/governance/candidates/${encodeURIComponent(candidateSha)}/validation-runs`,
+    {
+      method: 'GET'
+    }
+  );
+  return (data ?? []).map((item) => ValidationRunRecordDtoSchema.parse(item));
+}
+
+export async function listGovernanceApprovals(
+  candidateSha: string
+): Promise<CandidateApprovalRecordDto[]> {
+  const data = await apiClient<CandidateApprovalRecordDto[]>(
+    `/api/governance/candidates/${encodeURIComponent(candidateSha)}/approvals`,
+    {
+      method: 'GET'
+    }
+  );
+  return (data ?? []).map((item) => CandidateApprovalRecordDtoSchema.parse(item));
+}
+
+export async function createGovernanceApproval(
+  input: CreateApprovalRequestDto
+): Promise<CandidateApprovalRecordDto> {
+  const data = await apiClient<CandidateApprovalRecordDto>(`/api/governance/approvals`, {
+    method: 'POST',
+    body: JSON.stringify(input)
+  });
+  return CandidateApprovalRecordDtoSchema.parse(data);
+}
+
+export async function revokeGovernanceApproval(
+  approvalId: string,
+  rationale: string
+): Promise<CandidateApprovalRecordDto> {
+  const payload: RevokeApprovalRequestDto = {
+    rationale
+  };
+  const data = await apiClient<CandidateApprovalRecordDto>(
+    `/api/governance/approvals/${encodeURIComponent(approvalId)}/revoke`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }
+  );
+  return CandidateApprovalRecordDtoSchema.parse(data);
+}
+
+export async function exportGovernanceAudit(
+  candidateSha: string
+): Promise<GovernanceAuditExportDto> {
+  const data = await apiClient<GovernanceAuditExportDto>(
+    `/api/governance/audit/export?candidateSha=${encodeURIComponent(candidateSha)}`,
+    {
+      method: 'GET'
+    }
+  );
+  return GovernanceAuditExportDtoSchema.parse(data);
+}
+
+export async function getExportStaleness(
+  baselineId: string,
+  options?: {
+    provider?: string;
+    targetContainer?: string;
+    storyIds?: string[];
+  }
+): Promise<BaselineExportStalenessReportDto> {
+  const params = new URLSearchParams();
+  if (options?.provider) {
+    params.set('provider', options.provider);
+  }
+  if (options?.targetContainer) {
+    params.set('targetContainer', options.targetContainer);
+  }
+  if (options?.storyIds && options.storyIds.length > 0) {
+    params.set('storyIds', options.storyIds.join(','));
+  }
+  const query = params.toString() ? `?${params.toString()}` : '';
+  const data = await apiClient<BaselineExportStalenessReportDto>(
+    `/api/baselines/${encodeURIComponent(baselineId)}/export/backlog/staleness${query}`,
+    {
+      method: 'GET'
+    }
+  );
+  return BaselineExportStalenessReportDtoSchema.parse(data);
+}
+
+export async function exportBacklog(
+  baselineId: string,
+  payload: ExportBacklogRequestDto
+): Promise<ExportBacklogResponseDto> {
+  const data = await apiClient<ExportBacklogResponseDto>(
+    `/api/baselines/${encodeURIComponent(baselineId)}/export/backlog`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }
+  );
+  return ExportBacklogResponseDtoSchema.parse(data);
 }

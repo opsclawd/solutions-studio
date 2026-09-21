@@ -15,6 +15,16 @@
       "types": "./src/requirements/index.ts",
       "import": "./dist/src/requirements/index.js",
       "default": "./dist/src/requirements/index.js"
+    },
+    "./identity": {
+      "types": "./src/identity/index.ts",
+      "import": "./dist/src/identity/index.js",
+      "default": "./dist/src/identity/index.js"
+    },
+    "./backlog": {
+      "types": "./src/backlog/index.ts",
+      "import": "./dist/src/backlog/index.js",
+      "default": "./dist/src/backlog/index.js"
     }
   },
   "scripts": {

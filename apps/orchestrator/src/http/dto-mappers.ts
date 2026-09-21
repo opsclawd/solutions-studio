@@ -7,7 +7,9 @@ import type {
   AuthorityBundle,
   StoryReadinessReport,
   BaselineRequirementCoverage,
-  StoryDependencyGraph
+  StoryDependencyGraph,
+  BacklogExportMapping,
+  BaselineExportStalenessReport
 } from '@solutions-studio/domain';
 import type {
   RequirementRevisionDto,
@@ -24,7 +26,9 @@ import type {
   StoryReadinessReportDto,
   BaselineRequirementCoverageDto,
   StoryDependencyGraphDto,
-  EngineeringHandoffBundleDto
+  EngineeringHandoffBundleDto,
+  BacklogExportMappingDto,
+  BaselineExportStalenessReportDto
 } from '@solutions-studio/contracts';
 import type {
   ReconciliationRecord,
@@ -358,6 +362,127 @@ export function mapEngineeringHandoffBundleToDto(
     dependencyGraph: mapStoryDependencyGraphToDto(bundle.dependencyGraph),
     blockingFindings: bundle.blockingFindings.map(mapCandidateFindingToDto),
     unresolvedRequirements: bundle.unresolvedRequirements.map(mapRequirementRevisionToDto),
-    summary: { ...bundle.summary }
+    summary: { ...bundle.summary },
+    exportMappings: bundle.exportMappings?.map(mapBacklogExportMappingToDto),
+    stalenessSummary: bundle.stalenessSummary
+  };
+}
+
+export function mapBacklogExportMappingToDto(
+  mapping: BacklogExportMapping
+): BacklogExportMappingDto {
+  return {
+    id: mapping.id,
+    storyId: mapping.storyId,
+    baselineId: mapping.baselineId,
+    provider: mapping.provider,
+    externalContainer: mapping.externalContainer,
+    externalWorkItemId: mapping.externalWorkItemId,
+    externalUrl: mapping.externalUrl,
+    exportContentHash: mapping.exportContentHash,
+    exportContentHashVersion: mapping.exportContentHashVersion ?? 1,
+    prerequisiteExportVersions: mapping.prerequisiteExportVersions
+      ? { ...mapping.prerequisiteExportVersions }
+      : undefined,
+    exportedAt: mapping.exportedAt,
+    exportedBy: mapping.exportedBy,
+    exportVersion: mapping.exportVersion,
+    storyVersion: mapping.storyVersion,
+    requirementRevisionIds: mapping.requirementRevisionIds
+      ? [...mapping.requirementRevisionIds]
+      : [],
+    policyConstraintRevisionIds: mapping.policyConstraintRevisionIds
+      ? [...mapping.policyConstraintRevisionIds]
+      : undefined,
+    history: (mapping.history ?? []).map((h) => ({
+      exportVersion: h.exportVersion,
+      storyVersion: h.storyVersion,
+      baselineId: h.baselineId,
+      exportContentHash: h.exportContentHash,
+      exportContentHashVersion: h.exportContentHashVersion ?? 1,
+      prerequisiteExportVersions: h.prerequisiteExportVersions
+        ? { ...h.prerequisiteExportVersions }
+        : undefined,
+      requirementRevisionIds: [...h.requirementRevisionIds],
+      policyConstraintRevisionIds: h.policyConstraintRevisionIds
+        ? [...h.policyConstraintRevisionIds]
+        : undefined,
+      exportedAt: h.exportedAt,
+      exportedBy: h.exportedBy,
+      externalWorkItemId: h.externalWorkItemId,
+      externalUrl: h.externalUrl,
+      updateRationale: h.updateRationale
+    })),
+    metadata: mapping.metadata ? { ...mapping.metadata } : undefined
+  };
+}
+
+export function mapBaselineExportStalenessReportToDto(
+  report: BaselineExportStalenessReport
+): BaselineExportStalenessReportDto {
+  return {
+    baselineId: report.baselineId,
+    totalStories: report.totalStories,
+    currentCount: report.currentCount,
+    staleCount: report.staleCount,
+    impactedCount: report.impactedCount,
+    unexportedCount: report.unexportedCount,
+    stories: report.stories.map((s) => ({
+      storyId: s.storyId,
+      classification: s.classification,
+      causes: s.causes.map((c) => ({
+        category: c.category,
+        message: c.message,
+        entityId: c.entityId,
+        exportedRevision: c.exportedRevision,
+        currentRevision: c.currentRevision
+      })),
+      exportedLineage: s.exportedLineage
+        ? {
+            baselineId: s.exportedLineage.baselineId,
+            storyVersion: s.exportedLineage.storyVersion,
+            exportVersion: s.exportedLineage.exportVersion,
+            exportContentHash: s.exportedLineage.exportContentHash,
+            exportContentHashVersion: s.exportedLineage.exportContentHashVersion ?? 1,
+            prerequisiteExportVersions: s.exportedLineage.prerequisiteExportVersions
+              ? { ...s.exportedLineage.prerequisiteExportVersions }
+              : undefined,
+            exportedAt: s.exportedLineage.exportedAt,
+            externalWorkItemId: s.exportedLineage.externalWorkItemId,
+            externalUrl: s.exportedLineage.externalUrl
+          }
+        : undefined,
+      impactedByPrerequisiteStoryIds: [...s.impactedByPrerequisiteStoryIds],
+      currentContentHash: s.currentContentHash,
+      history: (s.history ?? []).map((h) => ({
+        exportVersion: h.exportVersion,
+        baselineId: h.baselineId,
+        storyVersion: h.storyVersion,
+        requirementRevisionIds: [...h.requirementRevisionIds],
+        policyConstraintRevisionIds: h.policyConstraintRevisionIds
+          ? [...h.policyConstraintRevisionIds]
+          : undefined,
+        exportContentHash: h.exportContentHash,
+        exportContentHashVersion: h.exportContentHashVersion ?? 1,
+        prerequisiteExportVersions: h.prerequisiteExportVersions
+          ? { ...h.prerequisiteExportVersions }
+          : undefined,
+        exportedAt: h.exportedAt,
+        exportedBy: h.exportedBy,
+        externalWorkItemId: h.externalWorkItemId,
+        externalUrl: h.externalUrl,
+        updateRationale: h.updateRationale
+      })),
+      advisorySemanticImpact: s.advisorySemanticImpact
+        ? {
+            isAdvisoryOnly: s.advisorySemanticImpact.isAdvisoryOnly,
+            storyId: s.advisorySemanticImpact.storyId,
+            semanticRiskLevel: s.advisorySemanticImpact.semanticRiskLevel,
+            reasoning: s.advisorySemanticImpact.reasoning,
+            suggestedActions: [...s.advisorySemanticImpact.suggestedActions],
+            modelAssisted: s.advisorySemanticImpact.modelAssisted
+          }
+        : undefined
+    }))
   };
 }

@@ -9,9 +9,11 @@
       "pnpm format",
       "pnpm -r --if-present test",
       "pnpm --filter @solutions-studio/orchestrator test:integration",
+      "pnpm --filter @solutions-studio/orchestrator test:integration:phase4",
       "pnpm --filter @solutions-studio/orchestrator exit-gate:phase1",
       "pnpm --filter @solutions-studio/orchestrator exit-gate:phase2",
       "pnpm --filter @solutions-studio/orchestrator exit-gate:phase3",
+      "pnpm --filter @solutions-studio/orchestrator exit-gate:phase4",
       "pnpm test:browser"
     ],
     "tiers": [
@@ -24,9 +26,11 @@
         "pnpm format",
         "pnpm -r --if-present test",
         "pnpm --filter @solutions-studio/orchestrator test:integration",
+        "pnpm --filter @solutions-studio/orchestrator test:integration:phase4",
         "pnpm --filter @solutions-studio/orchestrator exit-gate:phase1",
         "pnpm --filter @solutions-studio/orchestrator exit-gate:phase2",
         "pnpm --filter @solutions-studio/orchestrator exit-gate:phase3",
+        "pnpm --filter @solutions-studio/orchestrator exit-gate:phase4",
         "pnpm test:browser"
       ]
     ],

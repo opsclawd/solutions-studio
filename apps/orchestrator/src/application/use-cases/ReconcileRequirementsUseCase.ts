@@ -33,6 +33,7 @@ import {
   UnknownCandidateFindingError,
   UnknownRequirementRevisionError
 } from './ReconciliationErrors.js';
+import { OperationalLogger } from '../ports/observability/index.js';
 
 export interface AcceptRequirementInput {
   readonly revisionId: RequirementRevisionId | string;
@@ -177,6 +178,11 @@ export class ReconcileRequirementsUseCase {
       target.id
     );
 
+    OperationalLogger.log('command.executed', {
+      command: 'accept_requirement',
+      entityId: target.requirementId
+    });
+
     return successor;
   }
 
@@ -229,6 +235,11 @@ export class ReconcileRequirementsUseCase {
       },
       target.id
     );
+
+    OperationalLogger.log('command.executed', {
+      command: 'reject_requirement',
+      entityId: target.requirementId
+    });
 
     return successor;
   }
@@ -326,6 +337,11 @@ export class ReconcileRequirementsUseCase {
       target.id
     );
 
+    OperationalLogger.log('command.executed', {
+      command: 'revise_requirement',
+      entityId: target.requirementId
+    });
+
     return successor;
   }
 
@@ -379,6 +395,11 @@ export class ReconcileRequirementsUseCase {
       },
       target.id
     );
+
+    OperationalLogger.log('command.executed', {
+      command: 'resolve_requirement',
+      entityId: target.requirementId
+    });
 
     return successor;
   }
@@ -434,6 +455,12 @@ export class ReconcileRequirementsUseCase {
       target.disposition
     );
 
+    OperationalLogger.log('command.executed', {
+      command: 'disposition_finding',
+      entityId: target.id,
+      disposition: input.disposition
+    });
+
     return updated;
   }
 
@@ -466,6 +493,11 @@ export class ReconcileRequirementsUseCase {
       },
       target.disposition
     );
+
+    OperationalLogger.log('command.executed', {
+      command: 'reopen_finding',
+      entityId: target.id
+    });
 
     return updated;
   }

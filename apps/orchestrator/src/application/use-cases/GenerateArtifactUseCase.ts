@@ -1,11 +1,18 @@
 import type { IGenerationGateway } from '../ports/generation/IGenerationGateway.js';
 import type { IMermaidLinterGateway } from '../ports/validation/IMermaidLinterGateway.js';
+import {
+  type ITelemetryRegistry,
+  type IOperationalLogger,
+  TelemetryProvider,
+  OperationalLogger
+} from '../ports/observability/index.js';
 import { RepairRetryExhaustionError } from './RepairErrors.js';
 
 export { RepairRetryExhaustionError } from './RepairErrors.js';
 
 export interface GenerateArtifactOptions {
   maxRepairAttempts?: number;
+  artifactType?: string;
 }
 
 export interface RepairAttemptRecord {
@@ -25,7 +32,9 @@ export class GenerateArtifactUseCase {
 
   constructor(
     private readonly generationGateway: IGenerationGateway,
-    private readonly linterGateway: IMermaidLinterGateway
+    private readonly linterGateway: IMermaidLinterGateway,
+    private readonly telemetryRegistry?: ITelemetryRegistry,
+    private readonly operationalLogger?: IOperationalLogger
   ) {}
 
   /**
@@ -35,9 +44,71 @@ export class GenerateArtifactUseCase {
     prompt: string,
     options?: GenerateArtifactOptions
   ): Promise<ArtifactGenerationResult> {
-    const initialGeneration = await this.generationGateway.generate({ prompt });
-    const cleanedCandidate = this.extractMermaidContent(initialGeneration.text);
-    return this.validateAndRepair(cleanedCandidate, options);
+    const start = Date.now();
+    const artifactType = options?.artifactType ?? 'mermaid';
+    const reg = this.telemetryRegistry ?? TelemetryProvider.default;
+
+    try {
+      const initialGeneration = await this.generationGateway.generate({ prompt });
+      const cleanedCandidate = this.extractMermaidContent(initialGeneration.text);
+      const result = await this.validateAndRepair(cleanedCandidate, options);
+      const durationMs = Date.now() - start;
+      const provider = initialGeneration.metadata?.provider ?? 'default';
+      const model = initialGeneration.metadata?.model ?? 'default';
+
+      (this.operationalLogger ?? OperationalLogger).log('generation.call.completed', {
+        provider,
+        model,
+        artifactType,
+        promptLengthBytes: Buffer.byteLength(prompt, 'utf8'),
+        repairsNeeded: result.repairsNeeded,
+        attemptCount: 1 + result.repairsNeeded,
+        durationMs,
+        status: 'success'
+      });
+
+      reg.incrementCounter('solutions_studio_generation_calls_total', {
+        provider,
+        artifact_type: artifactType,
+        status: 'success'
+      });
+      reg.observeHistogram('solutions_studio_generation_duration_ms', durationMs, {
+        provider,
+        artifact_type: artifactType
+      });
+      if (result.repairsNeeded > 0) {
+        reg.incrementCounter(
+          'solutions_studio_generation_repairs_total',
+          {
+            provider,
+            artifact_type: artifactType
+          },
+          result.repairsNeeded
+        );
+      }
+
+      return result;
+    } catch (err) {
+      const durationMs = Date.now() - start;
+      (this.operationalLogger ?? OperationalLogger).log(
+        'generation.call.completed',
+        {
+          provider: 'default',
+          artifactType,
+          promptLengthBytes: Buffer.byteLength(prompt, 'utf8'),
+          durationMs,
+          status: 'failed'
+        },
+        { level: 'error' }
+      );
+
+      reg.incrementCounter('solutions_studio_generation_calls_total', {
+        provider: 'default',
+        artifact_type: artifactType,
+        status: 'failed'
+      });
+      throw err;
+    }
   }
 
   /**
@@ -54,9 +125,27 @@ export class GenerateArtifactUseCase {
     const maxAttempts = options?.maxRepairAttempts ?? this.defaultMaxRepairAttempts;
     let currentCandidate = this.extractMermaidContent(initialCandidate);
     const repairHistory: RepairAttemptRecord[] = [];
+    const reg = this.telemetryRegistry ?? TelemetryProvider.default;
 
     // Step 1: Initial validation
+    const valStart1 = Date.now();
     const initialValidation = await this.linterGateway.validate(currentCandidate);
+    const valDuration1 = Date.now() - valStart1;
+
+    (this.operationalLogger ?? OperationalLogger).log('validation.executed', {
+      validatorType: 'mermaid',
+      isValid: initialValidation.isValid,
+      errorCount: initialValidation.isValid ? 0 : 1,
+      durationMs: valDuration1
+    });
+
+    if (!initialValidation.isValid) {
+      reg.incrementCounter('solutions_studio_validation_failures_total', {
+        validator_type: 'mermaid',
+        error_category: 'syntax'
+      });
+    }
+
     if (initialValidation.isValid) {
       return {
         content: currentCandidate,
@@ -83,7 +172,23 @@ export class GenerateArtifactUseCase {
       });
 
       currentCandidate = this.extractMermaidContent(repairResult.text);
+      const valStart2 = Date.now();
       const validation = await this.linterGateway.validate(currentCandidate);
+      const valDuration2 = Date.now() - valStart2;
+
+      (this.operationalLogger ?? OperationalLogger).log('validation.executed', {
+        validatorType: 'mermaid',
+        isValid: validation.isValid,
+        errorCount: validation.isValid ? 0 : 1,
+        durationMs: valDuration2
+      });
+
+      if (!validation.isValid) {
+        reg.incrementCounter('solutions_studio_validation_failures_total', {
+          validator_type: 'mermaid',
+          error_category: 'syntax'
+        });
+      }
 
       if (validation.isValid) {
         return {

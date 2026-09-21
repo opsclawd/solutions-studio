@@ -1,6 +1,7 @@
 import type { ApiErrorDto, ApiErrorCode } from '@solutions-studio/contracts';
 import { ApiErrorDtoSchema } from '@solutions-studio/contracts';
 import { getOrchestratorBaseUrl } from './config';
+import { getAuthToken } from '../../auth/tokenStore';
 
 export class ApiError extends Error {
   readonly code: ApiErrorCode;
@@ -33,6 +34,19 @@ export async function apiClient<T>(
   const headers = new Headers(options?.headers);
   if (options?.body && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
+  }
+  if (!headers.has('Authorization')) {
+    const token = getAuthToken();
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+  }
+  if (!headers.has('X-Correlation-ID') && !headers.has('x-correlation-id')) {
+    const correlationId =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? `c-${crypto.randomUUID()}`
+        : `c-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    headers.set('X-Correlation-ID', correlationId);
   }
 
   let response: Response;

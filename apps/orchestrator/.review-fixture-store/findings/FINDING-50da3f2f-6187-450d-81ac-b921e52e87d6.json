@@ -1,0 +1,14 @@
+{
+  "id": "FINDING-50da3f2f-6187-450d-81ac-b921e52e87d6",
+  "type": "incomplete-state-machine",
+  "affectedRequirementRevisions": [
+    "REQ-002-R1"
+  ],
+  "evidence": [],
+  "discoveredBy": "artifact-validation",
+  "disposition": "OPEN",
+  "rationale": "Prototype demonstrates that error state transitions freeze the form without recovery",
+  "actorId": "lead-reviewer",
+  "baselineId": "BASE-001",
+  "originatingProjectionId": "PROJ-002"
+}

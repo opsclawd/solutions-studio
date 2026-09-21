@@ -25,13 +25,22 @@ import type {
   RequirementReconciliationAction,
   StoryId,
   StoryNarrative,
-  GherkinScenario
+  GherkinScenario,
+  ValidationRunRecord,
+  ValidationRunId,
+  CandidateApprovalRecord,
+  GovernanceApprovalId,
+  GovernanceApprovalStatus,
+  BacklogExportMapping,
+  BacklogExportMappingId,
+  BacklogExportHistoryEntry
 } from '@solutions-studio/domain';
 import type {
   ProjectionMetadataDto,
   EvaluationFixtureResultDto,
   EvaluationReportDto
 } from '@solutions-studio/contracts';
+import type { StorageHealthReport } from './IStorageHealthCheck.js';
 
 export interface LocatorIndexEntry {
   readonly locator: EvidenceLocator;
@@ -107,6 +116,7 @@ export interface ProjectionRecord {
   readonly content: string;
   readonly metadata: ProjectionMetadataDto;
   readonly createdAt: Instant;
+  readonly version?: number;
 }
 
 export interface StoryRecord {
@@ -123,6 +133,7 @@ export interface StoryRecord {
   readonly metadata: ProjectionMetadataDto;
   readonly createdAt: Instant;
   readonly dependencies?: readonly StoryId[];
+  readonly version?: number;
 }
 
 export class ImmutableRecordConflictError extends Error {
@@ -208,13 +219,63 @@ export interface IRequirementsRepository {
   getEvaluationRun(id: string): Promise<EvaluationRunRecord | undefined>;
   listEvaluationRuns(): Promise<readonly EvaluationRunRecord[]>;
   saveProjectionRecord(projection: ProjectionRecord): Promise<void>;
-  updateProjectionRecord(projection: ProjectionRecord): Promise<void>;
+  updateProjectionRecord(projection: ProjectionRecord, expectedVersion?: number): Promise<void>;
   getProjectionRecord(id: string): Promise<ProjectionRecord | undefined>;
   listProjectionRecords(baselineId?: RequirementsBaselineId): Promise<readonly ProjectionRecord[]>;
   saveStory(story: StoryRecord): Promise<void>;
-  updateStory(story: StoryRecord): Promise<void>;
-  updateStoryAndProjection(story: StoryRecord, projection: ProjectionRecord): Promise<void>;
+  updateStory(story: StoryRecord, expectedVersion?: number): Promise<void>;
+  updateStoryAndProjection(
+    story: StoryRecord,
+    projection: ProjectionRecord,
+    options?: { expectedStoryVersion?: number; expectedProjectionVersion?: number }
+  ): Promise<void>;
   getStory(id: StoryId): Promise<StoryRecord | undefined>;
   listStories(baselineId?: RequirementsBaselineId): Promise<readonly StoryRecord[]>;
   withBaselineLock<T>(baselineId: RequirementsBaselineId, action: () => Promise<T>): Promise<T>;
+  saveValidationRun(run: ValidationRunRecord): Promise<void>;
+  getValidationRun(id: ValidationRunId | string): Promise<ValidationRunRecord | undefined>;
+  listValidationRuns(filter?: { candidateSha?: string }): Promise<readonly ValidationRunRecord[]>;
+  getLatestValidationRun(candidateSha: string): Promise<ValidationRunRecord | undefined>;
+  saveGovernanceApproval(approval: CandidateApprovalRecord): Promise<void>;
+  getGovernanceApproval(
+    id: GovernanceApprovalId | string
+  ): Promise<CandidateApprovalRecord | undefined>;
+  listGovernanceApprovals(filter?: {
+    candidateSha?: string;
+    validationRunId?: string;
+  }): Promise<readonly CandidateApprovalRecord[]>;
+  getActiveGovernanceApproval(candidateSha: string): Promise<CandidateApprovalRecord | undefined>;
+  updateGovernanceApproval(
+    approval: CandidateApprovalRecord,
+    expectedCurrentStatus?: GovernanceApprovalStatus
+  ): Promise<void>;
+  replaceGovernanceApproval(
+    newApproval: CandidateApprovalRecord,
+    expectedActiveApprovalId?: string
+  ): Promise<void>;
+  saveBacklogExportMapping(mapping: BacklogExportMapping): Promise<void>;
+  getBacklogExportMapping(
+    id: BacklogExportMappingId | string
+  ): Promise<BacklogExportMapping | undefined>;
+  findBacklogExportMapping(filter: {
+    provider: string;
+    externalContainer: string;
+    storyId: StoryId | string;
+  }): Promise<BacklogExportMapping | undefined>;
+  listBacklogExportMappings(filter?: {
+    baselineId?: RequirementsBaselineId | string;
+    storyId?: StoryId | string;
+    provider?: string;
+    externalContainer?: string;
+  }): Promise<readonly BacklogExportMapping[]>;
+  updateBacklogExportMapping(mapping: BacklogExportMapping): Promise<void>;
+  listBacklogExportHistory?(
+    mappingId: BacklogExportMappingId | string
+  ): Promise<readonly BacklogExportHistoryEntry[]>;
+  withBacklogExportLock?<T>(
+    key: { provider: string; externalContainer: string; storyId: StoryId | string },
+    action: () => Promise<T>
+  ): Promise<T>;
+  checkStorageHealth?(): Promise<StorageHealthReport>;
+  checkHealth?(): Promise<StorageHealthReport>;
 }

@@ -225,4 +225,86 @@ export class OpenCodeCliAdapter implements IGenerationGateway {
   private stripThinkingBlocks(text: string): string {
     return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
   }
+
+  async checkHealth(): Promise<{
+    status: 'healthy' | 'unhealthy' | 'degraded';
+    provider: string;
+    available: boolean;
+    latencyMs?: number;
+    error?: string;
+  }> {
+    const start = Date.now();
+    return new Promise((resolve) => {
+      let resolved = false;
+      const done = (report: {
+        status: 'healthy' | 'unhealthy' | 'degraded';
+        provider: string;
+        available: boolean;
+        latencyMs?: number;
+        error?: string;
+      }) => {
+        if (!resolved) {
+          resolved = true;
+          resolve(report);
+        }
+      };
+
+      try {
+        const child = spawn(this.executablePath, ['--version'], {
+          cwd: this.cwd,
+          stdio: ['ignore', 'pipe', 'pipe']
+        });
+
+        const timer = setTimeout(() => {
+          child.kill();
+          done({
+            status: 'unhealthy',
+            provider: 'opencode',
+            available: false,
+            latencyMs: Date.now() - start,
+            error: `Timeout probing executable '${this.executablePath}'`
+          });
+        }, 3000);
+
+        child.on('error', (err) => {
+          clearTimeout(timer);
+          done({
+            status: 'unhealthy',
+            provider: 'opencode',
+            available: false,
+            latencyMs: Date.now() - start,
+            error: `Executable '${this.executablePath}' not found or cannot be spawned: ${err.message}`
+          });
+        });
+
+        child.on('close', (code) => {
+          clearTimeout(timer);
+          if (code === 0) {
+            done({
+              status: 'healthy',
+              provider: 'opencode',
+              available: true,
+              latencyMs: Date.now() - start
+            });
+          } else {
+            done({
+              status: 'unhealthy',
+              provider: 'opencode',
+              available: false,
+              latencyMs: Date.now() - start,
+              error: `Executable '${this.executablePath}' exited with code ${code}`
+            });
+          }
+        });
+      } catch (err) {
+        done({
+          status: 'unhealthy',
+          provider: 'opencode',
+          available: false,
+          latencyMs: Date.now() - start,
+          error: (err as Error).message
+        });
+      }
+    });
+  }
 }

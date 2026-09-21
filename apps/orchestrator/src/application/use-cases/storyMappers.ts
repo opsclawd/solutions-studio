@@ -53,6 +53,7 @@ export function mapStoryRecordToDomainStory(record: StoryRecord): Story {
         : ['AC1'],
     gherkinText: record.gherkinText,
     dependencies: record.dependencies,
+    version: record.version,
     createdAt: record.createdAt
   });
 }

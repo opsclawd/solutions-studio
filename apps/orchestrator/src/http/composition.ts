@@ -2,6 +2,8 @@ import path from 'node:path';
 import { existsSync } from 'node:fs';
 import type { FastifyInstance, FastifyServerOptions } from 'fastify';
 import type { IRequirementsRepository } from '../application/ports/persistence/IRequirementsRepository.js';
+import type { ISqlDatabaseClient } from '../application/ports/persistence/ISqlDatabaseClient.js';
+import type { IObjectStore } from '../application/ports/persistence/IObjectStore.js';
 import type { IGenerationGateway } from '../application/ports/generation/IGenerationGateway.js';
 import type { IMermaidLinterGateway } from '../application/ports/validation/IMermaidLinterGateway.js';
 import type { IPrototypeValidatorGateway } from '../application/ports/validation/IPrototypeValidatorGateway.js';
@@ -31,7 +33,21 @@ import { GetEngineeringDecisionsUseCase } from '../application/use-cases/GetEngi
 import { BuildStoryDependencyGraphUseCase } from '../application/use-cases/BuildStoryDependencyGraphUseCase.js';
 import { UpdateStoryDependenciesUseCase } from '../application/use-cases/UpdateStoryDependenciesUseCase.js';
 import { GetEngineeringHandoffBundleUseCase } from '../application/use-cases/GetEngineeringHandoffBundleUseCase.js';
-import { FilesystemRequirementsRepository } from '../infrastructure/persistence/filesystem/FilesystemRequirementsRepository.js';
+import { RecordValidationRunUseCase } from '../application/use-cases/governance/RecordValidationRunUseCase.js';
+import { ApproveCandidateUseCase } from '../application/use-cases/governance/ApproveCandidateUseCase.js';
+import { EvaluateCandidatePromotionStatusUseCase } from '../application/use-cases/governance/EvaluateCandidatePromotionStatusUseCase.js';
+import { RevokeGovernanceApprovalUseCase } from '../application/use-cases/governance/RevokeGovernanceApprovalUseCase.js';
+import { ExportGovernanceAuditUseCase } from '../application/use-cases/governance/ExportGovernanceAuditUseCase.js';
+import { ExportBacklogUseCase } from '../application/use-cases/ExportBacklogUseCase.js';
+import { EvaluateExportStalenessUseCase } from '../application/use-cases/EvaluateExportStalenessUseCase.js';
+import { GetBacklogExportMappingsUseCase } from '../application/use-cases/GetBacklogExportMappingsUseCase.js';
+import { BacklogExportGatewayFactory } from '../infrastructure/backlog/BacklogExportGatewayFactory.js';
+import {
+  RepositoryFactory,
+  createRequirementsRepository
+} from '../infrastructure/persistence/RepositoryFactory.js';
+import { PostgresRequirementsRepository } from '../infrastructure/persistence/postgres/PostgresRequirementsRepository.js';
+import { SchemaMigrationRunner } from '../infrastructure/persistence/postgres/SchemaMigrationRunner.js';
 import {
   GatewayFactory,
   type ProviderType,
@@ -43,10 +59,38 @@ import { BabelTsxValidatorAdapter } from '../infrastructure/validation/BabelTsxV
 import { PGliteSqlValidatorAdapter } from '../infrastructure/validation/PGliteSqlValidatorAdapter.js';
 import { OpenApiStructuralValidatorAdapter } from '../infrastructure/validation/OpenApiStructuralValidatorAdapter.js';
 import { GherkinValidatorAdapter } from '../infrastructure/validation/GherkinValidatorAdapter.js';
+import type { IAuthenticator } from '../application/ports/identity/IAuthenticator.js';
+import type { IAuthorizationPolicy } from '../application/ports/identity/IAuthorizationPolicy.js';
+import { GenericOidcAuthenticator } from '../infrastructure/identity/GenericOidcAuthenticator.js';
+import { TestAuthenticator } from '../infrastructure/identity/TestAuthenticator.js';
+import { DefaultAuthorizationPolicy } from '../infrastructure/identity/DefaultAuthorizationPolicy.js';
+import type {
+  ITelemetryRegistry,
+  IOperationalLogger
+} from '../application/ports/observability/index.js';
+import {
+  TelemetryRegistry,
+  StructuredOperationalLogger
+} from '../infrastructure/observability/index.js';
+import { PruneRetentionUseCase } from '../application/use-cases/PruneRetentionUseCase.js';
+import { RetentionLifecyclePrunerAdapter } from '../infrastructure/persistence/lifecycle/RetentionLifecyclePrunerAdapter.js';
 import { buildServer } from './server.js';
 
 export interface ComposeHttpServerOptions {
   readonly storeDir?: string;
+  readonly connectionString?: string;
+  readonly dbClient?: ISqlDatabaseClient;
+  readonly objectStore?: IObjectStore;
+  readonly authenticator?: IAuthenticator;
+  readonly authorizer?: IAuthorizationPolicy;
+  readonly telemetryRegistry?: ITelemetryRegistry;
+  readonly operationalLogger?: IOperationalLogger;
+  readonly pruneRetentionUseCase?: PruneRetentionUseCase;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  readonly pool?: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  readonly clientFactory?: () => Promise<any> | any;
+  readonly autoMigrate?: boolean;
   readonly provider?: ProviderType;
   readonly timeoutMs?: number;
   readonly agyBinPath?: string;
@@ -84,6 +128,15 @@ export interface ComposeHttpServerOptions {
   readonly buildStoryDependencyGraphUseCase?: BuildStoryDependencyGraphUseCase;
   readonly updateStoryDependenciesUseCase?: UpdateStoryDependenciesUseCase;
   readonly getEngineeringHandoffBundleUseCase?: GetEngineeringHandoffBundleUseCase;
+  readonly recordValidationRunUseCase?: RecordValidationRunUseCase;
+  readonly approveCandidateUseCase?: ApproveCandidateUseCase;
+  readonly evaluateCandidatePromotionStatusUseCase?: EvaluateCandidatePromotionStatusUseCase;
+  readonly revokeGovernanceApprovalUseCase?: RevokeGovernanceApprovalUseCase;
+  readonly exportGovernanceAuditUseCase?: ExportGovernanceAuditUseCase;
+  readonly backlogGatewayFactory?: BacklogExportGatewayFactory;
+  readonly exportBacklogUseCase?: ExportBacklogUseCase;
+  readonly evaluateExportStalenessUseCase?: EvaluateExportStalenessUseCase;
+  readonly getBacklogExportMappingsUseCase?: GetBacklogExportMappingsUseCase;
 }
 
 export interface ComposedHttpServer {
@@ -111,6 +164,13 @@ export interface ComposedHttpServer {
   readonly buildStoryDependencyGraphUseCase: BuildStoryDependencyGraphUseCase;
   readonly updateStoryDependenciesUseCase: UpdateStoryDependenciesUseCase;
   readonly getEngineeringHandoffBundleUseCase: GetEngineeringHandoffBundleUseCase;
+  readonly recordValidationRunUseCase: RecordValidationRunUseCase;
+  readonly approveCandidateUseCase: ApproveCandidateUseCase;
+  readonly evaluateCandidatePromotionStatusUseCase: EvaluateCandidatePromotionStatusUseCase;
+  readonly revokeGovernanceApprovalUseCase: RevokeGovernanceApprovalUseCase;
+  readonly exportGovernanceAuditUseCase: ExportGovernanceAuditUseCase;
+  readonly exportBacklogUseCase: ExportBacklogUseCase;
+  readonly getBacklogExportMappingsUseCase: GetBacklogExportMappingsUseCase;
   readonly projectBaselineUseCase: ProjectBaselineUseCase;
   readonly reviewStateUseCase: GetRequirementsReviewStateUseCase;
   readonly recordDiscoveryUseCase: RecordRequirementsDiscoveryUseCase;
@@ -120,6 +180,11 @@ export interface ComposedHttpServer {
   readonly recordEngineeringDecisionUseCase: RecordEngineeringDecisionUseCase;
   readonly transitionEngineeringDecisionUseCase: TransitionEngineeringDecisionUseCase;
   readonly getEngineeringDecisionsUseCase: GetEngineeringDecisionsUseCase;
+  readonly authenticator: IAuthenticator;
+  readonly authorizer: IAuthorizationPolicy;
+  readonly telemetryRegistry: ITelemetryRegistry;
+  readonly operationalLogger: IOperationalLogger;
+  readonly pruneRetentionUseCase?: PruneRetentionUseCase;
 }
 
 export function composeOrchestratorHttpServer(
@@ -127,7 +192,20 @@ export function composeOrchestratorHttpServer(
 ): ComposedHttpServer {
   const storeDir = options.storeDir ?? path.resolve(process.cwd(), '.requirements-store');
   const repository =
-    options.repository ?? new FilesystemRequirementsRepository({ baseDir: storeDir });
+    options.repository ??
+    RepositoryFactory.createFromEnvironment({
+      baseDir: storeDir,
+      connectionString: options.connectionString,
+      dbClient: options.dbClient,
+      objectStore: options.objectStore,
+      pool: options.pool,
+      clientFactory: options.clientFactory,
+      autoMigrate: options.autoMigrate
+    });
+
+  const telemetryRegistry = options.telemetryRegistry ?? TelemetryRegistry.default;
+  const operationalLogger = options.operationalLogger ?? new StructuredOperationalLogger();
+
   const provider = options.provider ?? (process.env.GENERATION_PROVIDER as ProviderType) ?? 'agy';
 
   const gatewayConfig: GatewayConfig = {
@@ -275,6 +353,19 @@ export function composeOrchestratorHttpServer(
   const updateStoryDependenciesUseCase =
     options.updateStoryDependenciesUseCase ?? new UpdateStoryDependenciesUseCase(repository);
 
+  const authorizer = options.authorizer ?? new DefaultAuthorizationPolicy(telemetryRegistry);
+
+  const evaluateExportStalenessUseCase =
+    options.evaluateExportStalenessUseCase ??
+    new EvaluateExportStalenessUseCase(
+      repository,
+      getAuthorityBundleUseCase,
+      buildStoryDependencyGraphUseCase,
+      authorizer,
+      undefined,
+      telemetryRegistry
+    );
+
   const getEngineeringHandoffBundleUseCase =
     options.getEngineeringHandoffBundleUseCase ??
     new GetEngineeringHandoffBundleUseCase(
@@ -282,11 +373,135 @@ export function composeOrchestratorHttpServer(
       getAuthorityBundleUseCase,
       evaluateStoryReadinessUseCase,
       computeRequirementCoverageUseCase,
-      buildStoryDependencyGraphUseCase
+      buildStoryDependencyGraphUseCase,
+      evaluateExportStalenessUseCase
     );
+
+  const resolveAuthenticator = (): IAuthenticator => {
+    if (options.authenticator) {
+      return options.authenticator;
+    }
+
+    const authProviderEnv = process.env.AUTH_PROVIDER?.trim().toLowerCase();
+    const isProduction = process.env.NODE_ENV === 'production';
+    const isTestEnv = process.env.NODE_ENV === 'test';
+
+    // 1. Fail closed on unknown/misspelled provider values
+    if (authProviderEnv && authProviderEnv !== 'oidc' && authProviderEnv !== 'test') {
+      throw new Error(
+        `Invalid or unsupported AUTH_PROVIDER: '${process.env.AUTH_PROVIDER}'. Supported values are 'oidc' and 'test'.`
+      );
+    }
+
+    // 2. Reject test auth in production environment
+    if (isProduction && authProviderEnv === 'test') {
+      throw new Error(
+        'Test authentication (AUTH_PROVIDER=test) is not permitted in production (NODE_ENV=production).'
+      );
+    }
+
+    // 3. Determine effective auth provider
+    // When unset: default to 'test' under test environment (NODE_ENV=test), otherwise default to 'oidc'
+    const effectiveProvider = authProviderEnv ?? (isTestEnv ? 'test' : 'oidc');
+
+    if (effectiveProvider === 'oidc') {
+      const issuer = (process.env.OIDC_ISSUER ?? process.env.OIDC_ISSUER_URL)?.trim();
+      const audience = process.env.OIDC_AUDIENCE?.trim();
+      const jwksUri = process.env.OIDC_JWKS_URI?.trim();
+
+      if (isProduction) {
+        if (!issuer) {
+          throw new Error(
+            'Missing required OIDC configuration in production: OIDC_ISSUER (or OIDC_ISSUER_URL)'
+          );
+        }
+        if (!audience) {
+          throw new Error('Missing required OIDC configuration in production: OIDC_AUDIENCE');
+        }
+      }
+
+      const effectiveIssuer = issuer || 'http://localhost:8080/realms/solutions-studio';
+      const effectiveAudience = audience || 'solutions-studio-api';
+      const effectiveJwksUri =
+        jwksUri ||
+        (effectiveIssuer.endsWith('/')
+          ? `${effectiveIssuer}protocol/openid-connect/certs`
+          : `${effectiveIssuer}/protocol/openid-connect/certs`);
+
+      return new GenericOidcAuthenticator({
+        issuer: effectiveIssuer,
+        audience: effectiveAudience,
+        jwksUri: effectiveJwksUri
+      });
+    }
+
+    return new TestAuthenticator();
+  };
+
+  const authenticator = resolveAuthenticator();
+
+  const recordValidationRunUseCase =
+    options.recordValidationRunUseCase ?? new RecordValidationRunUseCase(repository);
+  const approveCandidateUseCase =
+    options.approveCandidateUseCase ??
+    new ApproveCandidateUseCase(repository, authorizer, telemetryRegistry);
+  const evaluateCandidatePromotionStatusUseCase =
+    options.evaluateCandidatePromotionStatusUseCase ??
+    new EvaluateCandidatePromotionStatusUseCase(repository);
+  const revokeGovernanceApprovalUseCase =
+    options.revokeGovernanceApprovalUseCase ??
+    new RevokeGovernanceApprovalUseCase(repository, authorizer, telemetryRegistry);
+  const exportGovernanceAuditUseCase =
+    options.exportGovernanceAuditUseCase ??
+    new ExportGovernanceAuditUseCase(repository, evaluateCandidatePromotionStatusUseCase);
+
+  const backlogGatewayFactory = options.backlogGatewayFactory ?? new BacklogExportGatewayFactory();
+  const exportBacklogUseCase =
+    options.exportBacklogUseCase ??
+    new ExportBacklogUseCase(
+      repository,
+      (providerId) => backlogGatewayFactory.getGateway(providerId),
+      authorizer,
+      getAuthorityBundleUseCase,
+      evaluateStoryReadinessUseCase,
+      buildStoryDependencyGraphUseCase,
+      evaluateExportStalenessUseCase,
+      telemetryRegistry
+    );
+
+  const getBacklogExportMappingsUseCase =
+    options.getBacklogExportMappingsUseCase ?? new GetBacklogExportMappingsUseCase(repository);
+
+  const dbClient: ISqlDatabaseClient | undefined =
+    options.dbClient ??
+    ('db' in repository && repository.db ? (repository.db as ISqlDatabaseClient) : undefined);
+  const objectStore: IObjectStore | undefined =
+    options.objectStore ??
+    ('objectStore' in repository && repository.objectStore
+      ? (repository.objectStore as IObjectStore)
+      : undefined);
+
+  const pruneRetentionUseCase =
+    options.pruneRetentionUseCase ??
+    (dbClient && objectStore
+      ? new PruneRetentionUseCase(
+          new RetentionLifecyclePrunerAdapter(dbClient, objectStore),
+          authorizer
+        )
+      : undefined);
+
+  const defaultBacklogGateway = backlogGatewayFactory.getGateway('github-issues');
 
   const app = buildServer(
     {
+      repository,
+      authenticator,
+      authorizer,
+      telemetryRegistry,
+      operationalLogger,
+      generationGateway,
+      backlogExportGateway: defaultBacklogGateway,
+      pruneRetentionUseCase,
       reviewStateUseCase,
       reconcileUseCase,
       baselineUseCase,
@@ -304,10 +519,31 @@ export function composeOrchestratorHttpServer(
       computeRequirementCoverageUseCase,
       buildStoryDependencyGraphUseCase,
       updateStoryDependenciesUseCase,
-      getEngineeringHandoffBundleUseCase
+      getEngineeringHandoffBundleUseCase,
+      recordValidationRunUseCase,
+      approveCandidateUseCase,
+      evaluateCandidatePromotionStatusUseCase,
+      revokeGovernanceApprovalUseCase,
+      exportGovernanceAuditUseCase,
+      exportBacklogUseCase,
+      evaluateExportStalenessUseCase,
+      getBacklogExportMappingsUseCase
     },
     options.fastifyOptions
   );
+
+  if (
+    repository instanceof PostgresRequirementsRepository &&
+    (repository as { db?: unknown }).db &&
+    options.autoMigrate !== false
+  ) {
+    app.addHook('onReady', async () => {
+      const runner = new SchemaMigrationRunner({
+        db: (repository as { db: ISqlDatabaseClient }).db
+      });
+      await runner.migrate();
+    });
+  }
 
   return {
     app,
@@ -334,6 +570,13 @@ export function composeOrchestratorHttpServer(
     buildStoryDependencyGraphUseCase,
     updateStoryDependenciesUseCase,
     getEngineeringHandoffBundleUseCase,
+    recordValidationRunUseCase,
+    approveCandidateUseCase,
+    evaluateCandidatePromotionStatusUseCase,
+    revokeGovernanceApprovalUseCase,
+    exportGovernanceAuditUseCase,
+    exportBacklogUseCase,
+    getBacklogExportMappingsUseCase,
     projectBaselineUseCase,
     reviewStateUseCase,
     recordDiscoveryUseCase,
@@ -342,6 +585,40 @@ export function composeOrchestratorHttpServer(
     getAuthorityBundleUseCase,
     recordEngineeringDecisionUseCase,
     transitionEngineeringDecisionUseCase,
-    getEngineeringDecisionsUseCase
+    getEngineeringDecisionsUseCase,
+    authenticator,
+    authorizer,
+    telemetryRegistry,
+    operationalLogger,
+    pruneRetentionUseCase
   };
+}
+
+export async function composeOrchestratorHttpServerAsync(
+  options: ComposeHttpServerOptions = {}
+): Promise<ComposedHttpServer> {
+  let repository = options.repository;
+  if (
+    !repository &&
+    (options.connectionString ||
+      process.env.DATABASE_URL ||
+      process.env.STORAGE_TYPE === 'postgres' ||
+      options.dbClient)
+  ) {
+    repository = await createRequirementsRepository({
+      baseDir: options.storeDir,
+      connectionString: options.connectionString,
+      dbClient: options.dbClient,
+      objectStore: options.objectStore,
+      pool: options.pool,
+      clientFactory: options.clientFactory,
+      autoMigrate: options.autoMigrate
+    });
+  }
+  const composed = composeOrchestratorHttpServer({
+    ...options,
+    repository
+  });
+  await composed.app.ready();
+  return composed;
 }

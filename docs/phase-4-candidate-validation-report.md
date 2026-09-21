@@ -92,6 +92,8 @@ During implementation of this batch, a single orchestrator-level bug pattern was
 
 One genuine security finding was fixed within this batch: a path-traversal vulnerability in the filesystem object-store adapter's backup/restore code (found by quality-review on #93, `F-f5e14a67`), genuinely remediated by fix-review and verified present in the merged code.
 
+`#100`'s own implementation checked in a fail-closed placeholder at this exact document path (`docs/phase-4-candidate-validation-report.md`, disposition `DESIGN_CHANGE`, "awaiting authoritative commit") as its own committed default — a deliberate governance safeguard ensuring the repository never silently reads as pilot-approved absent a real operator-produced report. This document replaces that placeholder with the actual real-provider validation evidence and disposition recorded below.
+
 ---
 
 ## 7. Phase 4 Exit Decision Gate

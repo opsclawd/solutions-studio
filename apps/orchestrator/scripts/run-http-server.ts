@@ -1,6 +1,22 @@
+import fs from 'node:fs';
 import path from 'node:path';
-import { composeOrchestratorHttpServer } from '../src/http/composition.js';
+import { composeOrchestratorHttpServerAsync } from '../src/http/composition.js';
 import type { ProviderType } from '../src/infrastructure/generation/GatewayFactory.js';
+
+export function resolveSecretFileVariables(): void {
+  for (const [key, value] of Object.entries(process.env)) {
+    if (key.endsWith('_FILE') && value) {
+      const targetVar = key.slice(0, -5);
+      if (!process.env[targetVar] && fs.existsSync(value)) {
+        try {
+          process.env[targetVar] = fs.readFileSync(value, 'utf8').trim();
+        } catch {
+          // Ignore read errors or allow downstream verification
+        }
+      }
+    }
+  }
+}
 
 export interface HttpServerArgs {
   readonly port: number;
@@ -49,8 +65,9 @@ export function parseArgs(args: string[]): HttpServerArgs {
 }
 
 export async function main() {
+  resolveSecretFileVariables();
   const cliArgs = parseArgs(process.argv.slice(2));
-  const server = composeOrchestratorHttpServer({
+  const server = await composeOrchestratorHttpServerAsync({
     storeDir: cliArgs.storeDir,
     provider: cliArgs.provider,
     fastifyOptions: {

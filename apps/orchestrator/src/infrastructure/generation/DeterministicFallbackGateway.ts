@@ -203,4 +203,12 @@ export class DeterministicFallbackGateway implements IGenerationGateway {
       }
     };
   }
+
+  async checkHealth(): Promise<{ status: 'healthy'; provider: string; available: boolean }> {
+    return {
+      status: 'healthy',
+      provider: 'fake',
+      available: true
+    };
+  }
 }

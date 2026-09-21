@@ -270,7 +270,7 @@ describe('HTTP Boundary: Decisions API', () => {
       expect(body.state).toBe('ACCEPTED');
       expect(body.rationale).toBe('ACID compliance needed for transactions');
       expect(body.transitionRationale).toBe('Review complete and signed off');
-      expect(body.acceptedBy).toBe('arch-lead');
+      expect(body.acceptedBy).toBe('lead-reviewer');
       expect(body.acceptedAt).toBeDefined();
 
       // Verify via GET

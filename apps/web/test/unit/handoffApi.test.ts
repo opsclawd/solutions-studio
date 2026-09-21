@@ -3,13 +3,26 @@ import {
   getEngineeringHandoffBundle,
   getStoryDependencyGraph,
   updateStoryDependencies,
-  listAvailableBaselines
+  listAvailableBaselines,
+  getCandidatePromotionStatus,
+  listValidationRuns,
+  createGovernanceApproval,
+  revokeGovernanceApproval,
+  exportGovernanceAudit,
+  getExportStaleness,
+  exportBacklog
 } from '../../src/features/handoff/api/handoffApi';
 import { createInstant } from '@solutions-studio/domain';
 import type {
   EngineeringHandoffBundleDto,
   StoryDependencyGraphDto,
-  StoryDto
+  StoryDto,
+  CandidatePromotionStatusDto,
+  ValidationRunRecordDto,
+  CandidateApprovalRecordDto,
+  GovernanceAuditExportDto,
+  BaselineExportStalenessReportDto,
+  ExportBacklogResponseDto
 } from '@solutions-studio/contracts';
 
 describe('handoffApi', () => {
@@ -250,5 +263,305 @@ describe('handoffApi', () => {
 
     const ids = await listAvailableBaselines();
     expect(ids).toEqual(['BASE-001', 'BASE-002']);
+  });
+
+  it('getCandidatePromotionStatus fetches and parses promotion status', async () => {
+    const candidateSha = 'd5adf81ac2ba5acd7b7cd22c830f03e2258a63b4';
+    const sampleStatus: CandidatePromotionStatusDto = {
+      candidateSha,
+      isApproved: true,
+      disposition: 'APPROVED',
+      diagnosticCode: 'PROMOTION_READY',
+      message: 'Ready for release',
+      evaluatedAt: createInstant('2026-09-20T00:00:00.000Z')
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => sampleStatus
+    } as Response);
+
+    const res = await getCandidatePromotionStatus(candidateSha);
+    expect(res.isApproved).toBe(true);
+    expect(res.disposition).toBe('APPROVED');
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining(`/api/governance/candidates/${candidateSha}/status`),
+      expect.any(Object)
+    );
+  });
+
+  it('listValidationRuns fetches and parses array of validation runs', async () => {
+    const candidateSha = 'd5adf81ac2ba5acd7b7cd22c830f03e2258a63b4';
+    const sampleRuns: ValidationRunRecordDto[] = [
+      {
+        id: 'RUN-001',
+        candidateSha,
+        phase: 'phase-3',
+        executionMode: 'deterministic-ci',
+        provider: 'fake',
+        artifacts: [
+          {
+            name: 'schema.sql',
+            artifactType: 'sql-ddl',
+            contentHash: 'a'.repeat(64)
+          }
+        ],
+        evidenceDigest: 'b'.repeat(64),
+        proposedDisposition: 'GO',
+        executedBy: 'runner-ci',
+        executedAt: createInstant('2026-09-20T00:00:00.000Z'),
+        summary: { checks: 15 }
+      }
+    ];
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => sampleRuns
+    } as Response);
+
+    const res = await listValidationRuns(candidateSha);
+    expect(res).toHaveLength(1);
+    expect(res[0].id).toBe('RUN-001');
+  });
+
+  it('createGovernanceApproval sends POST and parses approval record', async () => {
+    const candidateSha = 'd5adf81ac2ba5acd7b7cd22c830f03e2258a63b4';
+    const sampleApproval: CandidateApprovalRecordDto = {
+      id: 'APPR-001',
+      candidateSha,
+      validationRunId: 'RUN-001',
+      evidenceDigest: 'b'.repeat(64),
+      decision: 'GO',
+      status: 'ACTIVE',
+      rationale: 'Human sign-off',
+      actor: {
+        id: 'rev-1',
+        name: 'Alice Reviewer',
+        actorType: 'human'
+      },
+      decidedAt: createInstant('2026-09-20T00:00:00.000Z')
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => sampleApproval
+    } as Response);
+
+    const res = await createGovernanceApproval({
+      candidateSha,
+      validationRunId: 'RUN-001',
+      evidenceDigest: 'b'.repeat(64),
+      decision: 'GO',
+      rationale: 'Human sign-off'
+    });
+    expect(res.id).toBe('APPR-001');
+    expect(res.status).toBe('ACTIVE');
+    expect(res.actor.name).toBe('Alice Reviewer');
+  });
+
+  it('revokeGovernanceApproval sends POST to revoke endpoint and parses updated approval', async () => {
+    const sampleRevoked: CandidateApprovalRecordDto = {
+      id: 'APPR-001',
+      candidateSha: 'd5adf81ac2ba5acd7b7cd22c830f03e2258a63b4',
+      validationRunId: 'RUN-001',
+      evidenceDigest: 'b'.repeat(64),
+      decision: 'GO',
+      status: 'REVOKED',
+      rationale: 'Human sign-off',
+      actor: {
+        id: 'rev-1',
+        name: 'Alice Reviewer',
+        actorType: 'human'
+      },
+      decidedAt: createInstant('2026-09-20T00:00:00.000Z'),
+      revocation: {
+        revokedAt: createInstant('2026-09-20T01:00:00.000Z'),
+        revokedBy: {
+          id: 'rev-1',
+          name: 'Alice Reviewer',
+          actorType: 'human'
+        },
+        rationale: 'Defect discovered'
+      }
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => sampleRevoked
+    } as Response);
+
+    const res = await revokeGovernanceApproval('APPR-001', 'Defect discovered');
+    expect(res.status).toBe('REVOKED');
+    expect(res.revocation?.rationale).toBe('Defect discovered');
+  });
+
+  it('exportGovernanceAudit fetches and parses governance export package', async () => {
+    const candidateSha = 'd5adf81ac2ba5acd7b7cd22c830f03e2258a63b4';
+    const sampleExport: GovernanceAuditExportDto = {
+      candidateSha,
+      exportedAt: createInstant('2026-09-20T00:00:00.000Z'),
+      promotionStatus: {
+        candidateSha,
+        isApproved: true,
+        disposition: 'APPROVED',
+        diagnosticCode: 'PROMOTION_READY',
+        message: 'Ready',
+        evaluatedAt: createInstant('2026-09-20T00:00:00.000Z')
+      },
+      validationRuns: [],
+      approvalHistory: [],
+      manifestChecksum: 'c'.repeat(64)
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => sampleExport
+    } as Response);
+
+    const res = await exportGovernanceAudit(candidateSha);
+    expect(res.candidateSha).toBe(candidateSha);
+    expect(res.manifestChecksum).toBe('c'.repeat(64));
+  });
+
+  it('getExportStaleness fetches and parses baseline export staleness report', async () => {
+    const validHash1 = 'a'.repeat(64);
+    const validHash2 = 'b'.repeat(64);
+    const sampleStaleness: BaselineExportStalenessReportDto = {
+      baselineId: 'BASE-001',
+      totalStories: 2,
+      currentCount: 1,
+      staleCount: 1,
+      impactedCount: 0,
+      unexportedCount: 0,
+      stories: [
+        {
+          storyId: 'STORY-1',
+          classification: 'CURRENT',
+          causes: [],
+          impactedByPrerequisiteStoryIds: [],
+          currentContentHash: validHash1,
+          history: [],
+          exportedLineage: {
+            baselineId: 'BASE-001',
+            storyVersion: 1,
+            exportVersion: 1,
+            exportContentHash: validHash1,
+            exportContentHashVersion: 1,
+            exportedAt: createInstant('2026-09-20T12:00:00.000Z'),
+            externalWorkItemId: '41'
+          }
+        },
+        {
+          storyId: 'STORY-2',
+          classification: 'STALE',
+          causes: [
+            {
+              category: 'CONTENT_HASH_MISMATCH',
+              message: 'Hash differs',
+              entityId: 'STORY-2'
+            }
+          ],
+          impactedByPrerequisiteStoryIds: [],
+          currentContentHash: validHash2,
+          history: [],
+          exportedLineage: {
+            baselineId: 'BASE-001',
+            storyVersion: 1,
+            exportVersion: 1,
+            exportContentHash: validHash1,
+            exportContentHashVersion: 1,
+            exportedAt: createInstant('2026-09-20T12:00:00.000Z'),
+            externalWorkItemId: '42'
+          }
+        }
+      ]
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => sampleStaleness
+    } as Response);
+
+    const res = await getExportStaleness('BASE-001', {
+      provider: 'github-issues',
+      targetContainer: 'acme/repo'
+    });
+
+    expect(res.baselineId).toBe('BASE-001');
+    expect(res.totalStories).toBe(2);
+    expect(res.staleCount).toBe(1);
+    expect(res.stories[1].causes[0].category).toBe('CONTENT_HASH_MISMATCH');
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining(
+        '/api/baselines/BASE-001/export/backlog/staleness?provider=github-issues&targetContainer=acme%2Frepo'
+      ),
+      expect.objectContaining({ method: 'GET' })
+    );
+  });
+
+  it('exportBacklog sends export request and parses response', async () => {
+    const validHash = 'c'.repeat(64);
+    const sampleResponse: ExportBacklogResponseDto = {
+      baselineId: 'BASE-001',
+      provider: 'github-issues',
+      externalContainer: 'acme/repo',
+      items: [
+        {
+          storyId: 'STORY-1',
+          status: 'created',
+          externalWorkItemId: '42',
+          externalUrl: 'https://github.com/acme/repo/issues/42',
+          exportContentHash: validHash,
+          exportedAt: createInstant('2026-09-20T12:00:00.000Z')
+        }
+      ],
+      summary: {
+        total: 1,
+        created: 1,
+        updated: 0,
+        unchanged: 0,
+        skippedStale: 0,
+        rejected: 0,
+        failed: 0
+      },
+      exportedAt: createInstant('2026-09-20T12:00:00.000Z')
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => sampleResponse
+    } as Response);
+
+    const res = await exportBacklog('BASE-001', {
+      targetContainer: 'acme/repo',
+      storyIds: ['STORY-1'],
+      allowUpdateExisting: true,
+      updateRationale: 'Updated acceptance criteria'
+    });
+
+    expect(res.summary.created).toBe(1);
+    const firstItem = res.items[0];
+    if (firstItem && firstItem.status === 'created') {
+      expect(firstItem.externalWorkItemId).toBe('42');
+    }
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/baselines/BASE-001/export/backlog'),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          targetContainer: 'acme/repo',
+          storyIds: ['STORY-1'],
+          allowUpdateExisting: true,
+          updateRationale: 'Updated acceptance criteria'
+        })
+      })
+    );
   });
 });

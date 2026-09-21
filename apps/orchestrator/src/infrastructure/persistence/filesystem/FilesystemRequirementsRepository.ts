@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import {
   createSourceId,
   createSourceRevisionId,
@@ -43,28 +44,56 @@ import {
   type EngineeringDecision,
   type EngineeringDecisionState,
   type EvidenceLocator,
-  type SourceType
+  type BaselineMembershipViolation,
+  createValidationRunRecord,
+  createCandidateApprovalRecord,
+  revokeCandidateApprovalRecord,
+  supersedeCandidateApprovalRecord,
+  UnknownGovernanceApprovalError,
+  type ValidationRunRecord,
+  type ValidationRunId,
+  type CandidateApprovalRecord,
+  type GovernanceApprovalId,
+  type GovernanceApprovalStatus,
+  type SourceType,
+  type BacklogExportMapping,
+  type BacklogExportMappingId,
+  type BacklogExportHistoryEntry,
+  createBacklogExportMapping
 } from '@solutions-studio/domain';
-import type {
-  IRequirementsRepository,
-  SourceRevisionRecord,
-  CaptureSourceRevisionInput,
-  LocatorIndexEntry,
-  ReconciliationRecord,
-  EvaluationRunRecord,
-  FindingReconciliationRecord,
-  RequirementReconciliationRecord,
-  ProjectionRecord,
-  StoryRecord
+import {
+  ImmutableRecordConflictError,
+  type IRequirementsRepository,
+  type SourceRevisionRecord,
+  type CaptureSourceRevisionInput,
+  type LocatorIndexEntry,
+  type ReconciliationRecord,
+  type EvaluationRunRecord,
+  type FindingReconciliationRecord,
+  type RequirementReconciliationRecord,
+  type ProjectionRecord,
+  type StoryRecord
 } from '../../../application/ports/persistence/IRequirementsRepository.js';
+import type { StorageHealthReport } from '../../../application/ports/persistence/IStorageHealthCheck.js';
 import {
   StaleRevisionTargetError,
   UnknownRequirementRevisionError,
   UnknownPolicyConstraintRevisionError,
   UnknownEngineeringDecisionError,
-  InvalidEngineeringDecisionStateError
+  InvalidEngineeringDecisionStateError,
+  FindingDispositionConflictError,
+  RequirementRevisionConflictError,
+  InvalidBaselineMembershipError,
+  BlockedByOpenFindingsError,
+  OptimisticConcurrencyConflictError,
+  type BlockingFindingMatch
 } from '../../../application/use-cases/ReconciliationErrors.js';
-import { EvaluationRunRecordSchema } from '@solutions-studio/contracts';
+import {
+  EvaluationRunRecordSchema,
+  ValidationRunRecordDtoSchema,
+  CandidateApprovalRecordDtoSchema,
+  type BacklogExportMappingDto
+} from '@solutions-studio/contracts';
 import type { FindingDisposition } from '@solutions-studio/domain';
 import { computeContentHash, deriveLocatorIndex } from '../markdown/deriveLocatorIndex.js';
 import {
@@ -139,9 +168,22 @@ export function getBaselineLockKey(id: string): string {
   return `baseline:${id}`;
 }
 
+export function getApprovalLockKey(id: string): string {
+  return `approval:${id}`;
+}
+
+export function getCandidateApprovalLockKey(candidateSha: string): string {
+  return `candidate-approval:${candidateSha}`;
+}
+
+export function getBacklogMappingLockKey(key: string): string {
+  return `bmap:${key}`;
+}
+
 export class FilesystemRequirementsRepository implements IRequirementsRepository {
   private readonly baseDir: string;
   private readonly entityLocks = new Map<string, Promise<void>>();
+  private readonly heldLocks = new AsyncLocalStorage<Set<string>>();
 
   constructor(options: FilesystemRequirementsRepositoryOptions) {
     this.baseDir = options.baseDir;
@@ -163,6 +205,59 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
         this.entityLocks.delete(entityId);
       }
     }
+  }
+
+  private async acquireFileLock<T>(lockKey: string, action: () => Promise<T>): Promise<T> {
+    const currentHeld = this.heldLocks.getStore();
+    if (currentHeld?.has(lockKey)) {
+      return action();
+    }
+
+    const nextHeld = new Set<string>(currentHeld);
+    nextHeld.add(lockKey);
+
+    return this.heldLocks.run(nextHeld, () =>
+      this.acquireEntityLock(lockKey, async () => {
+        const lockDir = path.resolve(this.baseDir, '.locks');
+        await fs.mkdir(lockDir, { recursive: true });
+        const safeName = encodeURIComponent(lockKey).replace(/%/g, '_');
+        const lockPath = path.resolve(lockDir, `${safeName}.lock`);
+        const timeoutMs = 15000;
+        const start = Date.now();
+        let handle: fs.FileHandle | null = null;
+
+        while (!handle) {
+          try {
+            handle = await fs.open(lockPath, 'wx');
+            await handle.writeFile(JSON.stringify({ pid: process.pid, createdAt: Date.now() }));
+          } catch (err) {
+            if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+              if (Date.now() - start > timeoutMs) {
+                throw new Error(`Timed out waiting to acquire file lock for '${lockKey}'`);
+              }
+              await new Promise((r) => setTimeout(r, 20 + Math.random() * 20));
+            } else {
+              throw err;
+            }
+          }
+        }
+
+        try {
+          return await action();
+        } finally {
+          try {
+            await handle.close();
+          } catch {
+            // ignore
+          }
+          try {
+            await fs.unlink(lockPath);
+          } catch {
+            // ignore
+          }
+        }
+      })
+    );
   }
 
   private async acquireLocks<T>(
@@ -731,7 +826,10 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
       }
       const expectedDisp = expectedCurrentDisposition ?? record.previousDisposition;
       if (current.disposition !== expectedDisp) {
-        throw new Error(
+        throw new FindingDispositionConflictError(
+          finding.id,
+          expectedDisp,
+          current.disposition,
           `Concurrency conflict for finding '${finding.id}': current disposition '${current.disposition}' does not match expected '${expectedDisp}'`
         );
       }
@@ -854,7 +952,10 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
       const expectedId = expectedCurrentRevisionId ?? successor.supersedes;
       if (expectedId !== undefined) {
         if (!latest || latest.id !== expectedId) {
-          throw new Error(
+          throw new RequirementRevisionConflictError(
+            successor.requirementId,
+            expectedId,
+            latest?.id,
             `Concurrency conflict for requirement '${successor.requirementId}': latest revision is '${latest?.id}', expected '${expectedId}'`
           );
         }
@@ -982,6 +1083,65 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
   ): Promise<void> {
     assertSafeIdentifier(baseline.id, 'baselineId');
 
+    // Manifest equality enforcement: baseline manifest must match expectations exactly
+    const baselineReqSet = new Set(baseline.requirementRevisions);
+    const expectedReqSet = new Set(expectedLatestRevisionIds);
+    if (
+      baselineReqSet.size !== expectedReqSet.size ||
+      baseline.requirementRevisions.length !== expectedLatestRevisionIds.length ||
+      !expectedLatestRevisionIds.every((id) => baselineReqSet.has(id))
+    ) {
+      const violations: BaselineMembershipViolation[] = baseline.requirementRevisions
+        .filter((id) => !expectedReqSet.has(id))
+        .map((id) => ({
+          revisionId: id,
+          requirementId: id,
+          reasons: [
+            'Baseline requirement revision manifest does not match expected latest revisions'
+          ]
+        }));
+      if (violations.length === 0) {
+        violations.push({
+          revisionId: 'manifest-mismatch',
+          requirementId: 'manifest',
+          reasons: [
+            'Baseline requirement revision count or elements mismatch expected latest revisions'
+          ]
+        });
+      }
+      throw new InvalidBaselineMembershipError(violations);
+    }
+
+    const baselinePolList = baseline.policyConstraintRevisions ?? [];
+    const expectedPolList = expectedLatestPolicyConstraintRevisionIds ?? [];
+    const baselinePolSet = new Set(baselinePolList);
+    const expectedPolSet = new Set(expectedPolList);
+    if (
+      baselinePolSet.size !== expectedPolSet.size ||
+      baselinePolList.length !== expectedPolList.length ||
+      !expectedPolList.every((id) => baselinePolSet.has(id))
+    ) {
+      const violations: BaselineMembershipViolation[] = baselinePolList
+        .filter((id) => !expectedPolSet.has(id))
+        .map((id) => ({
+          revisionId: id,
+          requirementId: id,
+          reasons: [
+            'Baseline policy constraint revisions manifest does not match expected latest policy constraint revisions'
+          ]
+        }));
+      if (violations.length === 0) {
+        violations.push({
+          revisionId: 'manifest-mismatch',
+          requirementId: 'manifest',
+          reasons: [
+            'Baseline policy constraint revisions count or elements mismatch expected latest policy constraint revisions'
+          ]
+        });
+      }
+      throw new InvalidBaselineMembershipError(violations);
+    }
+
     const reqMap = new Map<RequirementId, RequirementRevisionId>();
     for (const rawRevId of expectedLatestRevisionIds) {
       const expectedRevId = createRequirementRevisionId(rawRevId);
@@ -1036,6 +1196,45 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
         const latest = allRevisions.length > 0 ? allRevisions[allRevisions.length - 1] : undefined;
         if (!latest || latest.id !== expectedRevId) {
           throw new StaleRevisionTargetError(expectedRevId, latest?.id ?? 'none');
+        }
+      }
+
+      // Check open blocking findings against revision lineage closure
+      const allFindings = await this.listCandidateFindings();
+      const openFindings = allFindings.filter((f) => f.disposition === 'OPEN');
+      if (openFindings.length > 0) {
+        const closure = new Set<string>();
+        for (const revId of expectedLatestRevisionIds) {
+          closure.add(revId);
+          let curr: string | undefined = revId;
+          while (curr) {
+            const rev = await this.getRequirementRevision(createRequirementRevisionId(curr));
+            curr = rev?.supersedes;
+            if (curr) {
+              if (closure.has(curr)) break;
+              closure.add(curr);
+            }
+          }
+        }
+
+        const blockingMatches: BlockingFindingMatch[] = [];
+        for (const f of openFindings) {
+          for (const aff of f.affectedRequirementRevisions) {
+            if (closure.has(aff)) {
+              blockingMatches.push({
+                ...f,
+                finding: f,
+                affectedRevisionId: aff,
+                matchedRevisionId: aff,
+                proposedRevisionId: aff
+              });
+              break;
+            }
+          }
+        }
+
+        if (blockingMatches.length > 0) {
+          throw new BlockedByOpenFindingsError(blockingMatches);
         }
       }
 
@@ -1401,20 +1600,50 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
     assertSafeIdentifier(projection.id, 'projectionId');
     assertSafeIdentifier(projection.baselineId, 'baselineId');
     const filePath = resolveStorePath(this.baseDir, 'projections', `${projection.id}.json`);
-    await writeJsonExclusive(filePath, projection);
+    await writeJsonExclusive(filePath, {
+      ...projection,
+      version: projection.version ?? 1
+    });
   }
 
-  async updateProjectionRecord(projection: ProjectionRecord): Promise<void> {
+  async updateProjectionRecord(
+    projection: ProjectionRecord,
+    expectedVersion?: number
+  ): Promise<void> {
     assertSafeIdentifier(projection.id, 'projectionId');
     assertSafeIdentifier(projection.baselineId, 'baselineId');
     const filePath = resolveStorePath(this.baseDir, 'projections', `${projection.id}.json`);
-    await writeJsonAtomic(filePath, projection);
+
+    const existing = await this.getProjectionRecord(projection.id);
+    if (!existing) {
+      throw new Error(`Projection '${projection.id}' not found`);
+    }
+
+    const expVer = expectedVersion ?? projection.version;
+    if (expVer !== undefined && existing.version !== undefined && existing.version !== expVer) {
+      throw new OptimisticConcurrencyConflictError(
+        `Concurrency conflict updating projection '${projection.id}': expected version ${expVer}, found ${existing.version}`
+      );
+    }
+
+    const nextVersion = (existing.version ?? 1) + 1;
+    await writeJsonAtomic(filePath, {
+      ...projection,
+      version: nextVersion
+    });
   }
 
   async getProjectionRecord(id: string): Promise<ProjectionRecord | undefined> {
     assertSafeIdentifier(id, 'projectionId');
     const filePath = resolveStorePath(this.baseDir, 'projections', `${id}.json`);
-    return readJson<ProjectionRecord>(filePath);
+    const record = await readJson<ProjectionRecord>(filePath);
+    if (!record) {
+      return undefined;
+    }
+    return Object.freeze({
+      ...record,
+      version: record.version ?? 1
+    });
   }
 
   async listProjectionRecords(
@@ -1448,21 +1677,78 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
     assertSafeIdentifier(story.id, 'storyId');
     assertSafeIdentifier(story.baselineId, 'baselineId');
     const filePath = resolveStorePath(this.baseDir, 'stories', `${story.id}.json`);
-    await writeJsonExclusive(filePath, story);
+    await writeJsonExclusive(filePath, {
+      ...story,
+      version: story.version ?? 1
+    });
   }
 
-  async updateStory(story: StoryRecord): Promise<void> {
+  async updateStory(story: StoryRecord, expectedVersion?: number): Promise<void> {
     assertSafeIdentifier(story.id, 'storyId');
     assertSafeIdentifier(story.baselineId, 'baselineId');
     const filePath = resolveStorePath(this.baseDir, 'stories', `${story.id}.json`);
-    await writeJsonAtomic(filePath, story);
+
+    const existing = await this.getStory(story.id);
+    if (!existing) {
+      throw new Error(`Story '${story.id}' not found`);
+    }
+
+    const expVer = expectedVersion ?? story.version;
+    if (expVer !== undefined && existing.version !== undefined && existing.version !== expVer) {
+      throw new OptimisticConcurrencyConflictError(
+        `Concurrency conflict updating story '${story.id}': expected version ${expVer}, found ${existing.version}`
+      );
+    }
+
+    const nextVersion = (existing.version ?? 1) + 1;
+    await writeJsonAtomic(filePath, {
+      ...story,
+      version: nextVersion
+    });
   }
 
-  async updateStoryAndProjection(story: StoryRecord, projection: ProjectionRecord): Promise<void> {
+  async updateStoryAndProjection(
+    story: StoryRecord,
+    projection: ProjectionRecord,
+    options?: { expectedStoryVersion?: number; expectedProjectionVersion?: number }
+  ): Promise<void> {
     assertSafeIdentifier(story.id, 'storyId');
     assertSafeIdentifier(story.baselineId, 'baselineId');
     assertSafeIdentifier(projection.id, 'projectionId');
     assertSafeIdentifier(projection.baselineId, 'baselineId');
+
+    const existingStory = await this.getStory(story.id);
+    if (!existingStory) {
+      throw new Error(`Story '${story.id}' not found`);
+    }
+    const expStoryVer = options?.expectedStoryVersion ?? story.version;
+    if (
+      expStoryVer !== undefined &&
+      existingStory.version !== undefined &&
+      existingStory.version !== expStoryVer
+    ) {
+      throw new OptimisticConcurrencyConflictError(
+        `Concurrency conflict updating story '${story.id}': expected version ${expStoryVer}, found ${existingStory.version}`
+      );
+    }
+
+    const existingProj = await this.getProjectionRecord(projection.id);
+    if (!existingProj) {
+      throw new Error(`Projection '${projection.id}' not found`);
+    }
+    const expProjVer = options?.expectedProjectionVersion ?? projection.version;
+    if (
+      expProjVer !== undefined &&
+      existingProj.version !== undefined &&
+      existingProj.version !== expProjVer
+    ) {
+      throw new OptimisticConcurrencyConflictError(
+        `Concurrency conflict updating projection '${projection.id}': expected version ${expProjVer}, found ${existingProj.version}`
+      );
+    }
+
+    const nextStoryVersion = (existingStory.version ?? 1) + 1;
+    const nextProjVersion = (existingProj.version ?? 1) + 1;
 
     const storyPath = resolveStorePath(this.baseDir, 'stories', `${story.id}.json`);
     const projectionPath = resolveStorePath(this.baseDir, 'projections', `${projection.id}.json`);
@@ -1473,9 +1759,15 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
 
     let storyWritten = false;
     try {
-      await writeJsonAtomic(storyPath, story);
+      await writeJsonAtomic(storyPath, {
+        ...story,
+        version: nextStoryVersion
+      });
       storyWritten = true;
-      await writeJsonAtomic(projectionPath, projection);
+      await writeJsonAtomic(projectionPath, {
+        ...projection,
+        version: nextProjVersion
+      });
     } catch (err) {
       if (storyWritten) {
         if (originalStoryRaw !== null) {
@@ -1500,6 +1792,7 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
     }
     return Object.freeze({
       ...record,
+      version: record.version ?? 1,
       requirementRevisionIds: Object.freeze(record.requirementRevisionIds),
       policyConstraintRevisionIds: record.policyConstraintRevisionIds
         ? Object.freeze(record.policyConstraintRevisionIds)
@@ -1553,6 +1846,626 @@ export class FilesystemRequirementsRepository implements IRequirementsRepository
     action: () => Promise<T>
   ): Promise<T> {
     assertSafeIdentifier(baselineId, 'baselineId');
-    return this.acquireEntityLock(getBaselineLockKey(baselineId), action);
+    return this.acquireFileLock(getBaselineLockKey(baselineId), action);
+  }
+
+  async saveValidationRun(run: ValidationRunRecord): Promise<void> {
+    assertSafeIdentifier(run.id, 'runId');
+    assertSafeIdentifier(run.candidateSha, 'candidateSha');
+    const validated = ValidationRunRecordDtoSchema.parse(run);
+    const filePath = resolveStorePath(this.baseDir, 'validation-runs', `${run.id}.json`);
+    await writeJsonExclusive(filePath, validated);
+  }
+
+  async getValidationRun(id: ValidationRunId | string): Promise<ValidationRunRecord | undefined> {
+    assertSafeIdentifier(id, 'runId');
+    const filePath = resolveStorePath(this.baseDir, 'validation-runs', `${id}.json`);
+    const raw = await readJson<unknown>(filePath);
+    if (!raw) {
+      return undefined;
+    }
+    const validated = ValidationRunRecordDtoSchema.parse(raw);
+    return createValidationRunRecord({
+      id: validated.id,
+      candidateSha: validated.candidateSha,
+      executedAt: createInstant(validated.executedAt),
+      executedBy: validated.executedBy,
+      phase: validated.phase,
+      executionMode: validated.executionMode,
+      provider: validated.provider,
+      model: validated.model,
+      artifacts: validated.artifacts,
+      evidenceDigest: validated.evidenceDigest,
+      proposedDisposition: validated.proposedDisposition,
+      summary: validated.summary,
+      payloadRef: validated.payloadRef
+    });
+  }
+
+  async listValidationRuns(filter?: {
+    candidateSha?: string;
+  }): Promise<readonly ValidationRunRecord[]> {
+    const dir = path.resolve(this.baseDir, 'validation-runs');
+    try {
+      const files = await fs.readdir(dir);
+      const results: ValidationRunRecord[] = [];
+      for (const file of files) {
+        if (!file.endsWith('.json')) continue;
+        const id = file.replace(/\.json$/, '');
+        const run = await this.getValidationRun(id);
+        if (run) {
+          if (
+            filter?.candidateSha &&
+            run.candidateSha.toLowerCase() !== filter.candidateSha.toLowerCase()
+          ) {
+            continue;
+          }
+          results.push(run);
+        }
+      }
+      results.sort((a, b) => b.executedAt.localeCompare(a.executedAt) || b.id.localeCompare(a.id));
+      return Object.freeze(results);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return Object.freeze([]);
+      }
+      throw err;
+    }
+  }
+
+  async getLatestValidationRun(candidateSha: string): Promise<ValidationRunRecord | undefined> {
+    const runs = await this.listValidationRuns({ candidateSha });
+    return runs.length > 0 ? runs[0] : undefined;
+  }
+
+  async saveGovernanceApproval(approval: CandidateApprovalRecord): Promise<void> {
+    assertSafeIdentifier(approval.id, 'approvalId');
+    assertSafeIdentifier(approval.candidateSha, 'candidateSha');
+
+    return this.acquireFileLock(getCandidateApprovalLockKey(approval.candidateSha), async () => {
+      if (approval.status === 'ACTIVE') {
+        const activeExisting = await this.getActiveGovernanceApproval(approval.candidateSha);
+        if (activeExisting) {
+          throw new OptimisticConcurrencyConflictError(
+            `Candidate '${approval.candidateSha}' already has an active governance approval '${activeExisting.id}'. Concurrent active approvals are forbidden.`
+          );
+        }
+      }
+
+      const validated = CandidateApprovalRecordDtoSchema.parse(approval);
+      const filePath = resolveStorePath(
+        this.baseDir,
+        'governance-approvals',
+        `${approval.id}.json`
+      );
+      await writeJsonExclusive(filePath, validated);
+    });
+  }
+
+  async replaceGovernanceApproval(
+    newApproval: CandidateApprovalRecord,
+    expectedActiveApprovalId?: string
+  ): Promise<void> {
+    assertSafeIdentifier(newApproval.id, 'approvalId');
+    assertSafeIdentifier(newApproval.candidateSha, 'candidateSha');
+
+    return this.acquireFileLock(getCandidateApprovalLockKey(newApproval.candidateSha), async () => {
+      const activeExisting = await this.getActiveGovernanceApproval(newApproval.candidateSha);
+
+      if (expectedActiveApprovalId !== undefined) {
+        if (!activeExisting || activeExisting.id !== expectedActiveApprovalId) {
+          throw new OptimisticConcurrencyConflictError(
+            `Governance approval replacement conflict for candidate '${newApproval.candidateSha}': expected active approval '${expectedActiveApprovalId}', but found '${activeExisting?.id ?? 'none'}'.`
+          );
+        }
+
+        const supersededRecord = supersedeCandidateApprovalRecord(activeExisting);
+        const existingPath = resolveStorePath(
+          this.baseDir,
+          'governance-approvals',
+          `${activeExisting.id}.json`
+        );
+        const newPath = resolveStorePath(
+          this.baseDir,
+          'governance-approvals',
+          `${newApproval.id}.json`
+        );
+
+        // Transition existing to SUPERSEDED atomically
+        await writeJsonAtomic(
+          existingPath,
+          CandidateApprovalRecordDtoSchema.parse(supersededRecord)
+        );
+        try {
+          await writeJsonExclusive(newPath, CandidateApprovalRecordDtoSchema.parse(newApproval));
+        } catch (err) {
+          // Rollback existing record to ACTIVE on failure
+          await writeJsonAtomic(
+            existingPath,
+            CandidateApprovalRecordDtoSchema.parse(activeExisting)
+          );
+          throw err;
+        }
+      } else {
+        if (activeExisting) {
+          throw new OptimisticConcurrencyConflictError(
+            `Candidate '${newApproval.candidateSha}' already has an active governance approval '${activeExisting.id}'. Concurrent active approvals are forbidden.`
+          );
+        }
+        const newPath = resolveStorePath(
+          this.baseDir,
+          'governance-approvals',
+          `${newApproval.id}.json`
+        );
+        await writeJsonExclusive(newPath, CandidateApprovalRecordDtoSchema.parse(newApproval));
+      }
+    });
+  }
+
+  async getGovernanceApproval(
+    id: GovernanceApprovalId | string
+  ): Promise<CandidateApprovalRecord | undefined> {
+    assertSafeIdentifier(id, 'approvalId');
+    const filePath = resolveStorePath(this.baseDir, 'governance-approvals', `${id}.json`);
+    const raw = await readJson<unknown>(filePath);
+    if (!raw) {
+      return undefined;
+    }
+    const validated = CandidateApprovalRecordDtoSchema.parse(raw);
+    if (validated.status === 'REVOKED') {
+      const activeRecord = createCandidateApprovalRecord({
+        id: validated.id,
+        candidateSha: validated.candidateSha,
+        validationRunId: validated.validationRunId,
+        evidenceDigest: validated.evidenceDigest,
+        decision: validated.decision,
+        actor: {
+          id: createActorId(validated.actor.id),
+          name: validated.actor.name,
+          email: validated.actor.email,
+          actorType: 'human'
+        },
+        decidedAt: createInstant(validated.decidedAt),
+        rationale: validated.rationale,
+        supersedes: validated.supersedes
+      });
+      return revokeCandidateApprovalRecord(
+        activeRecord,
+        {
+          id: createActorId(validated.revocation.revokedBy.id),
+          name: validated.revocation.revokedBy.name,
+          email: validated.revocation.revokedBy.email,
+          actorType: 'human'
+        },
+        validated.revocation.rationale,
+        createInstant(validated.revocation.revokedAt)
+      );
+    } else if (validated.status === 'SUPERSEDED') {
+      const activeRecord = createCandidateApprovalRecord({
+        id: validated.id,
+        candidateSha: validated.candidateSha,
+        validationRunId: validated.validationRunId,
+        evidenceDigest: validated.evidenceDigest,
+        decision: validated.decision,
+        actor: {
+          id: createActorId(validated.actor.id),
+          name: validated.actor.name,
+          email: validated.actor.email,
+          actorType: 'human'
+        },
+        decidedAt: createInstant(validated.decidedAt),
+        rationale: validated.rationale,
+        supersedes: validated.supersedes
+      });
+      return supersedeCandidateApprovalRecord(activeRecord);
+    } else {
+      return createCandidateApprovalRecord({
+        id: validated.id,
+        candidateSha: validated.candidateSha,
+        validationRunId: validated.validationRunId,
+        evidenceDigest: validated.evidenceDigest,
+        decision: validated.decision,
+        actor: {
+          id: createActorId(validated.actor.id),
+          name: validated.actor.name,
+          email: validated.actor.email,
+          actorType: 'human'
+        },
+        decidedAt: createInstant(validated.decidedAt),
+        rationale: validated.rationale,
+        supersedes: validated.supersedes
+      });
+    }
+  }
+
+  async listGovernanceApprovals(filter?: {
+    candidateSha?: string;
+    validationRunId?: string;
+  }): Promise<readonly CandidateApprovalRecord[]> {
+    const dir = path.resolve(this.baseDir, 'governance-approvals');
+    try {
+      const files = await fs.readdir(dir);
+      const results: CandidateApprovalRecord[] = [];
+      for (const file of files) {
+        if (!file.endsWith('.json')) continue;
+        const id = file.replace(/\.json$/, '');
+        const approval = await this.getGovernanceApproval(id);
+        if (approval) {
+          if (
+            filter?.candidateSha &&
+            approval.candidateSha.toLowerCase() !== filter.candidateSha.toLowerCase()
+          ) {
+            continue;
+          }
+          if (filter?.validationRunId && approval.validationRunId !== filter.validationRunId) {
+            continue;
+          }
+          results.push(approval);
+        }
+      }
+      results.sort((a, b) => b.decidedAt.localeCompare(a.decidedAt));
+      return Object.freeze(results);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return Object.freeze([]);
+      }
+      throw err;
+    }
+  }
+
+  async getActiveGovernanceApproval(
+    candidateSha: string
+  ): Promise<CandidateApprovalRecord | undefined> {
+    const approvals = await this.listGovernanceApprovals({ candidateSha });
+    return approvals.find((a) => a.status === 'ACTIVE');
+  }
+
+  async updateGovernanceApproval(
+    approval: CandidateApprovalRecord,
+    expectedCurrentStatus?: GovernanceApprovalStatus
+  ): Promise<void> {
+    assertSafeIdentifier(approval.id, 'approvalId');
+    return this.acquireFileLock(getApprovalLockKey(approval.id), async () => {
+      const filePath = resolveStorePath(
+        this.baseDir,
+        'governance-approvals',
+        `${approval.id}.json`
+      );
+      const raw = await readJson<unknown>(filePath);
+      if (!raw) {
+        throw new UnknownGovernanceApprovalError(approval.id);
+      }
+      const existing = CandidateApprovalRecordDtoSchema.parse(raw);
+      if (expectedCurrentStatus && existing.status !== expectedCurrentStatus) {
+        throw new OptimisticConcurrencyConflictError(
+          `Governance approval '${approval.id}' status conflict: expected '${expectedCurrentStatus}', but found '${existing.status}'.`
+        );
+      }
+      const validated = CandidateApprovalRecordDtoSchema.parse(approval);
+      await writeJsonAtomic(filePath, validated);
+    });
+  }
+
+  async saveBacklogExportMapping(mapping: BacklogExportMapping): Promise<void> {
+    assertSafeIdentifier(mapping.id, 'mappingId');
+    assertSafeIdentifier(mapping.storyId, 'storyId');
+    assertSafeIdentifier(mapping.baselineId, 'baselineId');
+
+    const lockKey = getBacklogMappingLockKey(
+      `${mapping.provider}:${mapping.externalContainer}:${mapping.storyId}`
+    );
+    return this.acquireFileLock(lockKey, async () => {
+      const existing = await this.listBacklogExportMappings({
+        provider: mapping.provider,
+        externalContainer: mapping.externalContainer,
+        storyId: mapping.storyId
+      });
+      if (existing.length > 0 && existing[0].id !== mapping.id) {
+        throw new ImmutableRecordConflictError(
+          resolveStorePath(this.baseDir, 'backlog-mappings', `${mapping.id}.json`),
+          `Backlog export mapping already exists for provider '${mapping.provider}', container '${mapping.externalContainer}', story '${mapping.storyId}'`
+        );
+      }
+
+      const filePath = resolveStorePath(this.baseDir, 'backlog-mappings', `${mapping.id}.json`);
+      const payload: BacklogExportMappingDto = {
+        id: mapping.id,
+        storyId: mapping.storyId,
+        storyVersion: mapping.storyVersion ?? 1,
+        exportVersion: mapping.exportVersion ?? 1,
+        baselineId: mapping.baselineId,
+        requirementRevisionIds: [...mapping.requirementRevisionIds],
+        policyConstraintRevisionIds: mapping.policyConstraintRevisionIds
+          ? [...mapping.policyConstraintRevisionIds]
+          : undefined,
+        provider: mapping.provider,
+        externalContainer: mapping.externalContainer,
+        externalWorkItemId: mapping.externalWorkItemId,
+        externalUrl: mapping.externalUrl,
+        exportContentHash: mapping.exportContentHash,
+        exportedAt: mapping.exportedAt,
+        exportedBy: mapping.exportedBy,
+        metadata: mapping.metadata ? { ...mapping.metadata } : undefined,
+        exportContentHashVersion: mapping.exportContentHashVersion ?? 1,
+        prerequisiteExportVersions: mapping.prerequisiteExportVersions
+          ? { ...mapping.prerequisiteExportVersions }
+          : undefined,
+        history: (mapping.history ?? []).map((h) => ({
+          exportVersion: h.exportVersion,
+          storyVersion: h.storyVersion,
+          baselineId: h.baselineId,
+          requirementRevisionIds: [...h.requirementRevisionIds],
+          policyConstraintRevisionIds: h.policyConstraintRevisionIds
+            ? [...h.policyConstraintRevisionIds]
+            : undefined,
+          exportContentHash: h.exportContentHash,
+          exportContentHashVersion: h.exportContentHashVersion ?? 1,
+          prerequisiteExportVersions: h.prerequisiteExportVersions
+            ? { ...h.prerequisiteExportVersions }
+            : undefined,
+          exportedAt: h.exportedAt,
+          exportedBy: h.exportedBy,
+          externalWorkItemId: h.externalWorkItemId,
+          externalUrl: h.externalUrl,
+          updateRationale: h.updateRationale
+        }))
+      };
+      await writeJsonExclusive(filePath, payload);
+    });
+  }
+
+  async getBacklogExportMapping(
+    id: BacklogExportMappingId | string
+  ): Promise<BacklogExportMapping | undefined> {
+    assertSafeIdentifier(id, 'mappingId');
+    const filePath = resolveStorePath(this.baseDir, 'backlog-mappings', `${id}.json`);
+    const record = await readJson<BacklogExportMappingDto>(filePath);
+    if (!record) {
+      return undefined;
+    }
+    return createBacklogExportMapping({
+      id: record.id,
+      storyId: record.storyId,
+      storyVersion: record.storyVersion ?? 1,
+      exportVersion: record.exportVersion ?? 1,
+      baselineId: record.baselineId,
+      requirementRevisionIds: record.requirementRevisionIds ?? [],
+      policyConstraintRevisionIds: record.policyConstraintRevisionIds,
+      provider: record.provider,
+      externalContainer: record.externalContainer,
+      externalWorkItemId: record.externalWorkItemId,
+      externalUrl: record.externalUrl,
+      exportContentHash: record.exportContentHash,
+      exportContentHashVersion: record.exportContentHashVersion ?? 1,
+      prerequisiteExportVersions: record.prerequisiteExportVersions
+        ? { ...record.prerequisiteExportVersions }
+        : undefined,
+      exportedAt: record.exportedAt,
+      exportedBy: record.exportedBy,
+      metadata: record.metadata,
+      history: record.history
+        ? record.history.map((h) => ({
+            exportVersion: h.exportVersion,
+            storyVersion: h.storyVersion,
+            baselineId: createRequirementsBaselineId(h.baselineId),
+            requirementRevisionIds: h.requirementRevisionIds.map(createRequirementRevisionId),
+            policyConstraintRevisionIds: h.policyConstraintRevisionIds?.map(
+              createPolicyConstraintRevisionId
+            ),
+            exportContentHash: h.exportContentHash,
+            exportContentHashVersion: h.exportContentHashVersion ?? 1,
+            prerequisiteExportVersions: h.prerequisiteExportVersions
+              ? { ...h.prerequisiteExportVersions }
+              : undefined,
+            exportedAt: h.exportedAt,
+            exportedBy: createActorId(h.exportedBy),
+            externalWorkItemId: h.externalWorkItemId,
+            externalUrl: h.externalUrl,
+            updateRationale: h.updateRationale
+          }))
+        : undefined
+    });
+  }
+
+  async findBacklogExportMapping(filter: {
+    provider: string;
+    externalContainer: string;
+    storyId: StoryId | string;
+  }): Promise<BacklogExportMapping | undefined> {
+    const list = await this.listBacklogExportMappings({
+      provider: filter.provider,
+      externalContainer: filter.externalContainer,
+      storyId: filter.storyId
+    });
+    return list.length > 0 ? list[0] : undefined;
+  }
+
+  async listBacklogExportMappings(filter?: {
+    baselineId?: RequirementsBaselineId | string;
+    storyId?: StoryId | string;
+    provider?: string;
+    externalContainer?: string;
+  }): Promise<readonly BacklogExportMapping[]> {
+    const dirPath = path.resolve(this.baseDir, 'backlog-mappings');
+    try {
+      const files = await fs.readdir(dirPath);
+      const jsonFiles = files.filter((f) => f.endsWith('.json')).sort();
+      const results: BacklogExportMapping[] = [];
+      for (const file of jsonFiles) {
+        const rawId = file.replace(/\.json$/, '');
+        assertSafeIdentifier(rawId, 'mappingId');
+        const mapping = await this.getBacklogExportMapping(rawId);
+        if (mapping) {
+          if (filter?.baselineId && mapping.baselineId !== filter.baselineId) {
+            continue;
+          }
+          if (filter?.storyId && mapping.storyId !== filter.storyId) {
+            continue;
+          }
+          if (filter?.provider && mapping.provider !== filter.provider) {
+            continue;
+          }
+          if (filter?.externalContainer && mapping.externalContainer !== filter.externalContainer) {
+            continue;
+          }
+          results.push(mapping);
+        }
+      }
+      results.sort((a, b) => a.exportedAt.localeCompare(b.exportedAt) || a.id.localeCompare(b.id));
+      return Object.freeze(results);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return Object.freeze([]);
+      }
+      throw err;
+    }
+  }
+
+  async updateBacklogExportMapping(mapping: BacklogExportMapping): Promise<void> {
+    assertSafeIdentifier(mapping.id, 'mappingId');
+    const existing = await this.getBacklogExportMapping(mapping.id);
+    if (!existing) {
+      throw new Error(`Backlog export mapping '${mapping.id}' not found`);
+    }
+    const filePath = resolveStorePath(this.baseDir, 'backlog-mappings', `${mapping.id}.json`);
+    const payload: BacklogExportMappingDto = {
+      id: mapping.id,
+      storyId: mapping.storyId,
+      storyVersion: mapping.storyVersion ?? 1,
+      exportVersion: mapping.exportVersion ?? 1,
+      baselineId: mapping.baselineId,
+      requirementRevisionIds: [...mapping.requirementRevisionIds],
+      policyConstraintRevisionIds: mapping.policyConstraintRevisionIds
+        ? [...mapping.policyConstraintRevisionIds]
+        : undefined,
+      provider: mapping.provider,
+      externalContainer: mapping.externalContainer,
+      externalWorkItemId: mapping.externalWorkItemId,
+      externalUrl: mapping.externalUrl,
+      exportContentHash: mapping.exportContentHash,
+      exportContentHashVersion: mapping.exportContentHashVersion ?? 1,
+      prerequisiteExportVersions: mapping.prerequisiteExportVersions
+        ? { ...mapping.prerequisiteExportVersions }
+        : undefined,
+      exportedAt: mapping.exportedAt,
+      exportedBy: mapping.exportedBy,
+      metadata: mapping.metadata ? { ...mapping.metadata } : undefined,
+      history: (mapping.history ?? []).map((h) => ({
+        exportVersion: h.exportVersion,
+        storyVersion: h.storyVersion,
+        baselineId: h.baselineId,
+        requirementRevisionIds: [...h.requirementRevisionIds],
+        policyConstraintRevisionIds: h.policyConstraintRevisionIds
+          ? [...h.policyConstraintRevisionIds]
+          : undefined,
+        exportContentHash: h.exportContentHash,
+        exportContentHashVersion: h.exportContentHashVersion ?? 1,
+        prerequisiteExportVersions: h.prerequisiteExportVersions
+          ? { ...h.prerequisiteExportVersions }
+          : undefined,
+        exportedAt: h.exportedAt,
+        exportedBy: h.exportedBy,
+        externalWorkItemId: h.externalWorkItemId,
+        externalUrl: h.externalUrl,
+        updateRationale: h.updateRationale
+      }))
+    };
+    await writeJsonAtomic(filePath, payload);
+
+    if (mapping.history && mapping.history.length > 0) {
+      const latestSnapshot = mapping.history[mapping.history.length - 1];
+      const historyDir = resolveStorePath(this.baseDir, 'backlog-export-history', mapping.id);
+      await fs.mkdir(historyDir, { recursive: true });
+      const snapshotPath = path.join(historyDir, `v${latestSnapshot.exportVersion}.json`);
+      const existingSnapshot = await readJson<BacklogExportHistoryEntry>(snapshotPath);
+      if (existingSnapshot) {
+        if (existingSnapshot.exportContentHash !== latestSnapshot.exportContentHash) {
+          throw new ImmutableRecordConflictError(
+            snapshotPath,
+            `Immutable backlog export history conflict: mapping '${mapping.id}' export version ${latestSnapshot.exportVersion} already recorded with different content hash`
+          );
+        }
+      } else {
+        await writeJsonAtomic(snapshotPath, latestSnapshot);
+      }
+    }
+  }
+
+  async listBacklogExportHistory(
+    mappingId: BacklogExportMappingId | string
+  ): Promise<readonly BacklogExportHistoryEntry[]> {
+    assertSafeIdentifier(mappingId, 'mappingId');
+    const mapping = await this.getBacklogExportMapping(mappingId);
+    if (mapping?.history && mapping.history.length > 0) {
+      return mapping.history;
+    }
+
+    const historyDir = resolveStorePath(this.baseDir, 'backlog-export-history', String(mappingId));
+    try {
+      const files = await fs.readdir(historyDir);
+      const jsonFiles = files.filter((f) => f.endsWith('.json')).sort();
+      const results: BacklogExportHistoryEntry[] = [];
+      for (const f of jsonFiles) {
+        const entry = await readJson<BacklogExportHistoryEntry>(path.join(historyDir, f));
+        if (entry) {
+          results.push({
+            ...entry,
+            exportContentHashVersion: entry.exportContentHashVersion ?? 1,
+            prerequisiteExportVersions: entry.prerequisiteExportVersions
+              ? { ...entry.prerequisiteExportVersions }
+              : undefined
+          });
+        }
+      }
+      results.sort((a, b) => a.exportVersion - b.exportVersion);
+      return Object.freeze(results);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        return Object.freeze([]);
+      }
+      throw err;
+    }
+  }
+
+  async withBacklogExportLock<T>(
+    key: { provider: string; externalContainer: string; storyId: StoryId | string },
+    action: () => Promise<T>
+  ): Promise<T> {
+    const lockKey = getBacklogMappingLockKey(
+      `${key.provider}:${key.externalContainer}:${key.storyId}`
+    );
+    return this.acquireFileLock(lockKey, action);
+  }
+
+  async checkStorageHealth(): Promise<StorageHealthReport> {
+    return this.checkHealth();
+  }
+
+  async checkHealth(): Promise<StorageHealthReport> {
+    const timestamp = new Date().toISOString();
+    const start = Date.now();
+    try {
+      await fs.access(this.baseDir, fs.constants.R_OK | fs.constants.W_OK);
+      return {
+        status: 'healthy',
+        timestamp,
+        database: {
+          status: 'healthy',
+          latencyMs: Date.now() - start,
+          details: { dialect: 'filesystem', baseDir: this.baseDir }
+        }
+      };
+    } catch (err) {
+      return {
+        status: 'unhealthy',
+        timestamp,
+        database: {
+          status: 'unhealthy',
+          latencyMs: Date.now() - start,
+          message: err instanceof Error ? err.message : String(err),
+          details: { dialect: 'filesystem', baseDir: this.baseDir }
+        }
+      };
+    }
   }
 }
