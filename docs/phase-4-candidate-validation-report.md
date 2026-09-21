@@ -40,18 +40,18 @@ Unlike Phase 3, this is a **single-round** validation — see §3 for why no rem
 
 ## 3. Validation Results
 
-| Run | Run ID | Status | Duration | Steps Passed | Persistence | Identity | Coverage | Governance | Backlog Export | Backup/Restore | Prior Gates (P1/P2/P3) | Final Disposition |
-| :-: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| 1 | RUN-P4-1-a4jdck | PASS | 51.1s | 15/15 | 18 tables | 6 personas | 100% | Valid | 2 items (0 calls) | Verified (18 tables) | All Green | Pilot-Ready (#99 authorized) |
-| 2 | RUN-P4-2-yz875o | PASS | 47.8s | 15/15 | 18 tables | 6 personas | 100% | Valid | 2 items (0 calls) | Verified (18 tables) | All Green | Pilot-Ready (#99 authorized) |
-| 3 | RUN-P4-3-af2t2h | PASS | 47.7s | 15/15 | 18 tables | 6 personas | 100% | Valid | 2 items (0 calls) | Verified (18 tables) | All Green | Pilot-Ready (#99 authorized) |
-| 4 | RUN-P4-4-j1ld31 | PASS | 47.1s | 15/15 | 18 tables | 6 personas | 100% | Valid | 2 items (0 calls) | Verified (18 tables) | All Green | Pilot-Ready (#99 authorized) |
-| 5 | RUN-P4-5-i7wx43 | PASS | 47.2s | 15/15 | 18 tables | 6 personas | 100% | Valid | 2 items (0 calls) | Verified (18 tables) | All Green | Pilot-Ready (#99 authorized) |
-| 6 | RUN-P4-6-r9ntlp | PASS | 47.0s | 15/15 | 18 tables | 6 personas | 100% | Valid | 2 items (0 calls) | Verified (18 tables) | All Green | Pilot-Ready (#99 authorized) |
-| 7 | RUN-P4-7-t0ye3n | PASS | 46.9s | 15/15 | 18 tables | 6 personas | 100% | Valid | 2 items (0 calls) | Verified (18 tables) | All Green | Pilot-Ready (#99 authorized) |
-| 8 | RUN-P4-8-rw1ezl | PASS | 46.8s | 15/15 | 18 tables | 6 personas | 100% | Valid | 2 items (0 calls) | Verified (18 tables) | All Green | Pilot-Ready (#99 authorized) |
-| 9 | RUN-P4-9-j494f8 | PASS | 46.8s | 15/15 | 18 tables | 6 personas | 100% | Valid | 2 items (0 calls) | Verified (18 tables) | All Green | Pilot-Ready (#99 authorized) |
-| 10 | RUN-P4-10-jfunb1 | PASS | 46.8s | 15/15 | 18 tables | 6 personas | 100% | Valid | 2 items (0 calls) | Verified (18 tables) | All Green | Pilot-Ready (#99 authorized) |
+| Run | Run ID           | Status | Duration | Steps Passed | Persistence |  Identity  | Coverage | Governance |  Backlog Export   |    Backup/Restore    | Prior Gates (P1/P2/P3) | Final Disposition            |
+| :-: | :--------------- | :----: | :------: | :----------: | :---------: | :--------: | :------: | :--------: | :---------------: | :------------------: | :--------------------: | :--------------------------- |
+|  1  | RUN-P4-1-a4jdck  |  PASS  |  51.1s   |    15/15     |  18 tables  | 6 personas |   100%   |   Valid    | 2 items (0 calls) | Verified (18 tables) |       All Green        | Pilot-Ready (#99 authorized) |
+|  2  | RUN-P4-2-yz875o  |  PASS  |  47.8s   |    15/15     |  18 tables  | 6 personas |   100%   |   Valid    | 2 items (0 calls) | Verified (18 tables) |       All Green        | Pilot-Ready (#99 authorized) |
+|  3  | RUN-P4-3-af2t2h  |  PASS  |  47.7s   |    15/15     |  18 tables  | 6 personas |   100%   |   Valid    | 2 items (0 calls) | Verified (18 tables) |       All Green        | Pilot-Ready (#99 authorized) |
+|  4  | RUN-P4-4-j1ld31  |  PASS  |  47.1s   |    15/15     |  18 tables  | 6 personas |   100%   |   Valid    | 2 items (0 calls) | Verified (18 tables) |       All Green        | Pilot-Ready (#99 authorized) |
+|  5  | RUN-P4-5-i7wx43  |  PASS  |  47.2s   |    15/15     |  18 tables  | 6 personas |   100%   |   Valid    | 2 items (0 calls) | Verified (18 tables) |       All Green        | Pilot-Ready (#99 authorized) |
+|  6  | RUN-P4-6-r9ntlp  |  PASS  |  47.0s   |    15/15     |  18 tables  | 6 personas |   100%   |   Valid    | 2 items (0 calls) | Verified (18 tables) |       All Green        | Pilot-Ready (#99 authorized) |
+|  7  | RUN-P4-7-t0ye3n  |  PASS  |  46.9s   |    15/15     |  18 tables  | 6 personas |   100%   |   Valid    | 2 items (0 calls) | Verified (18 tables) |       All Green        | Pilot-Ready (#99 authorized) |
+|  8  | RUN-P4-8-rw1ezl  |  PASS  |  46.8s   |    15/15     |  18 tables  | 6 personas |   100%   |   Valid    | 2 items (0 calls) | Verified (18 tables) |       All Green        | Pilot-Ready (#99 authorized) |
+|  9  | RUN-P4-9-j494f8  |  PASS  |  46.8s   |    15/15     |  18 tables  | 6 personas |   100%   |   Valid    | 2 items (0 calls) | Verified (18 tables) |       All Green        | Pilot-Ready (#99 authorized) |
+| 10  | RUN-P4-10-jfunb1 |  PASS  |  46.8s   |    15/15     |  18 tables  | 6 personas |   100%   |   Valid    | 2 items (0 calls) | Verified (18 tables) |       All Green        | Pilot-Ready (#99 authorized) |
 
 **10/10 runs (100%) passed, zero variance across every invariant.** This is a materially different outcome from Phase 3's remediation arc (§6): Phase 3's residual variance came from open-ended LLM naming freedom in schema/OpenAPI generation, a surface Phase 4 does not exercise — Phase 4's exit gate is dominated by deterministic infrastructure behavior (persistence, auth, backup/restore, degradation handling), not free-form generation, so no sampling-variance floor was expected or observed.
 
